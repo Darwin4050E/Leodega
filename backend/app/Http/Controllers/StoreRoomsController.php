@@ -8,7 +8,10 @@ use App\Models\Landlords;
 use App\Models\Ratings;
 use App\Models\StoreRooms;
 use App\Services\StoreModerationService;
+use App\Services\StoreRoomService;
 use Illuminate\Http\Request;
+use Illuminate\Support\Arr;
+use Illuminate\Validation\ValidationException;
 
 class StoreRoomsController extends ApiController
 {
@@ -51,9 +54,47 @@ class StoreRoomsController extends ApiController
         return $this->showModel(StoreRooms::class, $id);
     }
 
-    public function store(Request $request)
+    /**
+     * HUG-04: ya no delega en el motor genérico storeModel (D1). El request
+     * multipart trae, además de los campos planos, el archivo del permiso
+     * de bomberos y los precios anidados como notación de corchetes
+     * (storePrices[0][mode], storePrices[0][price], storePrices[0][disponibility]).
+     * PHP/Laravel parsean esa notación de forma nativa, así que
+     * $request->input('storePrices') devuelve el mismo array anidado que
+     * antes bajo JSON (D12) — no se necesita parseo adicional aquí.
+     */
+    public function store(StoreStoreRoomRequest $request, StoreRoomService $service)
     {
-        return $this->storeModel($request, StoreRooms::class, (new StoreStoreRoomRequest)->rules());
+        $landlord = Landlords::where('user_id', $request->user()->id)->first();
+
+        if (! $landlord) {
+            return response()->json([
+                'message' => 'No tienes un registro de landlord asociado a tu cuenta',
+                'status' => 403,
+            ], 403);
+        }
+
+        try {
+            $room = $service->register(
+                $landlord,
+                Arr::except($request->validated(), ['firefighter_permit']),
+                $request->input('storePrices'),
+                $request->file('firefighter_permit'),
+                auth()->id()
+            );
+        } catch (ValidationException $e) {
+            return response()->json([
+                'message' => 'Validation Error',
+                'errors' => $e->errors(),
+                'status' => 400,
+            ], 400);
+        }
+
+        return response()->json([
+            'item' => $room,
+            'message' => 'Item created successfully',
+            'status' => 201,
+        ], 201);
     }
 
     /**

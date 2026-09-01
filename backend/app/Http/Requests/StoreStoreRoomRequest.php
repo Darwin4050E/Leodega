@@ -2,16 +2,30 @@
 
 namespace App\Http\Requests;
 
+use Illuminate\Contracts\Validation\Validator;
+use Illuminate\Foundation\Http\FormRequest;
+use Illuminate\Http\Exceptions\HttpResponseException;
+
 /**
- * Bolsa de reglas, no FormRequest — ver StoreAdminRequest para la explicación
- * completa de por qué no se inyecta como type-hint.
+ * HUG-04: convertido de bolsa de reglas a FormRequest real para poder
+ * reproducir el envelope legacy de error 400 ({message, errors, status})
+ * en lugar del 422 por defecto de Laravel, y para poder validar el archivo
+ * de permiso de bomberos (obligatorio) junto al resto de campos.
+ *
+ * `landlord_id` y `publication_status` se retiran de rules() a propósito:
+ * ambos se derivan/forzan server-side (ver StoreRoomsController::store y
+ * StoreRoomService::register) y nunca deben aceptarse desde el payload.
  */
-class StoreStoreRoomRequest
+class StoreStoreRoomRequest extends FormRequest
 {
+    public function authorize(): bool
+    {
+        return true;
+    }
+
     public function rules(): array
     {
         return [
-            'landlord_id' => 'required|exists:landlords,id',
             'room_type' => 'required|in:habitacion,garaje,contenedor,sotano,atico,bodega',
             'storage_type' => 'required|in:completa,privado,compartido',
             'direction' => 'required|string',
@@ -20,8 +34,30 @@ class StoreStoreRoomRequest
             'title' => 'required|string',
             'description' => 'required|string',
             'security' => 'required|string',
-            'publication_status' => 'in:pending,approved,rejected',
-            'publication_date' => 'date',
+            'firefighter_permit' => 'required|file|mimes:pdf,jpg,jpeg,png|max:5120',
         ];
+    }
+
+    public function messages(): array
+    {
+        return [
+            'firefighter_permit.required' => 'Debe adjuntar el permiso de bomberos vigente para continuar.',
+            'firefighter_permit.mimes' => 'El permiso debe ser un archivo PDF, JPG, JPEG o PNG.',
+            'firefighter_permit.max' => 'El permiso no debe superar los 5 MB.',
+        ];
+    }
+
+    /**
+     * Preserva el envelope legacy {message, errors, status} en lugar del
+     * 422 por defecto de FormRequest (fuente: ApiController::storeModel,
+     * líneas 43-47).
+     */
+    protected function failedValidation(Validator $validator): void
+    {
+        throw new HttpResponseException(response()->json([
+            'message' => 'Validation Error',
+            'errors' => $validator->errors(),
+            'status' => 400,
+        ], 400));
     }
 }
