@@ -1,0 +1,211 @@
+parameters:
+	ignoreErrors:
+		-
+			message: '#^Relation ''landlord'' is not found in App\\Models\\User model\.$#'
+			identifier: larastan.relationExistence
+			count: 1
+			path: app/Http/Controllers/AuthController.php
+
+		-
+			message: '#^Relation ''tenant'' is not found in App\\Models\\User model\.$#'
+			identifier: larastan.relationExistence
+			count: 1
+			path: app/Http/Controllers/AuthController.php
+
+		-
+			message: '#^Class App\\Models\\cancelations_polices not found\.$#'
+			identifier: class.notFound
+			count: 5
+			path: app/Http/Controllers/CancelationsPolicesController.php
+
+		-
+			message: '#^Relation ''lastMessage'' is not found in App\\Models\\Conversation model\.$#'
+			identifier: larastan.relationExistence
+			count: 1
+			path: app/Http/Controllers/ConversationController.php
+
+		-
+			message: '#^Relation ''users'' is not found in App\\Models\\Conversation model\.$#'
+			identifier: larastan.relationExistence
+			count: 4
+			path: app/Http/Controllers/ConversationController.php
+
+		-
+			message: '#^Access to an undefined property App\\Models\\Conversation\:\:\$users\.$#'
+			identifier: property.notFound
+			count: 1
+			path: app/Http/Controllers/MessageController.php
+
+		-
+			message: '#^Relation ''evidences'' is not found in App\\Models\\Reports model\.$#'
+			identifier: larastan.relationExistence
+			count: 2
+			path: app/Http/Controllers/ReportsController.php
+
+		-
+			message: '#^Relation ''store'' is not found in App\\Models\\Reports model\.$#'
+			identifier: larastan.relationExistence
+			count: 2
+			path: app/Http/Controllers/ReportsController.php
+
+		-
+			message: '#^Relation ''user'' is not found in App\\Models\\Reports model\.$#'
+			identifier: larastan.relationExistence
+			count: 2
+			path: app/Http/Controllers/ReportsController.php
+
+		-
+			message: '#^Relation ''storeRooms'' is not found in App\\Models\\Reservations model\.$#'
+			identifier: larastan.relationExistence
+			count: 2
+			path: app/Http/Controllers/ReservationsController.php
+
+		-
+			message: '#^Relation ''tenants'' is not found in App\\Models\\Reservations model\.$#'
+			identifier: larastan.relationExistence
+			count: 1
+			path: app/Http/Controllers/ReservationsController.php
+
+		-
+			message: '#^Left side of && is always true\.$#'
+			identifier: booleanAnd.leftAlwaysTrue
+			count: 1
+			path: app/Http/Controllers/SessionController.php
+
+		-
+			message: '#^Ternary operator condition is always true\.$#'
+			identifier: ternary.alwaysTrue
+			count: 1
+			path: app/Http/Controllers/SessionController.php
+
+		-
+			message: '#^Access to an undefined property App\\Models\\StoreRooms\:\:\$landlord\.$#'
+			identifier: property.notFound
+			count: 5
+			path: app/Http/Controllers/StoreRoomsController.php
+
+		-
+			message: '#^Access to an undefined property App\\Models\\StoreRooms\:\:\$storePhotos\.$#'
+			identifier: property.notFound
+			count: 3
+			path: app/Http/Controllers/StoreRoomsController.php
+
+		-
+			message: '#^Access to an undefined property App\\Models\\StoreRooms\:\:\$storePrices\.$#'
+			identifier: property.notFound
+			count: 2
+			path: app/Http/Controllers/StoreRoomsController.php
+
+		-
+			message: '#^Access to an undefined property App\\Models\\StoreRooms\|Illuminate\\Database\\Eloquent\\Collection\<int, App\\Models\\StoreRooms\>\:\:\$landlord\.$#'
+			identifier: property.notFound
+			count: 4
+			path: app/Http/Controllers/StoreRoomsController.php
+
+		-
+			message: '#^Access to an undefined property App\\Models\\StoreRooms\|Illuminate\\Database\\Eloquent\\Collection\<int, App\\Models\\StoreRooms\>\:\:\$storePhotos\.$#'
+			identifier: property.notFound
+			count: 1
+			path: app/Http/Controllers/StoreRoomsController.php
+
+		-
+			message: '#^Access to an undefined property App\\Models\\StoreRooms\|Illuminate\\Database\\Eloquent\\Collection\<int, App\\Models\\StoreRooms\>\:\:\$storePrices\.$#'
+			identifier: property.notFound
+			count: 1
+			path: app/Http/Controllers/StoreRoomsController.php
+
+		-
+			message: '#^Parameter \#1 \$callback of method Illuminate\\Database\\Eloquent\\Collection\<int,App\\Models\\StoreRooms\>\:\:map\(\) contains unresolvable type\.$#'
+			identifier: argument.unresolvableType
+			count: 2
+			path: app/Http/Controllers/StoreRoomsController.php
+
+		-
+			message: '#^Relation ''landlord'' is not found in App\\Models\\StoreRooms model\.$#'
+			identifier: larastan.relationExistence
+			count: 2
+			path: app/Http/Controllers/StoreRoomsController.php
+
+		-
+			message: '#^Relation ''storeDisponibility'' is not found in App\\Models\\StoreRooms model\.$#'
+			identifier: larastan.relationExistence
+			count: 1
+			path: app/Http/Controllers/StoreRoomsController.php
+
+		-
+			message: '#^Relation ''storePhotos'' is not found in App\\Models\\StoreRooms model\.$#'
+			identifier: larastan.relationExistence
+			count: 1
+			path: app/Http/Controllers/StoreRoomsController.php
+
+		-
+			message: '#^Relation ''storePrices'' is not found in App\\Models\\StoreRooms model\.$#'
+			identifier: larastan.relationExistence
+			count: 1
+			path: app/Http/Controllers/StoreRoomsController.php
+
+		-
+			message: '#^Method App\\Http\\Middleware\\ApiAuthenticate\:\:redirectTo\(\) should return string\|null but return statement is missing\.$#'
+			identifier: return.missing
+			count: 1
+			path: app/Http/Middleware/ApiAuthenticate.php
+
+		-
+			message: '#^Class App\\Models\\cancelations_polices not found\.$#'
+			identifier: class.notFound
+			count: 1
+			path: app/Models/Landlords.php
+
+		-
+			message: '#^Parameter \#1 \$related of method Illuminate\\Database\\Eloquent\\Model\:\:hasMany\(\) expects class\-string\<Illuminate\\Database\\Eloquent\\Model\>, string given\.$#'
+			identifier: argument.type
+			count: 1
+			path: app/Models/Landlords.php
+
+		-
+			message: '#^Access to an undefined property App\\Models\\Reservations\:\:\$storeRooms\.$#'
+			identifier: property.notFound
+			count: 1
+			path: app/Policies/ReservationsPolicy.php
+
+		-
+			message: '#^PHPDoc tag @SuppressWarnings has invalid value \(\(PHPMD\.UnusedFormalParameter\)\)\: Unexpected token "\.UnusedFormalParameter\)", expected ''\)'' at offset 778 on line 15$#'
+			identifier: phpDoc.parseError
+			count: 1
+			path: app/Policies/ReservationsPolicy.php
+
+		-
+			message: '#^Access to an undefined property App\\Models\\StoreRooms\:\:\$landlord\.$#'
+			identifier: property.notFound
+			count: 1
+			path: app/Services/ReportService.php
+
+		-
+			message: '#^Relation ''landlord'' is not found in App\\Models\\StoreRooms model\.$#'
+			identifier: larastan.relationExistence
+			count: 1
+			path: app/Services/ReportService.php
+
+		-
+			message: '#^Access to an undefined property App\\Models\\Reservations\:\:\$tenants\.$#'
+			identifier: property.notFound
+			count: 2
+			path: app/Services/ReservationService.php
+
+		-
+			message: '#^Access to an undefined property App\\Models\\StoreRooms\:\:\$landlord\.$#'
+			identifier: property.notFound
+			count: 1
+			path: app/Services/ReservationService.php
+
+		-
+			message: '#^Access to an undefined property App\\Models\\Reservations\:\:\$tenants\.$#'
+			identifier: property.notFound
+			count: 1
+			path: app/Policies/PaymentsPolicy.php
+
+		-
+			message: '#^Access to an undefined property App\\Models\\StoreRooms\:\:\$landlord\.$#'
+			identifier: property.notFound
+			count: 1
+			path: app/Services/StoreModerationService.php
