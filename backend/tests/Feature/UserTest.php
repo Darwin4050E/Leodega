@@ -167,6 +167,32 @@ class UserTest extends TestCase
         $this->assertDatabaseMissing('user', ['id' => $user->id]);
     }
 
+    /**
+     * HUA-03 (D6): `state` ya no es una regla de UpdateUserRequest, así que una
+     * clave `state` en el body de PUT /user/{id} se ignora silenciosamente (no
+     * 422) y el resto de campos válidos del mismo request sí se actualizan. Los
+     * cambios de estado deben pasar por los endpoints de moderación.
+     */
+    public function test_update_ignores_state_in_body()
+    {
+        $admin = User::factory()->create(['role' => 'admin']);
+        $target = User::factory()->create(['role' => 'tenant', 'state' => 'active', 'name' => 'Antiguo']);
+        $target->createToken('auth_token');
+
+        $response = $this->actingAs($admin, 'sanctum')->putJson("/api/user/{$target->id}", [
+            'name' => 'Nuevo',
+            'state' => 'blocked',
+        ]);
+
+        $response->assertStatus(200);
+        $fresh = $target->fresh();
+        $this->assertSame('active', $fresh->state);
+        $this->assertSame('Nuevo', $fresh->name);
+        $this->assertSame(1, $fresh->tokens()->count());
+        $this->assertDatabaseCount('account_moderation', 0);
+        $this->assertDatabaseCount('notifications', 0);
+    }
+
     public function test_destroy_self_requires_authentication()
     {
         $response = $this->deleteJson('/api/account');

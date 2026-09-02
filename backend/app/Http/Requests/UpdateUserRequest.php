@@ -21,7 +21,10 @@ class UpdateUserRequest
             'password' => 'sometimes|required|string|min:8',
             'role' => 'sometimes|in:admin,landlord,tenant',
             'start_date' => 'sometimes|date|nullable',
-            'state' => 'sometimes|in:active,blocked,pending',
+            // HUA-03 (D6): `state` ya no se acepta aquí. Los cambios de estado
+            // deben pasar por los endpoints de moderación (block/reactivate),
+            // que revocan tokens, auditan y notifican. Una clave `state` en el
+            // body de PUT /user/{id} se ignora silenciosamente (no 422).
             'enable_messages' => 'sometimes|boolean',
         ];
     }
