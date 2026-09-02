@@ -40,7 +40,7 @@ class StoreRoomService
         // Solo se escribe a disco después de que TODA la validación pasó
         // (D11): así el permiso nunca queda huérfano por un error de
         // validación en storePrices, que es el fallo más probable.
-        $path = $permit->store('firefighter_permits', 'public');
+        $path = $permit->store('firefighter_permits', 'private');
 
         try {
             $room = DB::transaction(function () use ($landlord, $data, $prices, $path) {
@@ -63,7 +63,7 @@ class StoreRoomService
         } catch (\Throwable $e) {
             // Compensating delete (D11): una transacción fallida no debe
             // dejar un archivo huérfano en el disco.
-            Storage::disk('public')->delete($path);
+            Storage::disk('private')->delete($path);
             throw $e;
         }
 

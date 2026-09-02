@@ -38,6 +38,16 @@ return [
             'report' => false,
         ],
 
+        // Explicit private disk — same root as 'local' but named clearly so
+        // controllers that store sensitive files can use Storage::disk('private')
+        // without relying on the 'local' alias. No URL, no public visibility.
+        'private' => [
+            'driver' => 'local',
+            'root' => storage_path('app/private'),
+            'throw' => false,
+            'report' => false,
+        ],
+
         'public' => [
             'driver' => 'local',
             'root' => storage_path('app/public'),

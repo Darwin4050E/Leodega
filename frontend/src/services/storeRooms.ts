@@ -49,8 +49,10 @@ export function getStoreRoomDetail(id: number | string) {
   return api.get<StoreRoomDetail>(`/store-rooms/${id}/detail`);
 }
 
-export function createStoreRoom(data: Record<string, unknown>) {
-  return api.post("/storeRooms", data);
+export function createStoreRoom(formData: FormData) {
+  return api.post("/storeRooms", formData, {
+    headers: { "Content-Type": "multipart/form-data" },
+  });
 }
 
 export function updateStoreRoom(id: number | string, data: Record<string, unknown>) {
