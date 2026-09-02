@@ -1,5 +1,6 @@
 <?php
 
+use App\Http\Controllers\AccountModerationController;
 use App\Http\Controllers\AdminController;
 use App\Http\Controllers\AuthController;
 use App\Http\Controllers\CancelationsPolicesController;
@@ -62,6 +63,13 @@ Route::post('/user', [UserController::class, 'store']);
 Route::middleware(['auth.api:sanctum', 'role:admin'])->group(function () {
     Route::put('/user/{id}', [UserController::class, 'update']);
     Route::delete('/user/{id}', [UserController::class, 'destroy']);
+});
+
+// HUA-03: moderación de cuentas. Endpoints semánticos con auditoría, revocación
+// de tokens y notificación — separados del PUT genérico de /user/{id}.
+Route::middleware(['auth.api:sanctum', 'role:admin'])->group(function () {
+    Route::patch('/user/{id}/block', [AccountModerationController::class, 'block']);
+    Route::patch('/user/{id}/reactivate', [AccountModerationController::class, 'reactivate']);
 });
 
 Route::get('/landlords', [LandlordsController::class, 'index']);
