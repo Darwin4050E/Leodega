@@ -52,6 +52,25 @@ describe('UsuariosAdmin', () => {
     expect(confirm).toBeEnabled();
   });
 
+  it('requires at least 5 characters in the block reason', async () => {
+    const user = userEvent.setup();
+    render(<UsuariosAdmin />);
+    await waitFor(() => expect(screen.getByText('Juan Pérez')).toBeInTheDocument());
+
+    await user.click(screen.getByRole('button', { name: 'Bloquear' }));
+
+    const dialog = screen.getByText('Bloquear cuenta').closest('div') as HTMLElement;
+    const confirm = within(dialog).getByRole('button', { name: 'Bloquear' });
+
+    await user.type(screen.getByLabelText('Motivo'), 'abcd');
+    expect(confirm).toBeDisabled();
+    expect(screen.getByText('Mínimo 5 caracteres.')).toBeInTheDocument();
+
+    await user.type(screen.getByLabelText('Motivo'), 'e');
+    expect(confirm).toBeEnabled();
+    expect(screen.queryByText('Mínimo 5 caracteres.')).not.toBeInTheDocument();
+  });
+
   it('calls blockUser with the typed reason on confirm', async () => {
     const user = userEvent.setup();
     render(<UsuariosAdmin />);

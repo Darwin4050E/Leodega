@@ -67,7 +67,10 @@ const UsuariosAdmin: React.FC = () => {
     );
   }, [usuarios, searchTerm]);
 
-  const motivoValido = motivo.trim().length > 0;
+  const MOTIVO_MIN = 5;
+  const motivoLimpio = motivo.trim();
+  const motivoValido = motivoLimpio.length >= MOTIVO_MIN;
+  const motivoMuyCorto = motivoLimpio.length > 0 && motivoLimpio.length < MOTIVO_MIN;
 
   const cerrarDialogoBloqueo = () => {
     setUsuarioABloquear(null);
@@ -238,6 +241,9 @@ const UsuariosAdmin: React.FC = () => {
               rows={4}
               className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-red-400"
             />
+            {motivoMuyCorto && (
+              <p className="mt-1 text-xs text-red-600">Mínimo 5 caracteres.</p>
+            )}
 
             <div className="mt-6 flex gap-3">
               <button
