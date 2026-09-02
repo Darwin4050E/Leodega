@@ -1,1 +1,8 @@
+# Reference material, not part of the application
 DocumentacionLeodega-main/
+PrototipoLeodega-main/
+
+# Local agent/tooling artifacts
+.atl/
+
+dev.sh
