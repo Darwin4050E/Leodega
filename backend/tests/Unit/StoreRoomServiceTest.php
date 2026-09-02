@@ -20,7 +20,7 @@ class StoreRoomServiceTest extends TestCase
     {
         parent::setUp();
 
-        Storage::fake('public');
+        Storage::fake('private');
     }
 
     private function validData(): array
@@ -106,7 +106,7 @@ class StoreRoomServiceTest extends TestCase
             // expected — the point of this test is what happens on disk
         }
 
-        Storage::disk('public')->assertDirectoryEmpty('firefighter_permits');
+        Storage::disk('private')->assertDirectoryEmpty('firefighter_permits');
     }
 
     public function test_register_persists_the_permit_file()
@@ -116,7 +116,7 @@ class StoreRoomServiceTest extends TestCase
         $room = (new StoreRoomService)->register($landlord, $this->validData(), null, $this->fakePermit(), $landlord->user_id);
 
         $this->assertNotNull($room->firefighter_permit_path);
-        Storage::disk('public')->assertExists($room->firefighter_permit_path);
+        Storage::disk('private')->assertExists($room->firefighter_permit_path);
     }
 
     public function test_register_deletes_the_permit_when_the_transaction_fails()
@@ -134,7 +134,7 @@ class StoreRoomServiceTest extends TestCase
             (new StoreRoomService)->register($landlord, $this->validData(), null, $this->fakePermit(), 1);
             $this->fail('Expected a database exception to be thrown.');
         } catch (\Throwable $e) {
-            $files = Storage::disk('public')->allFiles('firefighter_permits');
+            $files = Storage::disk('private')->allFiles('firefighter_permits');
             $capturedPath = $files[0] ?? null;
         }
 
@@ -197,7 +197,7 @@ class StoreRoomServiceTest extends TestCase
         $room = (new StoreRoomService)->register($landlord, $this->validData(), null, $this->fakePermit(), 999999);
 
         $this->assertDatabaseHas('storeRooms', ['id' => $room->id]);
-        Storage::disk('public')->assertExists($room->firefighter_permit_path);
+        Storage::disk('private')->assertExists($room->firefighter_permit_path);
         $this->assertDatabaseCount('notifications', 0);
     }
 }

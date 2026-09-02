@@ -1,2 +1,10 @@
 DocumentacionLeodega-main/
 PrototipoLeodega-main/
+
+# Local dev helper scripts (not shared)
+dev.sh
+
+# Local env files (belt-and-suspenders; subproject .gitignores already cover these)
+.env
+*.env
+.env.local

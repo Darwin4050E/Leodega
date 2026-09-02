@@ -18,7 +18,7 @@ class StoreRoomTest extends TestCase
     {
         parent::setUp();
 
-        Storage::fake('public');
+        Storage::fake('private');
     }
 
     private function validPayload(array $overrides = []): array
@@ -33,6 +33,7 @@ class StoreRoomTest extends TestCase
             'description' => 'Espacio amplio',
             'security' => 'Alta',
             'firefighter_permit' => $this->fakePermit(),
+            'cancellation_policy_tier' => 'flexible',
         ], $overrides);
     }
 
@@ -217,6 +218,21 @@ class StoreRoomTest extends TestCase
         $this->assertDatabaseCount('notifications', 0);
     }
 
+    public function test_missing_cancellation_policy_tier_returns_400()
+    {
+        $user = User::factory()->create(['role' => 'landlord']);
+        Landlords::factory()->create(['user_id' => $user->id]);
+
+        $payload = $this->validPayload();
+        unset($payload['cancellation_policy_tier']);
+
+        $response = $this->actingAs($user, 'sanctum')->post('/api/storeRooms', $payload);
+
+        $response->assertStatus(400);
+        $response->assertJsonValidationErrors(['cancellation_policy_tier']);
+        $this->assertDatabaseCount('storeRooms', 0);
+    }
+
     public function test_permit_with_wrong_mime_type_returns_400()
     {
         $user = User::factory()->create(['role' => 'landlord']);
@@ -229,7 +245,7 @@ class StoreRoomTest extends TestCase
         $response->assertStatus(400);
         $response->assertJsonValidationErrors(['firefighter_permit']);
         $this->assertDatabaseCount('storeRooms', 0);
-        Storage::disk('public')->assertDirectoryEmpty('firefighter_permits');
+        Storage::disk('private')->assertDirectoryEmpty('firefighter_permits');
     }
 
     public function test_permit_oversized_returns_400()
@@ -244,7 +260,7 @@ class StoreRoomTest extends TestCase
         $response->assertStatus(400);
         $response->assertJsonValidationErrors(['firefighter_permit']);
         $this->assertDatabaseCount('storeRooms', 0);
-        Storage::disk('public')->assertDirectoryEmpty('firefighter_permits');
+        Storage::disk('private')->assertDirectoryEmpty('firefighter_permits');
     }
 
     public function test_valid_permit_end_to_end_and_bracket_notation_prices()
@@ -263,7 +279,7 @@ class StoreRoomTest extends TestCase
         $permitPath = $response->json('item.firefighter_permit_path');
         $this->assertNotNull($permitPath);
         $this->assertStringStartsWith('firefighter_permits/', $permitPath);
-        Storage::disk('public')->assertExists($permitPath);
+        Storage::disk('private')->assertExists($permitPath);
 
         $this->assertDatabaseHas('store_prices', [
             'store_room_id' => $response->json('item.id'),

@@ -24,6 +24,7 @@ class StoreRooms extends Model
         'publication_status',
         'publication_date',
         'firefighter_permit_path',
+        'cancellation_policy_tier',
     ];
 
     public function landlord()

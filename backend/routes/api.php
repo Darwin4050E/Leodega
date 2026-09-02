@@ -18,6 +18,7 @@ use App\Http\Controllers\SecurityController;
 use App\Http\Controllers\SessionController;
 use App\Http\Controllers\StoreDisponibilityController;
 use App\Http\Controllers\StoreModerationController;
+use App\Http\Controllers\StorePermitController;
 use App\Http\Controllers\StorePhotoController;
 use App\Http\Controllers\StorePricesController;
 use App\Http\Controllers\StoreRoomsController;
@@ -214,4 +215,8 @@ Route::middleware('auth.api:sanctum')->delete('/account', [UserController::class
 
 Route::middleware('auth.api:sanctum')->group(function () {
     Route::get('/tenant/reservations', [ReservationsController::class, 'tenantIndex']);
+});
+
+Route::middleware(['auth.api:sanctum', 'role:admin'])->group(function () {
+    Route::get('/store-rooms/{storeRoom}/permit/download', [StorePermitController::class, 'download']);
 });

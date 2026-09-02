@@ -34,10 +34,14 @@ describe('storeRooms service', () => {
     expect(mockApi.get).toHaveBeenCalledWith('/store-rooms/2/detail');
   });
 
-  it('createStoreRoom posts the payload as-is to /storeRooms', () => {
-    const payload = { title: 'Bodega A' };
-    createStoreRoom(payload);
-    expect(mockApi.post).toHaveBeenCalledWith('/storeRooms', payload);
+  it('createStoreRoom posts FormData with multipart headers to /storeRooms', () => {
+    const formData = new FormData();
+    formData.append('title', 'Bodega A');
+    formData.append('firefighter_permit', new Blob([], { type: 'application/pdf' }));
+    createStoreRoom(formData);
+    expect(mockApi.post).toHaveBeenCalledWith('/storeRooms', formData, {
+      headers: { 'Content-Type': 'multipart/form-data' },
+    });
   });
 
   it('updateStoreRoom puts the payload to /storeRooms/:id', () => {
