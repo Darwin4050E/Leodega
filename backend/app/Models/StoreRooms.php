@@ -4,10 +4,12 @@ namespace App\Models;
 
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Database\Eloquent\SoftDeletes;
 
 class StoreRooms extends Model
 {
     use HasFactory;
+    use SoftDeletes;
 
     protected $table = 'storeRooms';
 
@@ -60,5 +62,19 @@ class StoreRooms extends Model
     public function reservations()
     {
         return $this->hasMany(Reservations::class, 'store_room_id');
+    }
+
+    /**
+     * Single blocking/counting predicate for deletion guard and listing
+     * counts: a reservation is "active" when it is confirmed and its
+     * end date has not yet passed. Reused by both
+     * StoreRoomDeletionService::delete() and every withCount('activeReservations')
+     * call site — never duplicate this predicate elsewhere.
+     */
+    public function activeReservations()
+    {
+        return $this->hasMany(Reservations::class, 'store_room_id')
+            ->where('status', 'confirmed')
+            ->whereDate('end_date', '>=', today());
     }
 }
