@@ -92,8 +92,14 @@ Route::middleware('auth.api:sanctum')->group(function () {
 Route::get('/storeRooms', [StoreRoomsController::class, 'index']);
 Route::get('/storeRooms/{id}', [StoreRoomsController::class, 'show']);
 Route::get('/store-rooms/{id}/detail', [StoreRoomsController::class, 'detail']);
-Route::middleware('auth.api:sanctum')->group(function () {
+// El registro (POST) queda restringido a landlords autenticados (HUG-04);
+// PUT/DELETE se mantienen en su propio grupo solo-auth porque PUT es el
+// camino de moderación admin (StoreModerationService::moderate) y no debe
+// exigir role:landlord.
+Route::middleware(['auth.api:sanctum', 'role:landlord'])->group(function () {
     Route::post('/storeRooms', [StoreRoomsController::class, 'store']);
+});
+Route::middleware('auth.api:sanctum')->group(function () {
     Route::put('/storeRooms/{id}', [StoreRoomsController::class, 'update']);
     Route::delete('/storeRooms/{id}', [StoreRoomsController::class, 'destroy']);
 });

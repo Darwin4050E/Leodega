@@ -23,6 +23,7 @@ class StoreRooms extends Model
         'security',
         'publication_status',
         'publication_date',
+        'firefighter_permit_path',
     ];
 
     public function landlord()
