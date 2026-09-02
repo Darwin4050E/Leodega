@@ -47,6 +47,32 @@ class AuthTest extends TestCase
         ]);
 
         $response->assertStatus(403);
+        $response->assertJsonPath('message', 'Tu cuenta ha sido suspendida. Contacta a soporte para más información');
+        $response->assertJsonMissingPath('token');
+    }
+
+    /**
+     * HUA-03 (AC2): el veredicto de cuenta bloqueada se resuelve antes que la
+     * validez de las credenciales, así que un bloqueado con contraseña
+     * incorrecta recibe exactamente la misma respuesta que con la correcta
+     * (sin enumeración de cuentas).
+     */
+    public function test_blocked_user_with_wrong_password_gets_the_same_suspended_response()
+    {
+        User::factory()->create([
+            'email' => 'bloqueado@leodega.com',
+            'password' => Hash::make('secret123'),
+            'state' => 'blocked',
+        ]);
+
+        $response = $this->postJson('/api/login', [
+            'email' => 'bloqueado@leodega.com',
+            'password' => 'contrasena-incorrecta',
+        ]);
+
+        $response->assertStatus(403);
+        $response->assertJsonPath('message', 'Tu cuenta ha sido suspendida. Contacta a soporte para más información');
+        $response->assertJsonMissingPath('token');
     }
 
     /**
