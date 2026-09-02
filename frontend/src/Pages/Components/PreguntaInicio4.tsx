@@ -92,15 +92,14 @@ const PreguntaInicio4: React.FC = () => {
   }, []);
 
 
-  const saveLocationData = (direction: string, cityValue: string, geographical_zone: string, positionCoords?: [number, number]) => {
+  const saveLocationData = (direction: string, cityValue: string, positionCoords?: [number, number]) => {
     const existingData = JSON.parse(localStorage.getItem("optionData") || "{}");
     const updatedData = {
       ...existingData,
       location: {
         direction,
         city: cityValue,
-        geographical_zone,
-        position: positionCoords || position
+        position: positionCoords || position,
       },
     };
 
@@ -147,15 +146,8 @@ const PreguntaInicio4: React.FC = () => {
       const direction = name || "";
       const city =
         address.city || address.town || address.village || address.county || "";
-      const geographical_zone =
-        address.state ||
-        address.region ||
-        address.state_district ||
-        address.province ||
-        address.suburb ||
-        "";
 
-      saveLocationData(direction, city, geographical_zone, [latNum, lonNum]);
+      saveLocationData(direction, city, [latNum, lonNum]);
     }
   };
 
@@ -170,11 +162,9 @@ const PreguntaInicio4: React.FC = () => {
       const address = data.address || {};
       const city =
         address.city || address.town || address.village || address.county || "";
-      const geographical_zone =
-        address.state || address.region || address.suburb || "";
 
       setSearch(direction);
-      saveLocationData(direction, city, geographical_zone, [lat, lon]);
+      saveLocationData(direction, city, [lat, lon]);
     } catch (err) {
       console.error("Error al obtener dirección desde coordenadas:", err);
     }
@@ -229,7 +219,7 @@ const PreguntaInicio4: React.FC = () => {
               id="city"
               type="text"
               value={city}
-              onChange={(e) => saveLocationData(search, e.target.value, "")}
+              onChange={(e) => saveLocationData(search, e.target.value)}
               placeholder="Se completa al elegir una sugerencia o marcar el mapa, o escríbela aquí"
               className="w-full p-3 border-2 border-gray-200 rounded-xl shadow-sm focus:outline-none focus:ring-2 focus:ring-purple-500 text-gray-800 placeholder-gray-400 transition-all"
             />
