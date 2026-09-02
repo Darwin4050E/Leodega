@@ -131,6 +131,17 @@ export default function SidebarAdmin(
                         })}
                     />
 
+                    {role === "admin" && (
+                        <SidebarItem
+                            label="Usuarios"
+                            active={activeItem === 'usuarios'}
+                            onClick={() => handleItemClick(() => {
+                                setActiveItem('usuarios');
+                                navigate(`${basePath}/usuarios`);
+                            })}
+                        />
+                    )}
+
                     <SidebarItem
                         label="Mensajes"
                         active={activeItem === 'mensajes'}
