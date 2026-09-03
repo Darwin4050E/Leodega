@@ -141,7 +141,7 @@ Route::middleware('auth.api:sanctum')->group(function () {
 Route::middleware('auth.api:sanctum')->group(function () {
     Route::post('/reservations', [ReservationsController::class, 'store']);
     Route::get('/landlord/reservations', [ReservationsController::class, 'landlordIndex']);
-    Route::patch('/landlord/reservations/{reservation}/status', [ReservationsController::class, 'updateStatus']);
+    Route::patch('/landlord/reservations/{reservation}/cancel', [ReservationsController::class, 'cancel']);
     Route::get('/storeRooms/{id}/reserved-dates', [ReservationsController::class, 'reservedDates']);
 });
 

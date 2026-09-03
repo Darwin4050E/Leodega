@@ -2,8 +2,8 @@
 
 namespace Tests\Feature;
 
-use App\Models\Landlords;
 use App\Models\Reservations;
+use App\Models\StorePrices;
 use App\Models\StoreRooms;
 use App\Models\Tenants;
 use App\Models\User;
@@ -20,13 +20,18 @@ class ReservationTest extends TestCase
         $user = User::factory()->create();
         $tenant = Tenants::factory()->create(['user_id' => $user->id]);
         $room = StoreRooms::factory()->create();
+        StorePrices::factory()->create([
+            'store_room_id' => $room->id,
+            'mode' => 'month',
+            'price' => 1000,
+            'disponibility' => true,
+        ]);
 
         $response = $this->actingAs($user, 'sanctum')
             ->postJson('/api/reservations', [
                 'store_room_id' => $room->id,
-                'start_date' => now()->addDays(1)->toDateString(),
-                'end_date' => now()->addDays(3)->toDateString(),
-                'total_mount' => 150,
+                'start_date' => '2026-02-01',
+                'end_date' => '2026-05-01',
             ]);
 
         $response->assertStatus(201);
@@ -35,6 +40,42 @@ class ReservationTest extends TestCase
             'store_room_id' => $room->id,
             'tenant_id' => $tenant->id,
             'status' => 'pending',
+            'rent_subtotal' => '3000.00',
+            'total_mount' => '4180.00',
+        ]);
+    }
+
+    /**
+     * Per decision obs #139: a client-supplied total_mount is IGNORED, not
+     * rejected. The server-computed total must win regardless.
+     */
+    /** @test */
+    public function client_supplied_total_mount_is_ignored_and_server_computes_the_real_total()
+    {
+        $user = User::factory()->create();
+        $tenant = Tenants::factory()->create(['user_id' => $user->id]);
+        $room = StoreRooms::factory()->create();
+        StorePrices::factory()->create([
+            'store_room_id' => $room->id,
+            'mode' => 'month',
+            'price' => 1000,
+            'disponibility' => true,
+        ]);
+
+        $response = $this->actingAs($user, 'sanctum')
+            ->postJson('/api/reservations', [
+                'store_room_id' => $room->id,
+                'start_date' => '2026-02-01',
+                'end_date' => '2026-05-01',
+                'total_mount' => 0,
+            ]);
+
+        $response->assertStatus(201);
+
+        $this->assertDatabaseHas('reservations', [
+            'store_room_id' => $room->id,
+            'tenant_id' => $tenant->id,
+            'total_mount' => '4180.00',
         ]);
     }
 
@@ -44,6 +85,12 @@ class ReservationTest extends TestCase
         $user = User::factory()->create();
         $tenant = Tenants::factory()->create(['user_id' => $user->id]);
         $room = StoreRooms::factory()->create();
+        StorePrices::factory()->create([
+            'store_room_id' => $room->id,
+            'mode' => 'month',
+            'price' => 1000,
+            'disponibility' => true,
+        ]);
 
         // Reserva confirmada existente
         Reservations::factory()->create([
@@ -58,7 +105,6 @@ class ReservationTest extends TestCase
                 'store_room_id' => $room->id,
                 'start_date' => '2026-02-05',
                 'end_date' => '2026-02-12',
-                'total_mount' => 200,
             ]);
 
         $response->assertStatus(409);
@@ -67,71 +113,71 @@ class ReservationTest extends TestCase
         ]);
     }
 
+    /** @test */
+    public function cannot_reserve_when_store_room_has_no_month_price()
+    {
+        $user = User::factory()->create();
+        Tenants::factory()->create(['user_id' => $user->id]);
+        $room = StoreRooms::factory()->create();
+
+        $response = $this->actingAs($user, 'sanctum')
+            ->postJson('/api/reservations', [
+                'store_room_id' => $room->id,
+                'start_date' => '2026-02-01',
+                'end_date' => '2026-05-01',
+            ]);
+
+        $response->assertStatus(422);
+        $this->assertDatabaseCount('reservations', 0);
+    }
+
     /**
-     * Fase 2: formaliza en ReservationsPolicy::updateStatus el check manual
-     * que antes vivía como `if` en el controlador.
+     * Old landlord-triggered confirm surface no longer exists: payment is
+     * now the only path to `confirmed`.
      */
-    public function test_landlord_who_owns_the_store_room_can_confirm_reservation()
+    /** @test */
+    public function old_status_route_no_longer_exists()
     {
         $landlordUser = User::factory()->create(['role' => 'landlord']);
-        $landlord = Landlords::factory()->create(['user_id' => $landlordUser->id]);
-        $room = StoreRooms::factory()->create(['landlord_id' => $landlord->id]);
-        $reservation = Reservations::factory()->create([
-            'store_room_id' => $room->id,
-            'status' => 'pending',
-        ]);
+        $reservation = Reservations::factory()->create(['status' => 'pending']);
 
         $response = $this->actingAs($landlordUser, 'sanctum')
             ->patchJson("/api/landlord/reservations/{$reservation->id}/status", [
                 'status' => 'confirmed',
             ]);
 
-        $response->assertStatus(200);
-        $this->assertDatabaseHas('reservations', [
-            'id' => $reservation->id,
-            'status' => 'confirmed',
-        ]);
+        $response->assertStatus(404);
     }
 
-    public function test_landlord_who_does_not_own_the_store_room_cannot_update_reservation_status()
-    {
-        $owner = User::factory()->create(['role' => 'landlord']);
-        $ownerLandlord = Landlords::factory()->create(['user_id' => $owner->id]);
-        $room = StoreRooms::factory()->create(['landlord_id' => $ownerLandlord->id]);
-        $reservation = Reservations::factory()->create([
-            'store_room_id' => $room->id,
-            'status' => 'pending',
-        ]);
-
-        $intruder = User::factory()->create(['role' => 'landlord']);
-        Landlords::factory()->create(['user_id' => $intruder->id]);
-
-        $response = $this->actingAs($intruder, 'sanctum')
-            ->patchJson("/api/landlord/reservations/{$reservation->id}/status", [
-                'status' => 'confirmed',
-            ]);
-
-        $response->assertStatus(403);
-        $this->assertDatabaseHas('reservations', [
-            'id' => $reservation->id,
-            'status' => 'pending',
-        ]);
-    }
-
-    public function test_user_without_landlord_profile_gets_404_updating_reservation_status()
+    /**
+     * Regression guard: reservedDates() queries `reservations` by
+     * store_room_id, a table StoreRooms's SoftDeletingScope never reaches.
+     * The endpoint resolves the room through findOrFail() first precisely so
+     * a soft-deleted storeroom yields a 404 instead of leaking the date
+     * ranges of its surviving past reservations. Replacing findOrFail() with
+     * a bare query would silently reintroduce that leak.
+     */
+    /** @test */
+    public function reserved_dates_returns_404_for_a_soft_deleted_store_room()
     {
         $user = User::factory()->create();
         $room = StoreRooms::factory()->create();
-        $reservation = Reservations::factory()->create([
+        Reservations::factory()->create([
             'store_room_id' => $room->id,
-            'status' => 'pending',
+            'status' => 'confirmed',
+            'start_date' => today()->subDays(60)->toDateString(),
+            'end_date' => today()->subDays(30)->toDateString(),
         ]);
 
-        $response = $this->actingAs($user, 'sanctum')
-            ->patchJson("/api/landlord/reservations/{$reservation->id}/status", [
-                'status' => 'confirmed',
-            ]);
+        $this->actingAs($user, 'sanctum')
+            ->getJson("/api/storeRooms/{$room->id}/reserved-dates")
+            ->assertStatus(200)
+            ->assertJsonCount(1);
 
-        $response->assertStatus(404);
+        $room->delete();
+
+        $this->actingAs($user, 'sanctum')
+            ->getJson("/api/storeRooms/{$room->id}/reserved-dates")
+            ->assertStatus(404);
     }
 }
