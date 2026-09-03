@@ -3,8 +3,9 @@
 namespace App\Http\Controllers;
 
 use App\Exceptions\ReservationConflictException;
+use App\Exceptions\ReservationPricingException;
+use App\Http\Requests\CancelReservationRequest;
 use App\Http\Requests\StoreReservationRequest;
-use App\Http\Requests\UpdateReservationStatusRequest;
 use App\Models\Landlords;
 use App\Models\Reservations;
 use App\Models\StoreRooms;
@@ -27,6 +28,8 @@ class ReservationsController extends Controller
             $reservation = $reservationService->create($tenant, $room, $data, auth()->id());
         } catch (ReservationConflictException $e) {
             return response()->json(['message' => $e->getMessage()], 409);
+        } catch (ReservationPricingException $e) {
+            return response()->json(['message' => $e->getMessage()], 422);
         }
 
         return response()->json([
@@ -51,7 +54,15 @@ class ReservationsController extends Controller
         return response()->json($items);
     }
 
-    public function updateStatus(UpdateReservationStatusRequest $request, Reservations $reservation, ReservationService $reservationService)
+    /**
+     * HUG-06: el landlord dueño de la bodega cancela una reserva pagada que
+     * aún no ha empezado. Reemplaza el antiguo updateStatus() -- el ramal
+     * "confirmed" murió (el pago es ahora el único camino a confirmed) y el
+     * ramal "canceled" cambió de forma (paid+futura, motivo obligatorio,
+     * obligación registrada) lo suficiente como para justificar un endpoint
+     * con nombre propio.
+     */
+    public function cancel(CancelReservationRequest $request, Reservations $reservation, ReservationService $reservationService)
     {
         $data = $request->validated();
 
@@ -60,22 +71,13 @@ class ReservationsController extends Controller
 
         $reservation->load('storeRooms');
 
-        Gate::authorize('updateStatus', [$reservation, $landlord]);
+        Gate::authorize('cancel', [$reservation, $landlord]);
 
-        if ($data['status'] === 'confirmed') {
-            try {
-                $reservation = $reservationService->confirm($reservation, auth()->id());
-            } catch (ReservationConflictException $e) {
-                return response()->json(['message' => $e->getMessage()], 409);
-            }
-
-            return response()->json([
-                'message' => 'Reserva confirmada y el resto bloqueado',
-                'reservation' => $reservation,
-            ]);
+        try {
+            $reservation = $reservationService->cancelByLandlord($reservation, $data['reason'], auth()->id());
+        } catch (ReservationConflictException $e) {
+            return response()->json(['message' => $e->getMessage()], 409);
         }
-
-        $reservation = $reservationService->cancel($reservation, $data['cancelation_reason'] ?? null, auth()->id());
 
         return response()->json([
             'message' => 'Reserva cancelada',
@@ -83,10 +85,17 @@ class ReservationsController extends Controller
         ]);
     }
 
+    /**
+     * Corrección: findOrFail() primero para que el SoftDeletingScope global
+     * de StoreRooms produzca un 404 real cuando la bodega fue eliminada (o
+     * nunca existió), en vez de un array vacío silencioso.
+     */
     public function reservedDates($storeRoomId)
     {
+        $room = StoreRooms::findOrFail($storeRoomId);
+
         $ranges = Reservations::select('start_date', 'end_date')
-            ->where('store_room_id', $storeRoomId)
+            ->where('store_room_id', $room->id)
             ->where('status', 'confirmed')
             ->orderBy('start_date')
             ->get();

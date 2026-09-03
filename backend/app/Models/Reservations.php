@@ -19,6 +19,7 @@ class Reservations extends Model
         'end_date',
         'status',
         'total_mount',
+        'rent_subtotal',
         'cancelation_reason',
         'creation_date',
     ];
