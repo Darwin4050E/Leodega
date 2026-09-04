@@ -4,6 +4,7 @@ import { getStoreRoomDetail, type StoreRoomDetail } from "../services/storeRooms
 import { getReservedDates, createReservation } from "../services/reservations";
 import { useAuth } from "../context/useAuth";
 import { asApiError } from "../api/errors";
+import { formatUSD } from "../utils/money";
 
 type ReservedRange = { start_date: string; end_date: string };
 
@@ -103,18 +104,22 @@ export default function LeodegaUI() {
     try {
       setSending(true);
 
-      await createReservation({
+      const response = await createReservation({
         store_room_id: Number(id),
         start_date: startDate,
         end_date: endDate,
-        total_mount: priceMonthly,
       });
 
       setOpenReserve(false);
       setStartDate("");
       setEndDate("");
 
-      alert("Solicitud enviada");
+      const serverTotal = response.data?.reservation?.total_mount;
+      alert(
+        serverTotal != null
+          ? `Solicitud enviada. Total: ${formatUSD(serverTotal, { suffix: true })}`
+          : "Solicitud enviada"
+      );
     } catch (e: unknown) {
       const err = asApiError(e);
       const status = err.response?.status;
