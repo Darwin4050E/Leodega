@@ -25,6 +25,7 @@ interface Bodega {
   room_type: string;
   image?: string;
   storePrices?: StorePrice[];
+  active_reservations_count?: number;
 }
 
 const BodegasArrendador = () => {
@@ -56,6 +57,10 @@ const BodegasArrendador = () => {
     };
     if (landlordId) fetchStore();
   }, [landlordId]);
+
+  const handleBodegaDeleted = (id: number) => {
+    setBodegas((prev) => prev.filter((bodega) => bodega.id !== id));
+  };
 
   const bodegasFiltradas = bodegas.filter((bodega) =>
     bodega.title.toLowerCase().includes(searchTerm.toLowerCase()) ||
@@ -95,6 +100,7 @@ const BodegasArrendador = () => {
             <BodegaCard
               key={bodega.id}
               {...bodega}
+              onDeleted={() => handleBodegaDeleted(bodega.id)}
             />
           );
         })}
