@@ -120,15 +120,22 @@ const GestorReservas = () => {
   }, [filtered]);
 
   const handleCancelled = (updated: LandlordReservation) => {
-    // cancelByLandlord() always records a cancellation obligation, so the
-    // resulting row is unconditionally "paid" with a refund owed -- the
-    // cancel endpoint's response does not carry payment_status /
-    // has_refund_obligation (only landlordIndex() computes those), so they
-    // are set explicitly here rather than re-fetching the whole list.
+    // Only landlordIndex() computes the derived fields, so the cancel
+    // response does not carry them and a plain spread would keep the stale
+    // ones from the list -- including can_be_cancelled: true, which would
+    // leave the cancel button on a reservation that was just cancelled.
+    // cancelByLandlord() always records an obligation, so the row is now
+    // paid, refund-owed, and never cancellable again.
     setReservations((prev) =>
       prev.map((r) =>
         r.id === updated.id
-          ? { ...r, ...updated, payment_status: "paid", has_refund_obligation: true }
+          ? {
+              ...r,
+              ...updated,
+              payment_status: "paid",
+              has_refund_obligation: true,
+              can_be_cancelled: false,
+            }
           : r
       )
     );
@@ -198,14 +205,7 @@ const GestorReservas = () => {
                 mismas fechas. No se cobró al cliente.
               </p>
             </div>
-          ) : (
-            <div className="bg-[#F0FDF4] border border-[#BBF7D0] rounded-lg px-3.5 py-3 flex gap-2.5 items-center">
-              <p className="text-[#15803D] text-xs m-0">
-                Reserva confirmada automáticamente al pagar (instant-book). No requiere tu
-                aprobación.
-              </p>
-            </div>
-          )}
+          ) : null}
 
           <div className="flex gap-2.5 mt-5 flex-wrap">
             <button className="flex items-center gap-1.5 px-4 py-2.5 bg-[#7551E9] text-white rounded-lg text-sm font-semibold">
@@ -243,9 +243,6 @@ const GestorReservas = () => {
       <div className="flex justify-between items-end mb-4 flex-wrap gap-2.5">
         <div>
           <h1 className="text-xl font-semibold text-gray-900 m-0">Reservas de mis bodegas</h1>
-          <p className="text-gray-500 text-sm mt-1">
-            Reservas confirmadas al instante. El pago confirma la renta — sin aprobación manual.
-          </p>
         </div>
       </div>
 
@@ -256,9 +253,12 @@ const GestorReservas = () => {
           ["Futuras", kpis.futuras, "#2563EB"],
           ["Cobrado (USD)", formatUSD(kpis.cobrado), "#B45309"],
         ].map(([label, value, color]) => (
-          <div key={label as string} className="bg-white rounded-xl px-4.5 py-4 border border-[#EDEEF2] shadow-sm">
-            <p className="text-xs text-gray-400 mb-1.5">{label}</p>
-            <p className="text-xl font-bold m-0" style={{ color: color as string }}>
+          <div
+            key={label as string}
+            className="bg-white rounded-xl px-[18px] py-[15px] border border-[#EDEEF2] shadow-sm"
+          >
+            <p className="text-xs text-[#9CA3AF] m-0 mb-1.5">{label}</p>
+            <p className="text-[22px] font-bold m-0 leading-none" style={{ color: color as string }}>
               {value}
             </p>
           </div>
@@ -329,7 +329,7 @@ const GestorReservas = () => {
                 {["#", "CLIENTE", "BODEGA", "PERÍODO", "VIGENCIA", "PAGO", "MONTO"].map((h) => (
                   <th
                     key={h}
-                    className="px-4.5 py-3 text-left font-semibold text-gray-500 text-[11px] tracking-wide whitespace-nowrap"
+                    className="px-[18px] py-[13px] text-left font-semibold text-gray-500 text-[11px] tracking-wide whitespace-nowrap"
                   >
                     {h}
                   </th>
@@ -346,22 +346,33 @@ const GestorReservas = () => {
                     onClick={() => setSelectedId(r.id)}
                     className="border-b border-gray-100 cursor-pointer hover:bg-[#F5F3FF]"
                   >
-                    <td className="px-4.5 py-3 text-gray-400 font-medium">{r.id}</td>
-                    <td className="px-4.5 py-3">
+                    <td className="px-[18px] py-[13px] text-gray-400 font-medium">{r.id}</td>
+                    <td className="px-[18px] py-[13px]">
                       <p className="font-semibold text-gray-900 m-0">{clienteNombre(r)}</p>
                       <p className="text-[11px] text-gray-400 mt-0.5">{r.tenants?.user?.email ?? ""}</p>
                     </td>
-                    <td className="px-4.5 py-3 text-gray-700">{r.storeRooms?.title ?? "Bodega"}</td>
-                    <td className="px-4.5 py-3 text-gray-500 whitespace-nowrap">
+                    <td className="px-[18px] py-[13px] text-gray-700">{r.storeRooms?.title ?? "Bodega"}</td>
+                    <td className="px-[18px] py-[13px] text-gray-500 whitespace-nowrap">
                       {r.start_date} → {r.end_date}
                     </td>
-                    <td className="px-4.5 py-3">
+                    <td className="px-[18px] py-[13px]">
                       <VigenciaBadge vigencia={vigencia} />
                     </td>
-                    <td className="px-4.5 py-3">
+                    <td className="px-[18px] py-[13px]">
                       <PagoBadge pago={pago} />
                     </td>
-                    <td className="px-4.5 py-3 font-bold text-gray-900 whitespace-nowrap">
+                    {/*
+                      A refunded reservation is money that left the gestor:
+                      Leodega returns it to the client and reclaims it. Red
+                      says that without a minus sign, which would imply the
+                      amount is subtracted somewhere -- "Cobrado" excludes
+                      refunded reservations rather than subtracting them.
+                    */}
+                    <td
+                      className={`px-[18px] py-[13px] font-bold whitespace-nowrap ${
+                        pago === "REEMBOLSADO" ? "text-[#B91C1C]" : "text-gray-900"
+                      }`}
+                    >
                       {formatUSD(r.total_mount ?? 0)}
                     </td>
                   </tr>
@@ -369,7 +380,7 @@ const GestorReservas = () => {
               })}
             </tbody>
           </table>
-          <div className="px-4.5 py-3 border-t border-gray-200 text-xs text-gray-400">
+          <div className="px-[18px] py-[13px] border-t border-gray-200 text-xs text-gray-400">
             Mostrando {filtered.length} de {reservations.length} reservas
           </div>
         </div>

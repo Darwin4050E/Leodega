@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { render, screen, fireEvent, waitFor } from '@testing-library/react';
+import { render, screen, fireEvent, waitFor, within } from '@testing-library/react';
 
 const mockGetLandlordReservations = vi.hoisted(() => vi.fn());
 const mockCancelReservation = vi.hoisted(() => vi.fn());
@@ -173,5 +173,56 @@ describe('GestorReservas', () => {
 
     fireEvent.click(screen.getByText('Ana Torres'));
     expect(screen.queryByText('Cancelar reserva')).not.toBeInTheDocument();
+  });
+
+  /**
+   * Regression: the cancel response does not carry the derived fields that
+   * only landlordIndex() computes, so a plain spread kept the stale
+   * `can_be_cancelled: true` from the list and left the button on a
+   * reservation that had just been cancelled. Found by hand, not by the
+   * suite — which is why it is pinned here.
+   */
+  it('removes the cancel button once the reservation has been cancelled', async () => {
+    mockGetCancellationRate.mockResolvedValue({ data: { rate: 0.15 } });
+
+    // The real endpoint returns a bare reservation: the derived fields are
+    // ABSENT, not undefined. The distinction is the whole bug — a spread
+    // overwrites a key set to undefined, but leaves a missing key alone, so
+    // the stale `can_be_cancelled: true` survived from the list.
+    const {
+      payment_status: _p,
+      has_refund_obligation: _h,
+      can_be_cancelled: _c,
+      ...bareReservation
+    } = reservations[0];
+
+    mockCancelReservation.mockResolvedValue({
+      data: {
+        message: 'Reserva cancelada',
+        reservation: {
+          ...bareReservation,
+          status: 'canceled',
+          cancelation_reason: 'El almacen sufrio un incendio',
+        },
+      },
+    });
+
+    render(<GestorReservas />);
+    await waitFor(() => screen.getAllByText('Bodega Norte'));
+
+    fireEvent.click(screen.getByText('Ana Torres'));
+    fireEvent.click(screen.getByText('Cancelar reserva'));
+
+    const dialog = await screen.findByRole('dialog');
+    fireEvent.change(within(dialog).getByRole('textbox'), {
+      target: { value: 'El almacen sufrio un incendio' },
+    });
+    fireEvent.click(within(dialog).getByRole('checkbox'));
+    fireEvent.click(within(dialog).getByText('Confirmar cancelación'));
+
+    await waitFor(() => expect(mockCancelReservation).toHaveBeenCalled());
+    await waitFor(() =>
+      expect(screen.queryByText('Cancelar reserva')).not.toBeInTheDocument()
+    );
   });
 });
