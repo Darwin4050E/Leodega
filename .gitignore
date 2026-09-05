@@ -13,3 +13,4 @@ dev.sh
 .env
 *.env
 .env.local
+backend/seed-demo.php

@@ -159,13 +159,7 @@ class ReservationService
      */
     public function cancelByLandlord(Reservations $reservation, string $reason, ?int $actingUserId): Reservations
     {
-        $isEligible = $reservation->status === 'confirmed'
-            && $reservation->rent_subtotal !== null
-            && Reservations::where('id', $reservation->id)
-                ->whereDate('start_date', '>', today())
-                ->exists();
-
-        if (! $isEligible) {
+        if (! $reservation->isCancellableByLandlord()) {
             throw new ReservationConflictException(
                 'Esta reserva no puede cancelarse: debe estar pagada y no haber iniciado.'
             );

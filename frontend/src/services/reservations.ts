@@ -6,6 +6,17 @@ export interface LandlordReservation {
   start_date: string;
   end_date: string;
   store_room_id: number;
+  rent_subtotal: string | number | null;
+  total_mount: string | number | null;
+  cancelation_reason: string | null;
+  payment_status: "paid" | "pending";
+  has_refund_obligation: boolean;
+  /**
+   * Server-computed cancel eligibility, from the same method the cancel guard
+   * enforces. Authoritative — never re-derive it client-side, or the button
+   * and the endpoint will disagree across a timezone boundary.
+   */
+  can_be_cancelled: boolean;
   storeRooms?: {
     id?: number;
     title?: string;
@@ -32,11 +43,19 @@ export function createReservation(data: {
   store_room_id: number;
   start_date: string;
   end_date: string;
-  total_mount: number;
 }) {
-  return api.post("/reservations", data);
+  return api.post<{ message: string; reservation: LandlordReservation }>("/reservations", data);
 }
 
-export function updateReservationStatus(id: number | string, data: Record<string, unknown>) {
-  return api.patch(`/landlord/reservations/${id}/status`, data);
+export function cancelReservation(id: number | string, data: { reason: string }) {
+  return api.patch<{ message: string; reservation: LandlordReservation }>(
+    `/landlord/reservations/${id}/cancel`,
+    data
+  );
+}
+
+export function getCancellationRate() {
+  return api.get<{ gestor_cancellation_penalty_rate: number }>(
+    "/landlord/reservations/cancellation-rate"
+  );
 }

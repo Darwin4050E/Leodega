@@ -39,6 +39,7 @@ export interface StoreRoomSummary {
   rating_avg?: number;
   rating_count?: number;
   image?: string | null;
+  active_reservations_count?: number;
 }
 
 export function getStoreRooms() {
@@ -67,4 +68,8 @@ export function uploadStoreRoomPhotos(storeRoomId: number | string, formData: Fo
   return api.post(`/store-rooms/${storeRoomId}/photos`, formData, {
     headers: { "Content-Type": "multipart/form-data" },
   });
+}
+
+export function deleteStoreRoom(id: number | string) {
+  return api.delete(`/storeRooms/${id}`);
 }
