@@ -2,19 +2,26 @@
 
 namespace App\Http\Controllers;
 
+use App\Exceptions\ReservationConflictException;
 use App\Http\Requests\StoreStoreRoomRequest;
 use App\Http\Requests\UpdateStoreRoomRequest;
 use App\Models\Landlords;
 use App\Models\Ratings;
 use App\Models\StoreRooms;
 use App\Services\StoreModerationService;
+use App\Services\StoreRoomDeletionService;
+use App\Services\StoreRoomService;
 use Illuminate\Http\Request;
+use Illuminate\Support\Arr;
+use Illuminate\Support\Facades\Gate;
+use Illuminate\Validation\ValidationException;
 
 class StoreRoomsController extends ApiController
 {
     public function index()
     {
         return StoreRooms::with(['storePrices', 'storePhotos', 'landlord.user'])
+            ->withCount('activeReservations')
             ->get()
             ->map(function ($room) {
                 $ratings = Ratings::where('store_id', $room->id);
@@ -39,6 +46,7 @@ class StoreRoomsController extends ApiController
                     'store_prices' => $room->storePrices,
                     'rating_avg' => $avg,
                     'rating_count' => $count,
+                    'active_reservations_count' => $room->active_reservations_count,
                     'image' => $room->storePhotos->first()
                         ? asset('storage/'.$room->storePhotos->first()->photo_url)
                         : null,
@@ -51,9 +59,47 @@ class StoreRoomsController extends ApiController
         return $this->showModel(StoreRooms::class, $id);
     }
 
-    public function store(Request $request)
+    /**
+     * HUG-04: ya no delega en el motor genérico storeModel (D1). El request
+     * multipart trae, además de los campos planos, el archivo del permiso
+     * de bomberos y los precios anidados como notación de corchetes
+     * (storePrices[0][mode], storePrices[0][price], storePrices[0][disponibility]).
+     * PHP/Laravel parsean esa notación de forma nativa, así que
+     * $request->input('storePrices') devuelve el mismo array anidado que
+     * antes bajo JSON (D12) — no se necesita parseo adicional aquí.
+     */
+    public function store(StoreStoreRoomRequest $request, StoreRoomService $service)
     {
-        return $this->storeModel($request, StoreRooms::class, (new StoreStoreRoomRequest)->rules());
+        $landlord = Landlords::where('user_id', $request->user()->id)->first();
+
+        if (! $landlord) {
+            return response()->json([
+                'message' => 'No tienes un registro de landlord asociado a tu cuenta',
+                'status' => 403,
+            ], 403);
+        }
+
+        try {
+            $room = $service->register(
+                $landlord,
+                Arr::except($request->validated(), ['firefighter_permit']),
+                $request->input('storePrices'),
+                $request->file('firefighter_permit'),
+                auth()->id()
+            );
+        } catch (ValidationException $e) {
+            return response()->json([
+                'message' => 'Validation Error',
+                'errors' => $e->errors(),
+                'status' => 400,
+            ], 400);
+        }
+
+        return response()->json([
+            'item' => $room,
+            'message' => 'Item created successfully',
+            'status' => 201,
+        ], 201);
     }
 
     /**
@@ -103,9 +149,28 @@ class StoreRoomsController extends ApiController
         return $this->updateModel($request, StoreRooms::class, $id, (new UpdateStoreRoomRequest)->rules());
     }
 
-    public function destroy($id)
+    /**
+     * Guarded soft delete: only the owning landlord may delete, and only
+     * when the storeroom has no active/future confirmed reservation.
+     */
+    public function destroy($id, StoreRoomDeletionService $deletionService)
     {
-        return $this->destroyModel(StoreRooms::class, $id);
+        $room = StoreRooms::find($id);
+        if (! $room) {
+            return response()->json(['message' => 'Bodega no encontrada', 'status' => 404], 404);
+        }
+
+        $landlord = Landlords::where('user_id', auth()->id())->firstOrFail();
+
+        Gate::authorize('delete', [$room, $landlord]);
+
+        try {
+            $deletionService->delete($room);
+        } catch (ReservationConflictException $e) {
+            return response()->json(['message' => $e->getMessage()], 409);
+        }
+
+        return response()->json(['message' => 'Bodega eliminada correctamente', 'status' => 200], 200);
     }
 
     public function getByLandlord($landlordId)
@@ -116,6 +181,7 @@ class StoreRoomsController extends ApiController
         }
 
         $storeRooms = StoreRooms::with(['storePrices', 'storePhotos', 'storeDisponibility'])
+            ->withCount('activeReservations')
             ->where('landlord_id', $landlordId)
             ->get()
             ->map(function ($room) {
@@ -131,6 +197,7 @@ class StoreRoomsController extends ApiController
                     'storage_type' => $room->storage_type,
                     'room_type' => $room->room_type,
                     'store_prices' => $room->storePrices,
+                    'active_reservations_count' => $room->active_reservations_count,
                     'image' => $firstPhoto ? asset('storage/'.$firstPhoto->photo_url) : null,
                 ];
             });
@@ -148,7 +215,7 @@ class StoreRoomsController extends ApiController
             'storePrices',
             'storePhotos',
             'landlord.user',
-        ])->find($id);
+        ])->withCount('activeReservations')->find($id);
 
         if (! $room) {
             return response()->json(['message' => 'Bodega no encontrada'], 404);
@@ -164,6 +231,7 @@ class StoreRoomsController extends ApiController
             'security' => $room->security,
             'room_type' => $room->room_type,
             'storage_type' => $room->storage_type,
+            'active_reservations_count' => $room->active_reservations_count,
 
             'prices' => $room->storePrices,
 

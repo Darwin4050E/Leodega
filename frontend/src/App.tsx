@@ -1,5 +1,6 @@
 import { BrowserRouter as Router, Routes, Route } from 'react-router-dom'
 import { AuthProvider } from './context/AuthContext'
+import { WizardProvider } from './context/WizardContext'
 import './App.css'
 import Header from './Components/Header'
 import Hero from './Components/Hero'
@@ -39,7 +40,8 @@ import Consulta from './Components/Consulta'
 import Detalles from './Dashboard/Detalles'
 import Reportes from './Dashboard/Reportes'
 import UsuariosAdmin from './Dashboard/UsuariosAdmin'
-import SolicitudesL from './Dashboard/SolicitudesL'
+import GestorReservas from './Dashboard/GestorReservas/GestorReservas'
+import { Outlet } from 'react-router-dom'
 import Protected from './Routes/Protected'
 import Role from './Routes/Role'
 import PagePrincipal from './Dashboard/Tendant/PagePrincipal'
@@ -53,16 +55,20 @@ function App() {
         <Route path="/register" element={<Register />} />
         <Route path="/verifyCode" element={<VerifyCode />} />
         <Route path="/login" element={<Login />} />
-        <Route path="/preguntainicio1" element={<PreguntaInicio1 />} />
-        <Route path="/preguntainicio2" element={<PreguntaInicio2 />} />
-        <Route path="/preguntainicio3" element={<PreguntaInicio3 />} />
+        {/* Wizard routes share a single WizardProvider instance so File objects
+            (photos, permit) survive step navigation without serialization. */}
+        <Route element={<WizardProvider><Outlet /></WizardProvider>}>
+          <Route path="/preguntainicio1" element={<PreguntaInicio1 />} />
+          <Route path="/preguntainicio2" element={<PreguntaInicio2 />} />
+          <Route path="/preguntainicio3" element={<PreguntaInicio3 />} />
+          <Route path="/preguntainicio4" element={<PreguntaInicio4 />} />
+          <Route path="/preguntainicio5" element={<PreguntaInicio5 />} />
+          <Route path="/preguntainicio6" element={<PreguntaInicio6 />} />
+          <Route path="/preguntainicio7" element={<PreguntaInicio7 />} />
+        </Route>
         <Route path="/decision" element={<Decision />} />
         <Route path="/resetpassword" element={<ResetPassword />} />
         <Route path="/reset-password" element={<NewPassword />} />
-        <Route path="/preguntainicio4" element={<PreguntaInicio4 />} />
-        <Route path="/preguntainicio5" element={<PreguntaInicio5 />} />
-        <Route path="/preguntainicio6" element={<PreguntaInicio6 />} />
-        <Route path="/preguntainicio7" element={<PreguntaInicio7 />} />
         <Route element={<Protected />}>
           <Route element={<Layout />}>
             {/* ROLES PROTEGIDOS */}
@@ -85,7 +91,7 @@ function App() {
               <Route path="/admin/calendario" element={<Calendario />} />
               
               <Route path="/arrendador/mensajes" element={<Mensajes />} />
-              <Route path="/arrendador/solicitudes" element={<SolicitudesL />} />
+              <Route path="/arrendador/solicitudes" element={<GestorReservas />} />
               <Route path="/arrendador/settings" element={<Settings />} />
               <Route path="/arrendador/calendario" element={<Calendario />} />
             </Route>

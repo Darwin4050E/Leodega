@@ -29,6 +29,6 @@ class Landlords extends Model
 
     public function cancelationPolicies()
     {
-        return $this->hasMany(cancelations_polices::class, 'landlord_id');
+        return $this->hasMany(CancelationsPolices::class, 'landlord_id');
     }
 }
