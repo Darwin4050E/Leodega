@@ -4,6 +4,7 @@ namespace Tests\Feature;
 
 use App\Models\Landlords;
 use App\Models\StorePhoto;
+use App\Models\StoreRooms;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Http\UploadedFile;
@@ -386,5 +387,68 @@ class StoreRoomTest extends TestCase
         $response->assertStatus(200);
         $this->assertIsString($response->json('security'));
         $this->assertSame($stored, $response->json('security'));
+    /**
+     * HUL-03 escenario 3: el mismo gestor no puede publicar dos bodegas con
+     * el mismo título; la segunda solicitud se rechaza sin registrar nada.
+     */
+    public function test_duplicate_title_for_same_landlord_is_rejected()
+    {
+        $user = User::factory()->create(['role' => 'landlord']);
+        $landlord = Landlords::factory()->create(['user_id' => $user->id]);
+        StoreRooms::factory()->create([
+            'landlord_id' => $landlord->id,
+            'title' => 'Bodega Central Norte',
+        ]);
+
+        $response = $this->actingAs($user, 'sanctum')
+            ->post('/api/storeRooms', $this->validPayload(['title' => 'Bodega Central Norte']));
+
+        $response->assertStatus(400);
+        $response->assertJsonPath(
+            'errors.title.0',
+            'Ya tienes una bodega publicada con ese nombre. Elige otro nombre para continuar.'
+        );
+        $this->assertDatabaseCount('storeRooms', 1);
+    }
+
+    /**
+     * El alcance del título único es por gestor: dos gestores distintos
+     * pueden publicar bodegas con el mismo nombre.
+     */
+    public function test_same_title_is_allowed_for_a_different_landlord()
+    {
+        $otherLandlord = Landlords::factory()->create();
+        StoreRooms::factory()->create([
+            'landlord_id' => $otherLandlord->id,
+            'title' => 'Bodega Central Norte',
+        ]);
+
+        $user = User::factory()->create(['role' => 'landlord']);
+        Landlords::factory()->create(['user_id' => $user->id]);
+
+        $response = $this->actingAs($user, 'sanctum')
+            ->post('/api/storeRooms', $this->validPayload(['title' => 'Bodega Central Norte']));
+
+        $response->assertStatus(201);
+        $this->assertDatabaseCount('storeRooms', 2);
+    }
+
+    /**
+     * Un nombre liberado al eliminar una bodega (HUG-07, soft delete) puede
+     * volver a usarse: la regla ignora las filas con deleted_at.
+     */
+    public function test_title_of_a_soft_deleted_room_can_be_reused()
+    {
+        $user = User::factory()->create(['role' => 'landlord']);
+        $landlord = Landlords::factory()->create(['user_id' => $user->id]);
+        StoreRooms::factory()->create([
+            'landlord_id' => $landlord->id,
+            'title' => 'Bodega Central Norte',
+        ])->delete();
+
+        $response = $this->actingAs($user, 'sanctum')
+            ->post('/api/storeRooms', $this->validPayload(['title' => 'Bodega Central Norte']));
+
+        $response->assertStatus(201);
     }
 }
