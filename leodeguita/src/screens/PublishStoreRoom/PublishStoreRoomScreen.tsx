@@ -89,7 +89,7 @@ export default function PublishStoreRoomScreen() {
           )}
         </div>
         <div className="shrink-0 px-5 pb-8">
-          <Button onClick={() => navigate('/', { replace: true })}>
+          <Button onClick={() => navigate('/mis-bodegas', { replace: true })}>
             Ir a mis bodegas
           </Button>
         </div>

@@ -4,6 +4,7 @@ import Protected from './routes/Protected'
 import LoginScreen from './screens/LoginScreen'
 import HomeScreen from './screens/HomeScreen'
 import PublishStoreRoomScreen from './screens/PublishStoreRoom/PublishStoreRoomScreen'
+import MyStoreRoomsScreen from './screens/MyStoreRooms/MyStoreRoomsScreen'
 
 export default function App() {
   return (
@@ -14,6 +15,7 @@ export default function App() {
           <Route element={<Protected />}>
             <Route path="/" element={<HomeScreen />} />
             <Route path="/publicar" element={<PublishStoreRoomScreen />} />
+            <Route path="/mis-bodegas" element={<MyStoreRoomsScreen />} />
           </Route>
           <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>

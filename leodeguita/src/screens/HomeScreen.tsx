@@ -47,6 +47,15 @@ export default function HomeScreen() {
           </button>
         )}
 
+        {user?.role === 'landlord' && (
+          <button
+            onClick={() => navigate('/mis-bodegas')}
+            className="mt-3 w-full rounded-lg bg-leodega_p py-2.5 text-sm font-semibold text-white"
+          >
+            Mis bodegas
+          </button>
+        )}
+
         <p className="mt-8 text-sm text-gray-400">
           Pantalla principal en construcción.
         </p>
