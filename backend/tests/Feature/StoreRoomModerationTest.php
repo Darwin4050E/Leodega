@@ -172,10 +172,18 @@ class StoreRoomModerationTest extends TestCase
         ]);
     }
 
+    /**
+     * REMOVED requirement "Public Listing Returns All Statuses To Any
+     * Caller" (spec #162): this test used to lock in a data leak — an
+     * anonymous caller received `pending` and `rejected` storerooms. It is
+     * rewritten to assert the corrected, role-filtered behaviour: an
+     * anonymous caller only ever sees `approved` storerooms. The full role
+     * matrix (tenant, owning landlord, admin, non-owning landlord) lives in
+     * StoreRoomVisibilityTest.
+     */
     /** @test */
-    public function public_store_rooms_endpoint_returns_store_rooms_with_different_publication_statuses()
+    public function public_store_rooms_endpoint_returns_only_approved_store_rooms_for_anonymous_callers()
     {
-        // Crear bodegas con distintos estados
         StoreRooms::factory()->create([
             'publication_status' => 'approved',
         ]);
@@ -194,12 +202,8 @@ class StoreRoomModerationTest extends TestCase
         // Assert
         $response->assertStatus(200);
 
-        $response->assertJsonFragment([
-            'publication_status' => 'approved',
-        ]);
+        $statuses = collect($response->json())->pluck('publication_status')->unique()->values()->all();
 
-        $response->assertJsonFragment([
-            'publication_status' => 'pending',
-        ]);
+        $this->assertSame(['approved'], $statuses);
     }
 }

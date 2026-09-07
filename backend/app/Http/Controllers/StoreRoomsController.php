@@ -21,8 +21,16 @@ class StoreRoomsController extends ApiController
 {
     public function index()
     {
+        // Resolved explicitly via the sanctum guard, never bare auth()->user():
+        // this route stays unmiddlewared (the public catalog must remain
+        // anonymously reachable), and config/auth.php sets the default guard
+        // to `web`, so a bare call would silently return null for a valid
+        // Bearer token and downgrade an admin to the anonymous branch.
+        $viewer = auth('sanctum')->user();
+
         return StoreRooms::with(['storePrices', 'storePhotos', 'landlord.user'])
             ->withCount('activeReservations')
+            ->visibleTo($viewer)
             ->get()
             ->map(function ($room) {
                 $ratings = Ratings::where('store_id', $room->id);
@@ -231,9 +239,14 @@ class StoreRoomsController extends ApiController
             return response()->json(['message' => 'Landlord no encontrado'], 404);
         }
 
+        // Same guard-resolution rule as index(): auth('sanctum')->user(),
+        // never bare auth()->user() — see the comment there.
+        $viewer = auth('sanctum')->user();
+
         $storeRooms = StoreRooms::with(['storePrices', 'storePhotos', 'storeDisponibility'])
             ->withCount('activeReservations')
             ->where('landlord_id', $landlordId)
+            ->visibleTo($viewer, (int) $landlordId)
             ->get()
             ->map(function ($room) {
                 $firstPhoto = $room->storePhotos->first();
