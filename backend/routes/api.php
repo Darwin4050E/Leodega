@@ -112,6 +112,9 @@ Route::middleware(['auth.api:sanctum', 'role:landlord'])->group(function () {
 Route::middleware('auth.api:sanctum')->group(function () {
     Route::put('/storeRooms/{id}', [StoreRoomsController::class, 'update']);
     Route::delete('/storeRooms/{id}', [StoreRoomsController::class, 'destroy']);
+    // SDD 2: explicit resubmission action for a rejected listing's owning
+    // gestor (decision #172.1). Empty body — see StoreRoomsController::resubmit().
+    Route::post('/storeRooms/{id}/resubmit', [StoreRoomsController::class, 'resubmit']);
 });
 
 Route::get('/storePrices', [StorePricesController::class, 'index']);

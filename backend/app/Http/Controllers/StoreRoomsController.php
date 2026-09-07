@@ -3,6 +3,7 @@
 namespace App\Http\Controllers;
 
 use App\Exceptions\ReservationConflictException;
+use App\Exceptions\StoreRoomResubmissionException;
 use App\Http\Requests\EditStoreRoomListingRequest;
 use App\Http\Requests\ModerationDecisionRules;
 use App\Http\Requests\StoreStoreRoomRequest;
@@ -234,6 +235,41 @@ class StoreRoomsController extends ApiController
         }
 
         return response()->json(['message' => 'Bodega eliminada correctamente', 'status' => 200], 200);
+    }
+
+    /**
+     * SDD 2, decision #172.1/addendum #174.3: explicit, empty-body state
+     * transition for a rejected listing's owning gestor. Deliberately
+     * separate from editListing() — the gestor edits fields there first,
+     * then calls this as its own action, never accepting listing fields.
+     *
+     * Ownership (403) and "not currently rejected" (409) are two SEPARATE
+     * failures per spec #175: StoreRoomsPolicy::resubmit() checks ownership
+     * ONLY, and StoreRoomService::resubmit() throws the 409 conflict. Do
+     * NOT collapse these into one gate/response.
+     */
+    public function resubmit($id, StoreRoomService $service)
+    {
+        $storeRoom = StoreRooms::find($id);
+        if (! $storeRoom) {
+            return response()->json(['message' => 'Bodega no encontrada', 'status' => 404], 404);
+        }
+
+        $landlord = Landlords::where('user_id', auth()->id())->firstOrFail();
+
+        Gate::authorize('resubmit', [$storeRoom, $landlord]);
+
+        try {
+            $room = $service->resubmit($storeRoom, auth()->id());
+        } catch (StoreRoomResubmissionException $e) {
+            return response()->json(['message' => $e->getMessage()], $e->statusCode);
+        }
+
+        return response()->json([
+            'data' => $room,
+            'message' => 'La bodega fue reenviada a revisión.',
+            'status' => 200,
+        ], 200);
     }
 
     public function getByLandlord($landlordId)

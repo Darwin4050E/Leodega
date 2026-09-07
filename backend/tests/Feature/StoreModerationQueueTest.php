@@ -196,4 +196,48 @@ class StoreModerationQueueTest extends TestCase
         $response->assertStatus(200);
         $response->assertJsonPath('permit_attached', false);
     }
+
+    // -- moderation_history (additive, SDD 2) ------------------------------
+
+    public function test_moderation_detail_history_is_empty_for_a_room_with_no_prior_decisions(): void
+    {
+        $admin = $this->makeUser('admin');
+        $storeRoom = StoreRooms::factory()->create();
+
+        $response = $this->actingAs($admin, 'sanctum')
+            ->getJson("/api/store-rooms/{$storeRoom->id}/moderation-detail");
+
+        $response->assertStatus(200);
+        $response->assertJsonPath('moderation_history', []);
+    }
+
+    public function test_moderation_detail_shows_prior_rejection_newest_first(): void
+    {
+        $admin = $this->makeUser('admin');
+        $storeRoom = StoreRooms::factory()->create();
+
+        $storeRoom->moderations()->create([
+            'status' => 'rejected',
+            'reason_code' => 'fotos',
+            'reason_rejected' => 'Fotos borrosas',
+            'admin_id' => $admin->id,
+            'moderation_date' => now()->subDays(2),
+        ]);
+        $storeRoom->moderations()->create([
+            'status' => 'rejected',
+            'reason_code' => 'info',
+            'reason_rejected' => 'Descripción incompleta',
+            'admin_id' => $admin->id,
+            'moderation_date' => now()->subDay(),
+        ]);
+
+        $response = $this->actingAs($admin, 'sanctum')
+            ->getJson("/api/store-rooms/{$storeRoom->id}/moderation-detail");
+
+        $response->assertStatus(200);
+        $response->assertJsonPath('moderation_history.0.reason_code', 'info');
+        $response->assertJsonPath('moderation_history.0.reason_rejected', 'Descripción incompleta');
+        $response->assertJsonPath('moderation_history.0.admin_id', $admin->id);
+        $response->assertJsonPath('moderation_history.1.reason_code', 'fotos');
+    }
 }

@@ -15,6 +15,11 @@ use Illuminate\Http\Resources\Json\JsonResource;
  *
  * `security` comes from the SecurityFeatures cast already normalised on
  * the model, so this resource never touches the raw JSON string.
+ *
+ * `moderation_history` (additive, SDD 2): full prior decision history for
+ * this store room, newest first, sourced from `StoreRooms::moderations()`.
+ * Every field asserted by `StoreModerationQueueTest.php` today stays
+ * unchanged; this is a new top-level key only.
  */
 class StoreRoomModerationDetailResource extends JsonResource
 {
@@ -22,6 +27,19 @@ class StoreRoomModerationDetailResource extends JsonResource
     {
         $monthlyPrice = $this->storePrices->firstWhere('mode', 'month');
         $price = $monthlyPrice?->price ? (float) $monthlyPrice->price : 0.0;
+
+        // Ordering (newest first) is applied by the eager-load constraint in
+        // StoreModerationQueueController::moderationDetail() — this resource
+        // only maps the already-ordered collection.
+        $history = $this->moderations
+            ->map(fn ($moderation) => [
+                'status' => $moderation->status,
+                'reason_code' => $moderation->reason_code,
+                'reason_rejected' => $moderation->reason_rejected,
+                'admin_id' => $moderation->admin_id,
+                'moderation_date' => $moderation->moderation_date,
+                'permit_waived_at' => $moderation->permit_waived_at,
+            ]);
 
         return [
             'id' => $this->id,
@@ -44,6 +62,7 @@ class StoreRoomModerationDetailResource extends JsonResource
             'cancellation_policy_tier' => $this->cancellation_policy_tier,
             'security' => $this->security,
             'permit_attached' => ! is_null($this->firefighter_permit_path),
+            'moderation_history' => $history->values(),
         ];
     }
 }

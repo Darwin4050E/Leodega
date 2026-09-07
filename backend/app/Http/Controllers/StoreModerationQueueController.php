@@ -41,7 +41,12 @@ class StoreModerationQueueController extends Controller
 
     public function moderationDetail($id)
     {
-        $room = StoreRooms::with(['storePrices', 'storePhotos', 'landlord.user'])->find($id);
+        $room = StoreRooms::with([
+            'storePrices',
+            'storePhotos',
+            'landlord.user',
+            'moderations' => fn ($query) => $query->orderByDesc('moderation_date')->orderByDesc('id'),
+        ])->find($id);
 
         if (! $room) {
             return response()->json(['message' => 'Bodega no encontrada', 'status' => 404], 404);

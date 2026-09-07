@@ -39,4 +39,19 @@ class StoreRoomsPolicy
     {
         return $room->landlord_id === $landlord->id;
     }
+
+    /**
+     * Ownership ONLY (spec #175 "store-room-resubmission", design decision
+     * #5). The "room is not currently rejected" precondition is a SEPARATE
+     * state-conflict check that lives in StoreRoomService::resubmit() and
+     * throws StoreRoomResubmissionException::conflict() (409) — it must
+     * NEVER be folded into this policy, so SDD 3's UI can distinguish "you
+     * cannot touch this listing" (403) from "nothing to resubmit" (409).
+     *
+     * @SuppressWarnings(PHPMD.UnusedFormalParameter)
+     */
+    public function resubmit(User $user, StoreRooms $room, Landlords $landlord): bool
+    {
+        return $room->landlord_id === $landlord->id;
+    }
 }

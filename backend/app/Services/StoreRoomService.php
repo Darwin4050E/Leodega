@@ -3,6 +3,7 @@
 namespace App\Services;
 
 use App\Enums\NotificationType;
+use App\Exceptions\StoreRoomResubmissionException;
 use App\Http\Requests\StoreStorePricesRequest;
 use App\Models\Landlords;
 use App\Models\StoreRooms;
@@ -68,7 +69,39 @@ class StoreRoomService
             throw $e;
         }
 
-        $this->notifyAdmins($actingUserId, $room);
+        $this->notifyAdmins($actingUserId, $room, NotificationType::STORE_CREATED, 'Nueva bodega pendiente de verificación');
+
+        return $room;
+    }
+
+    /**
+     * SDD 2, decision #5: pure state transition, `rejected` -> `pending`.
+     * No listing field is touched here — the gestor edits through
+     * updateListing()/editListing() first, then calls this as a separate
+     * explicit action (addendum #174.3). No new `store_moderation` row is
+     * written: this table records admin decisions, and a resubmission is a
+     * gestor self-service action with no decision attached; prior rows
+     * survive untouched.
+     *
+     * @throws StoreRoomResubmissionException 409 when the room is not
+     *                                         currently `rejected`
+     */
+    public function resubmit(StoreRooms $room, int $actingUserId): StoreRooms
+    {
+        if ($room->publication_status !== 'rejected') {
+            throw StoreRoomResubmissionException::conflict('La bodega no está rechazada; no hay nada que reenviar.');
+        }
+
+        $room = DB::transaction(function () use ($room) {
+            $room->update(['publication_status' => 'pending']);
+
+            return $room->fresh();
+        });
+
+        // Post-commit, best-effort fan-out — mirrors register()'s own
+        // notifyAdmins() call: a transient notification failure must never
+        // roll back a resubmission the gestor is otherwise entitled to make.
+        $this->notifyAdmins($actingUserId, $room, NotificationType::STORE_RESUBMITTED, 'Bodega reenviada a revisión');
 
         return $room;
     }
@@ -166,7 +199,12 @@ class StoreRoomService
         Validator::make(['storePrices' => $prices], $rules)->validate();
     }
 
-    private function notifyAdmins(int $actingUserId, StoreRooms $room): void
+    /**
+     * Generalized in SDD 2 (task B4) to accept the notification type/title,
+     * so both register() (STORE_CREATED) and resubmit() (STORE_RESUBMITTED)
+     * share this one admin fan-out instead of duplicating it.
+     */
+    private function notifyAdmins(int $actingUserId, StoreRooms $room, NotificationType $type, string $title): void
     {
         try {
             $admins = User::where('role', 'admin')->get();
@@ -175,8 +213,8 @@ class StoreRoomService
                 NotificationService::send(
                     $actingUserId,
                     $admin->id,
-                    NotificationType::STORE_CREATED,
-                    'Nueva bodega pendiente de verificación',
+                    $type,
+                    $title,
                     $room->title,
                     ['store_room_id' => $room->id]
                 );
@@ -184,8 +222,9 @@ class StoreRoomService
         } catch (\Throwable $e) {
             // Post-commit: un fallo de notificación nunca revierte ni borra
             // la bodega/permiso ya persistidos (D5).
-            Log::warning('Fallo al notificar creación de bodega', [
+            Log::warning('Fallo al notificar evento de bodega', [
                 'store_room_id' => $room->id,
+                'notification_type' => $type->value,
                 'error' => $e->getMessage(),
             ]);
         }
