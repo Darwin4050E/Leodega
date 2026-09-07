@@ -16,6 +16,9 @@ class StoreModeration extends Model
         'store_id',
         'status',
         'reason_rejected',
+        'reason_code',
+        'admin_id',
+        'permit_waived_at',
         'moderation_date',
     ];
 

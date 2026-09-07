@@ -317,6 +317,76 @@ class StoreRoomTest extends TestCase
         }
     }
 
+    public function test_registration_with_valid_coordinates_persists_them()
+    {
+        $user = User::factory()->create(['role' => 'landlord']);
+        Landlords::factory()->create(['user_id' => $user->id]);
+
+        $response = $this->actingAs($user, 'sanctum')->post('/api/storeRooms', $this->validPayload([
+            'latitude' => -2.118,
+            'longitude' => -79.955,
+        ]));
+
+        $response->assertStatus(201);
+        $this->assertDatabaseHas('storeRooms', [
+            'id' => $response->json('item.id'),
+            'latitude' => -2.118,
+            'longitude' => -79.955,
+        ]);
+    }
+
+    public function test_registration_with_out_of_range_latitude_is_rejected()
+    {
+        $user = User::factory()->create(['role' => 'landlord']);
+        Landlords::factory()->create(['user_id' => $user->id]);
+
+        $response = $this->actingAs($user, 'sanctum')->post('/api/storeRooms', $this->validPayload([
+            'latitude' => 95,
+            'longitude' => -79.955,
+        ]));
+
+        $response->assertStatus(400);
+        $response->assertJsonValidationErrors(['latitude']);
+        $this->assertDatabaseCount('storeRooms', 0);
+    }
+
+    public function test_registration_with_out_of_range_longitude_is_rejected()
+    {
+        $user = User::factory()->create(['role' => 'landlord']);
+        Landlords::factory()->create(['user_id' => $user->id]);
+
+        $response = $this->actingAs($user, 'sanctum')->post('/api/storeRooms', $this->validPayload([
+            'latitude' => -2.118,
+            'longitude' => -200,
+        ]));
+
+        $response->assertStatus(400);
+        $response->assertJsonValidationErrors(['longitude']);
+        $this->assertDatabaseCount('storeRooms', 0);
+    }
+
+    /**
+     * Contract regression guard. `detail()` predates the SecurityFeatures
+     * cast and MUST keep returning `security` as the raw JSON string:
+     * frontend/src/Dashboard/BodegaDetalle.tsx JSON.parse()s this field, and
+     * serving the cast array here crashes that screen. The typed object is
+     * served only by GET /store-rooms/{id}/moderation-detail.
+     */
+    public function test_detail_returns_security_as_raw_string_not_cast_array()
+    {
+        $stored = json_encode(['camara' => true, 'ruido' => false, 'control' => true, 'objetos' => false]);
+
+        $landlord = Landlords::factory()->create();
+        $room = \App\Models\StoreRooms::factory()->create([
+            'landlord_id' => $landlord->id,
+            'security' => $stored,
+        ]);
+
+        $response = $this->getJson("/api/store-rooms/{$room->id}/detail");
+
+        $response->assertStatus(200);
+        $this->assertIsString($response->json('security'));
+        $this->assertSame($stored, $response->json('security'));
     /**
      * HUL-03 escenario 3: el mismo gestor no puede publicar dos bodegas con
      * el mismo título; la segunda solicitud se rechaza sin registrar nada.

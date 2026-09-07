@@ -3,12 +3,15 @@
 namespace App\Http\Controllers;
 
 use App\Exceptions\ReservationConflictException;
+use App\Exceptions\StoreRoomResubmissionException;
 use App\Http\Requests\EditStoreRoomListingRequest;
+use App\Http\Requests\ModerationDecisionRules;
 use App\Http\Requests\StoreStoreRoomRequest;
 use App\Http\Requests\UpdateStoreRoomRequest;
 use App\Models\Landlords;
 use App\Models\Ratings;
 use App\Models\StoreRooms;
+use App\Services\ModerationDecision;
 use App\Services\StoreModerationService;
 use App\Services\StoreRoomDeletionService;
 use App\Services\StoreRoomService;
@@ -21,8 +24,16 @@ class StoreRoomsController extends ApiController
 {
     public function index()
     {
+        // Resolved explicitly via the sanctum guard, never bare auth()->user():
+        // this route stays unmiddlewared (the public catalog must remain
+        // anonymously reachable), and config/auth.php sets the default guard
+        // to `web`, so a bare call would silently return null for a valid
+        // Bearer token and downgrade an admin to the anonymous branch.
+        $viewer = auth('sanctum')->user();
+
         return StoreRooms::with(['storePrices', 'storePhotos', 'landlord.user'])
             ->withCount('activeReservations')
+            ->visibleTo($viewer)
             ->get()
             ->map(function ($room) {
                 $ratings = Ratings::where('store_id', $room->id);
@@ -132,19 +143,21 @@ class StoreRoomsController extends ApiController
                 ], 403);
             }
 
-            $request->validate([
-                'reason_rejected' => $newStatus === 'rejected' ? 'required|string' : 'nullable|string',
-            ]);
+            $rules = (new ModerationDecisionRules)->rules($newStatus, is_null($storeRoom->firefighter_permit_path));
+            $request->validate($rules);
 
-            $moderationService->moderate(
-                $storeRoom,
-                $newStatus,
-                $request->input('reason_rejected'),
-                auth()->id()
-            );
+            $moderationService->moderate($storeRoom, new ModerationDecision(
+                decision: $newStatus,
+                reason: $request->input('reason_rejected'),
+                reasonCode: $request->input('reason_code'),
+                adminId: auth()->id(),
+                permitWaiverAcknowledged: filter_var($request->input('permit_waiver_acknowledged'), FILTER_VALIDATE_BOOLEAN),
+            ));
 
             $request->request->remove('publication_status');
             $request->request->remove('reason_rejected');
+            $request->request->remove('reason_code');
+            $request->request->remove('permit_waiver_acknowledged');
 
             return $this->updateModel($request, StoreRooms::class, $id, (new UpdateStoreRoomRequest)->rules());
         }
@@ -224,6 +237,41 @@ class StoreRoomsController extends ApiController
         return response()->json(['message' => 'Bodega eliminada correctamente', 'status' => 200], 200);
     }
 
+    /**
+     * SDD 2, decision #172.1/addendum #174.3: explicit, empty-body state
+     * transition for a rejected listing's owning gestor. Deliberately
+     * separate from editListing() — the gestor edits fields there first,
+     * then calls this as its own action, never accepting listing fields.
+     *
+     * Ownership (403) and "not currently rejected" (409) are two SEPARATE
+     * failures per spec #175: StoreRoomsPolicy::resubmit() checks ownership
+     * ONLY, and StoreRoomService::resubmit() throws the 409 conflict. Do
+     * NOT collapse these into one gate/response.
+     */
+    public function resubmit($id, StoreRoomService $service)
+    {
+        $storeRoom = StoreRooms::find($id);
+        if (! $storeRoom) {
+            return response()->json(['message' => 'Bodega no encontrada', 'status' => 404], 404);
+        }
+
+        $landlord = Landlords::where('user_id', auth()->id())->firstOrFail();
+
+        Gate::authorize('resubmit', [$storeRoom, $landlord]);
+
+        try {
+            $room = $service->resubmit($storeRoom, auth()->id());
+        } catch (StoreRoomResubmissionException $e) {
+            return response()->json(['message' => $e->getMessage()], $e->statusCode);
+        }
+
+        return response()->json([
+            'data' => $room,
+            'message' => 'La bodega fue reenviada a revisión.',
+            'status' => 200,
+        ], 200);
+    }
+
     public function getByLandlord($landlordId)
     {
         $landlord = Landlords::find($landlordId);
@@ -231,9 +279,14 @@ class StoreRoomsController extends ApiController
             return response()->json(['message' => 'Landlord no encontrado'], 404);
         }
 
+        // Same guard-resolution rule as index(): auth('sanctum')->user(),
+        // never bare auth()->user() — see the comment there.
+        $viewer = auth('sanctum')->user();
+
         $storeRooms = StoreRooms::with(['storePrices', 'storePhotos', 'storeDisponibility'])
             ->withCount('activeReservations')
             ->where('landlord_id', $landlordId)
+            ->visibleTo($viewer, (int) $landlordId)
             ->get()
             ->map(function ($room) {
                 $firstPhoto = $room->storePhotos->first();
@@ -279,7 +332,11 @@ class StoreRoomsController extends ApiController
             'direction' => $room->direction,
             'city' => $room->city,
             'size' => $room->size,
-            'security' => $room->security,
+            // Raw string, NOT the SecurityFeatures-cast array: this endpoint's
+            // contract predates the cast and BodegaDetalle.tsx JSON.parse()s
+            // this field. The typed object is served only by the new
+            // /store-rooms/{id}/moderation-detail endpoint.
+            'security' => $room->getRawOriginal('security'),
             'room_type' => $room->room_type,
             'storage_type' => $room->storage_type,
             'active_reservations_count' => $room->active_reservations_count,

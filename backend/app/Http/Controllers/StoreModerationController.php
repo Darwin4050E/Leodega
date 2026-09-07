@@ -6,6 +6,7 @@ use App\Http\Requests\StoreStoreModerationRequest;
 use App\Http\Requests\UpdateStoreModerationRequest;
 use App\Models\StoreModeration;
 use App\Models\StoreRooms;
+use App\Services\ModerationDecision;
 use App\Services\StoreModerationService;
 use Illuminate\Http\Request;
 
@@ -33,20 +34,33 @@ class StoreModerationController extends ApiController
      */
     public function store(Request $request, StoreModerationService $moderationService)
     {
-        $validated = $request->validate((new StoreStoreModerationRequest)->rules());
+        // Raw pre-validation peek (mirrors StoreRoomsController::update()'s
+        // own idiom, design decision #2): the permit-waiver precondition is
+        // room state, not request state, so it must be known before the
+        // shared rules bag runs. `find()`, not `findOrFail()` — a garbage
+        // `store_id` leaves `$room` null and `permitMissing` false, and the
+        // real `'store_id' => 'required|exists:storeRooms,id'` rule still
+        // catches it below, producing the same 422 as before this change.
+        $rawStatus = $request->input('status');
+        $rawStoreId = $request->input('store_id');
+        $room = $rawStoreId ? StoreRooms::find($rawStoreId) : null;
+
+        $rules = (new StoreStoreModerationRequest)->rules($rawStatus, is_null($room?->firefighter_permit_path));
+        $validated = $request->validate($rules);
 
         if (! in_array($validated['status'], ['approved', 'rejected'], true)) {
-            return $this->storeModel($request, StoreModeration::class, (new StoreStoreModerationRequest)->rules());
+            return $this->storeModel($request, StoreModeration::class, $rules);
         }
 
         $storeRoom = StoreRooms::findOrFail($validated['store_id']);
 
-        $moderation = $moderationService->moderate(
-            $storeRoom,
-            $validated['status'],
-            $validated['reason_rejected'] ?? null,
-            auth()->id()
-        );
+        $moderation = $moderationService->moderate($storeRoom, new ModerationDecision(
+            decision: $validated['status'],
+            reason: $validated['reason_rejected'] ?? null,
+            reasonCode: $validated['reason_code'] ?? null,
+            adminId: auth()->id(),
+            permitWaiverAcknowledged: (bool) ($validated['permit_waiver_acknowledged'] ?? false),
+        ));
 
         return response()->json([
             'item' => $moderation,

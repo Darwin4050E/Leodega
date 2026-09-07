@@ -19,6 +19,7 @@ use App\Http\Controllers\SecurityController;
 use App\Http\Controllers\SessionController;
 use App\Http\Controllers\StoreDisponibilityController;
 use App\Http\Controllers\StoreModerationController;
+use App\Http\Controllers\StoreModerationQueueController;
 use App\Http\Controllers\StorePermitController;
 use App\Http\Controllers\StorePhotoController;
 use App\Http\Controllers\StorePricesController;
@@ -111,6 +112,9 @@ Route::middleware(['auth.api:sanctum', 'role:landlord'])->group(function () {
 Route::middleware('auth.api:sanctum')->group(function () {
     Route::put('/storeRooms/{id}', [StoreRoomsController::class, 'update']);
     Route::delete('/storeRooms/{id}', [StoreRoomsController::class, 'destroy']);
+    // SDD 2: explicit resubmission action for a rejected listing's owning
+    // gestor (decision #172.1). Empty body — see StoreRoomsController::resubmit().
+    Route::post('/storeRooms/{id}/resubmit', [StoreRoomsController::class, 'resubmit']);
 });
 
 Route::get('/storePrices', [StorePricesController::class, 'index']);
@@ -228,4 +232,6 @@ Route::middleware('auth.api:sanctum')->group(function () {
 
 Route::middleware(['auth.api:sanctum', 'role:admin'])->group(function () {
     Route::get('/store-rooms/{storeRoom}/permit/download', [StorePermitController::class, 'download']);
+    Route::get('/store-rooms/pending', [StoreModerationQueueController::class, 'pending']);
+    Route::get('/store-rooms/{id}/moderation-detail', [StoreModerationQueueController::class, 'moderationDetail']);
 });
