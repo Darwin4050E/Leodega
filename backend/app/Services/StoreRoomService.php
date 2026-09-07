@@ -13,6 +13,7 @@ use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Facades\Validator;
+use Illuminate\Validation\ValidationException;
 
 /**
  * HUG-04: extraído de ApiController::storeModel (D1) porque el registro de
@@ -70,6 +71,48 @@ class StoreRoomService
         $this->notifyAdmins($actingUserId, $room);
 
         return $room;
+    }
+
+    /**
+     * HUG-08: partial edit of an already published listing by its owner.
+     *
+     * Only the fields the caller actually sent (already validated and
+     * whitelisted by EditStoreRoomListingRequest) are touched. The monthly
+     * price lives in a separate store_prices row: it is updated in place
+     * with a targeted ->update() — never delete + recreate — so nothing
+     * that references it (reservations read a price snapshot, but be
+     * conservative anyway) is disturbed.
+     *
+     * Everything runs inside one transaction: an invalid state (e.g. a
+     * price change requested on a room with no monthly tariff row) rolls
+     * back the scalar changes too (atomicity, acceptance criterion 2).
+     *
+     * @throws ValidationException when `price`/`disponibility` is sent but
+     *                             the room has no mode='month' price row
+     */
+    public function updateListing(StoreRooms $room, array $data): StoreRooms
+    {
+        return DB::transaction(function () use ($room, $data) {
+            $scalars = Arr::only($data, ['title', 'description', 'size']);
+            if (! empty($scalars)) {
+                $room->update($scalars);
+            }
+
+            $priceChanges = Arr::only($data, ['price', 'disponibility']);
+            if (! empty($priceChanges)) {
+                $monthlyPrice = $room->storePrices()->where('mode', 'month')->first();
+
+                if (! $monthlyPrice) {
+                    throw ValidationException::withMessages([
+                        'price' => 'La bodega no tiene una tarifa mensual configurada que se pueda actualizar.',
+                    ]);
+                }
+
+                $monthlyPrice->update($priceChanges);
+            }
+
+            return $room->fresh(['storePrices']);
+        });
     }
 
     /**

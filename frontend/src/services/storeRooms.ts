@@ -10,7 +10,9 @@ export interface StoreRoomDetail {
   room_type?: string;
   storage_type?: string;
   photos?: string[];
-  prices?: { price: number }[];
+  prices?: { id?: number; mode?: string; price: number; disponibility?: boolean | number }[];
+  active_reservations_count?: number;
+  publication_status?: "approved" | "pending" | "rejected";
   landlord?: {
     id?: number;
     user_id?: number;
@@ -56,8 +58,19 @@ export function createStoreRoom(formData: FormData) {
   });
 }
 
+export interface UpdateStoreRoomResponse {
+  data: StoreRoomSummary & { storePrices?: { mode?: string; price: number; disponibility?: boolean | number }[] };
+  message: string;
+  status: number;
+  /**
+   * HUG-08 scenario 3: present only when the edited room has active/future
+   * confirmed reservations. Absent otherwise.
+   */
+  notice?: string;
+}
+
 export function updateStoreRoom(id: number | string, data: Record<string, unknown>) {
-  return api.put(`/storeRooms/${id}`, data);
+  return api.put<UpdateStoreRoomResponse>(`/storeRooms/${id}`, data);
 }
 
 export function getStoreRoomsByLandlord(landlordId: number | string) {
