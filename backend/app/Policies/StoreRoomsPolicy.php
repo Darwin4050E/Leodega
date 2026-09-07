@@ -26,4 +26,17 @@ class StoreRoomsPolicy
     {
         return $room->landlord_id === $landlord->id;
     }
+
+    /**
+     * Only the landlord who owns the storeroom may edit its listing
+     * (HUG-08). Same shape as delete(): receives $landlord already
+     * resolved so the controller can tell "no landlord profile" (404)
+     * apart from "not the owner" (403).
+     *
+     * @SuppressWarnings(PHPMD.UnusedFormalParameter)
+     */
+    public function update(User $user, StoreRooms $room, Landlords $landlord): bool
+    {
+        return $room->landlord_id === $landlord->id;
+    }
 }

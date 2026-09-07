@@ -3,6 +3,7 @@
 namespace App\Http\Controllers;
 
 use App\Exceptions\ReservationConflictException;
+use App\Http\Requests\EditStoreRoomListingRequest;
 use App\Http\Requests\StoreStoreRoomRequest;
 use App\Http\Requests\UpdateStoreRoomRequest;
 use App\Models\Landlords;
@@ -112,7 +113,7 @@ class StoreRoomsController extends ApiController
      * StoreModerationService antes de delegar el resto de campos al CRUD
      * genérico heredado.
      */
-    public function update(Request $request, $id, StoreModerationService $moderationService)
+    public function update(Request $request, $id, StoreModerationService $moderationService, StoreRoomService $service)
     {
         $storeRoom = StoreRooms::find($id);
         if (! $storeRoom) {
@@ -144,9 +145,59 @@ class StoreRoomsController extends ApiController
 
             $request->request->remove('publication_status');
             $request->request->remove('reason_rejected');
+
+            return $this->updateModel($request, StoreRooms::class, $id, (new UpdateStoreRoomRequest)->rules());
         }
 
-        return $this->updateModel($request, StoreRooms::class, $id, (new UpdateStoreRoomRequest)->rules());
+        return $this->editListing($storeRoom, $service);
+    }
+
+    /**
+     * HUG-08: non-moderation edit path. The owning gestor updates one or
+     * more editable fields (title, description, size, monthly price +
+     * disponibility) of a storeroom they already published.
+     *
+     * Authorization mirrors destroy(): resolve the caller's Landlords via
+     * firstOrFail() (404 when the account has no landlord profile), then
+     * Gate::authorize('update', ...) (403 when not the owner). The route
+     * stays on the plain auth.api:sanctum group so the admin moderation
+     * branch above keeps reaching this action.
+     *
+     * Editing is never blocked by existing reservations: their pricing is
+     * already snapshotted at creation (ReservationPricingService), so
+     * confirmed contracts keep their agreed terms. When the room has
+     * active (confirmed + not yet ended) reservations, the response adds an
+     * informational `notice` making that explicit (acceptance criterion 3).
+     */
+    private function editListing(StoreRooms $storeRoom, StoreRoomService $service)
+    {
+        $landlord = Landlords::where('user_id', auth()->id())->firstOrFail();
+
+        Gate::authorize('update', [$storeRoom, $landlord]);
+
+        $data = app(EditStoreRoomListingRequest::class)->validated();
+
+        try {
+            $updated = $service->updateListing($storeRoom, $data);
+        } catch (ValidationException $e) {
+            return response()->json([
+                'message' => 'Validation Error',
+                'errors' => $e->errors(),
+                'status' => 400,
+            ], 400);
+        }
+
+        $payload = [
+            'data' => $updated,
+            'message' => 'Los cambios se guardaron correctamente.',
+            'status' => 200,
+        ];
+
+        if ($storeRoom->activeReservations()->exists()) {
+            $payload['notice'] = 'Los cambios no afectan a las reservas ya confirmadas; solo aplican a nuevas reservas.';
+        }
+
+        return response()->json($payload, 200);
     }
 
     /**

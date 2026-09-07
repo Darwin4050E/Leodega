@@ -2,6 +2,7 @@
 
 namespace Tests\Feature;
 
+use App\Models\Landlords;
 use App\Models\StoreRooms;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -144,14 +145,20 @@ class StoreRoomModerationTest extends TestCase
     /**
      * El check de admin solo debe aplicar cuando el payload intenta CAMBIAR
      * publication_status a approved/rejected. Editar otros campos de la
-     * propia bodega (flujo normal del landlord) debe seguir funcionando.
+     * propia bodega (flujo normal del landlord — HUG-08) debe seguir
+     * funcionando; la cobertura completa de ese camino vive en
+     * StoreRoomUpdateTest.
      */
     public function test_landlord_can_still_edit_other_fields_of_own_store_room()
     {
         $landlordUser = User::factory()->create(['role' => 'landlord']);
+        $landlord = Landlords::factory()->create(['user_id' => $landlordUser->id]);
         Sanctum::actingAs($landlordUser);
 
-        $storeRoom = StoreRooms::factory()->create(['publication_status' => 'pending']);
+        $storeRoom = StoreRooms::factory()->create([
+            'landlord_id' => $landlord->id,
+            'publication_status' => 'pending',
+        ]);
 
         $response = $this->putJson("/api/storeRooms/{$storeRoom->id}", [
             'title' => 'Nuevo título de la bodega',

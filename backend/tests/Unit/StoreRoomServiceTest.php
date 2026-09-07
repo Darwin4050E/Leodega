@@ -3,6 +3,7 @@
 namespace Tests\Unit;
 
 use App\Models\Landlords;
+use App\Models\StorePrices;
 use App\Models\StoreRooms;
 use App\Models\User;
 use App\Services\StoreRoomService;
@@ -199,5 +200,72 @@ class StoreRoomServiceTest extends TestCase
         $this->assertDatabaseHas('storeRooms', ['id' => $room->id]);
         Storage::disk('private')->assertExists($room->firefighter_permit_path);
         $this->assertDatabaseCount('notifications', 0);
+    }
+
+    // --- updateListing (HUG-08) ------------------------------------------------
+
+    public function test_update_listing_updates_only_the_scalar_fields_that_were_sent()
+    {
+        $room = StoreRooms::factory()->create(['title' => 'Viejo', 'description' => 'Vieja', 'size' => 10]);
+
+        $fresh = (new StoreRoomService)->updateListing($room, ['title' => 'Nuevo', 'size' => 42.5]);
+
+        $this->assertSame('Nuevo', $fresh->title);
+        $this->assertEquals(42.5, $fresh->size);
+        $this->assertSame('Vieja', $fresh->description);
+        $this->assertDatabaseHas('storeRooms', ['id' => $room->id, 'title' => 'Nuevo', 'size' => 42.5]);
+    }
+
+    public function test_update_listing_targets_the_month_price_row_and_leaves_the_others()
+    {
+        $room = StoreRooms::factory()->create();
+        $month = StorePrices::factory()->create(['store_room_id' => $room->id, 'mode' => 'month', 'price' => 1000, 'disponibility' => true]);
+        $year = StorePrices::factory()->create(['store_room_id' => $room->id, 'mode' => 'year', 'price' => 9000, 'disponibility' => true]);
+
+        (new StoreRoomService)->updateListing($room, ['price' => 1234.5, 'disponibility' => false]);
+
+        // same row, updated in place — never delete + recreate
+        $this->assertDatabaseHas('store_prices', ['id' => $month->id, 'price' => 1234.5, 'disponibility' => false]);
+        $this->assertDatabaseHas('store_prices', ['id' => $year->id, 'price' => 9000, 'disponibility' => true]);
+        $this->assertDatabaseCount('store_prices', 2);
+    }
+
+    public function test_update_listing_without_price_keys_does_not_touch_price_rows()
+    {
+        $room = StoreRooms::factory()->create();
+        $month = StorePrices::factory()->create(['store_room_id' => $room->id, 'mode' => 'month', 'price' => 1000]);
+
+        (new StoreRoomService)->updateListing($room, ['description' => 'Solo texto']);
+
+        $this->assertDatabaseHas('store_prices', ['id' => $month->id, 'price' => 1000]);
+        $this->assertDatabaseCount('store_prices', 1);
+    }
+
+    public function test_update_listing_rolls_back_scalar_changes_when_month_price_row_is_missing()
+    {
+        $room = StoreRooms::factory()->create(['title' => 'Intacto']);
+        StorePrices::factory()->create(['store_room_id' => $room->id, 'mode' => 'day', 'price' => 30]);
+
+        try {
+            (new StoreRoomService)->updateListing($room, ['title' => 'Cambiado', 'price' => 500]);
+            $this->fail('Expected a ValidationException.');
+        } catch (ValidationException $e) {
+            $this->assertArrayHasKey('price', $e->errors());
+        }
+
+        $this->assertDatabaseHas('storeRooms', ['id' => $room->id, 'title' => 'Intacto']);
+        $this->assertDatabaseHas('store_prices', ['store_room_id' => $room->id, 'mode' => 'day', 'price' => 30]);
+        $this->assertDatabaseCount('store_prices', 1);
+    }
+
+    public function test_update_listing_returns_the_fresh_room_with_prices_loaded()
+    {
+        $room = StoreRooms::factory()->create();
+        StorePrices::factory()->create(['store_room_id' => $room->id, 'mode' => 'month', 'price' => 1000]);
+
+        $fresh = (new StoreRoomService)->updateListing($room, ['price' => 1100]);
+
+        $this->assertTrue($fresh->relationLoaded('storePrices'));
+        $this->assertEquals(1100, $fresh->storePrices->firstWhere('mode', 'month')->price);
     }
 }
