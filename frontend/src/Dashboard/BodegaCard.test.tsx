@@ -3,10 +3,16 @@ import { render, screen, fireEvent, waitFor, within } from '@testing-library/rea
 import { MemoryRouter } from 'react-router-dom';
 
 const mockDeleteStoreRoom = vi.hoisted(() => vi.fn());
+const mockNavigate = vi.hoisted(() => vi.fn());
 
 vi.mock('../services/storeRooms', () => ({
   deleteStoreRoom: mockDeleteStoreRoom,
 }));
+
+vi.mock('react-router-dom', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('react-router-dom')>();
+  return { ...actual, useNavigate: () => mockNavigate };
+});
 
 import BodegaCard from './BodegaCard';
 
@@ -47,6 +53,12 @@ describe('BodegaCard delete action', () => {
       'title',
       'No se puede eliminar: tiene 3 reserva(s) activa(s) o futura(s).'
     );
+  });
+
+  it('navigates to the edit route when the Editar action is clicked', () => {
+    renderCard({ id: 42 });
+    fireEvent.click(screen.getByRole('button', { name: /editar/i }));
+    expect(mockNavigate).toHaveBeenCalledWith('/arrendador/bodegas/42/editar');
   });
 
   it('opens the confirmation modal and sends no request until confirmed', () => {

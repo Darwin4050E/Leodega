@@ -24,6 +24,7 @@ import ResetPassword from './Pages/ResetPassword'
 import Decision from './Components/Decision'
 import BodegasAdmin from "./Dashboard/BodegasAdmin";
 import BodegasArrendador from "./Dashboard/BodegasArrendador";
+import EditarBodega from "./Dashboard/EditarBodega";
 import Layout from './Dashboard/Layout';
 import Mensajes from './Dashboard/Mensajes'
 import Solicitudes from './Dashboard/Solicitudes'
@@ -74,6 +75,7 @@ function App() {
             {/* ROLES PROTEGIDOS */}
             <Route element={<Role allowed={["landlord"]} />}>
               <Route path="/arrendador/bodegas" element={<BodegasArrendador />} />
+              <Route path="/arrendador/bodegas/:id/editar" element={<EditarBodega />} />
               <Route path="/arrendador/leodega/:id" element={<LeodegaUI />}
               />
             </Route>

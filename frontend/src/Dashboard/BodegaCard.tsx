@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { Lock, Trash2 } from "lucide-react";
+import { Lock, Pencil, Trash2 } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 
 import { deleteStoreRoom } from "../services/storeRooms";
@@ -116,6 +116,15 @@ const BodegaCard = ({
                         onClick={() => navigate(`/leodega/${id}`)}
                         className="text-[11px] px-6 bg-[#ebf0fa] text-black py-2.5 rounded-lg hover:bg-gray-100 transition-colors font-medium">
                         Ver Bodega
+                    </button>
+
+                    <button
+                        onClick={() => navigate(`/arrendador/bodegas/${id}/editar`)}
+                        aria-label="Editar"
+                        className="flex items-center gap-1 text-[11px] px-3 py-2.5 rounded-lg font-medium transition-colors bg-[#ebf0fa] text-black hover:bg-gray-100"
+                    >
+                        <Pencil className="w-3.5 h-3.5" />
+                        Editar
                     </button>
 
                     <button

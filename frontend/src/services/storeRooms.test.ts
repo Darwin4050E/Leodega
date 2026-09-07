@@ -52,6 +52,32 @@ describe('storeRooms service', () => {
     expect(mockApi.put).toHaveBeenCalledWith('/storeRooms/6', payload);
   });
 
+  it('updateStoreRoom passes through the 200 body including a scenario-3 notice', async () => {
+    mockApi.put.mockResolvedValue({
+      data: {
+        data: { id: 6 },
+        message: 'Los cambios se guardaron correctamente.',
+        status: 200,
+        notice: 'Los cambios no afectan a las reservas ya confirmadas; solo aplican a nuevas reservas.',
+      },
+    });
+    const res = await updateStoreRoom(6, { price: 120 });
+    expect(res.data.notice).toBe(
+      'Los cambios no afectan a las reservas ya confirmadas; solo aplican a nuevas reservas.'
+    );
+  });
+
+  it('updateStoreRoom rejects on 400 (validation error) with the errors map intact', async () => {
+    const error = {
+      response: {
+        status: 400,
+        data: { message: 'Validation Error', errors: { price: ['El precio debe ser mayor a 0.'] } },
+      },
+    };
+    mockApi.put.mockRejectedValue(error);
+    await expect(updateStoreRoom(6, { price: 0 })).rejects.toEqual(error);
+  });
+
   it('getStoreRoomsByLandlord calls GET landlords/:id/storeRooms (no leading slash, matches current behavior)', () => {
     getStoreRoomsByLandlord(8);
     expect(mockApi.get).toHaveBeenCalledWith('landlords/8/storeRooms');
