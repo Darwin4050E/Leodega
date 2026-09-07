@@ -38,6 +38,15 @@ export default function HomeScreen() {
           Rol: {user ? (ROLE_LABEL[user.role] ?? user.role) : ''}
         </p>
 
+        {user?.role === 'landlord' && (
+          <button
+            onClick={() => navigate('/publicar')}
+            className="mt-8 w-full rounded-lg bg-leodega_p py-2.5 text-sm font-semibold text-white"
+          >
+            Publicar un espacio
+          </button>
+        )}
+
         <p className="mt-8 text-sm text-gray-400">
           Pantalla principal en construcción.
         </p>
