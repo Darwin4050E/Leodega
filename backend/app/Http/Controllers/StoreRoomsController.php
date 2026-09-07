@@ -4,11 +4,13 @@ namespace App\Http\Controllers;
 
 use App\Exceptions\ReservationConflictException;
 use App\Http\Requests\EditStoreRoomListingRequest;
+use App\Http\Requests\ModerationDecisionRules;
 use App\Http\Requests\StoreStoreRoomRequest;
 use App\Http\Requests\UpdateStoreRoomRequest;
 use App\Models\Landlords;
 use App\Models\Ratings;
 use App\Models\StoreRooms;
+use App\Services\ModerationDecision;
 use App\Services\StoreModerationService;
 use App\Services\StoreRoomDeletionService;
 use App\Services\StoreRoomService;
@@ -140,19 +142,21 @@ class StoreRoomsController extends ApiController
                 ], 403);
             }
 
-            $request->validate([
-                'reason_rejected' => $newStatus === 'rejected' ? 'required|string' : 'nullable|string',
-            ]);
+            $rules = (new ModerationDecisionRules)->rules($newStatus, is_null($storeRoom->firefighter_permit_path));
+            $request->validate($rules);
 
-            $moderationService->moderate(
-                $storeRoom,
-                $newStatus,
-                $request->input('reason_rejected'),
-                auth()->id()
-            );
+            $moderationService->moderate($storeRoom, new ModerationDecision(
+                decision: $newStatus,
+                reason: $request->input('reason_rejected'),
+                reasonCode: $request->input('reason_code'),
+                adminId: auth()->id(),
+                permitWaiverAcknowledged: filter_var($request->input('permit_waiver_acknowledged'), FILTER_VALIDATE_BOOLEAN),
+            ));
 
             $request->request->remove('publication_status');
             $request->request->remove('reason_rejected');
+            $request->request->remove('reason_code');
+            $request->request->remove('permit_waiver_acknowledged');
 
             return $this->updateModel($request, StoreRooms::class, $id, (new UpdateStoreRoomRequest)->rules());
         }
