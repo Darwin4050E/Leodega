@@ -10,6 +10,13 @@ use Illuminate\Support\Facades\Log;
 class AuthService
 {
     /**
+     * Mensaje exacto (HUA-03, AC2) con el que se rechaza el login de una cuenta
+     * bloqueada. Es idéntico tanto si la contraseña es correcta como si no, para
+     * no filtrar la validez de las credenciales.
+     */
+    public const BLOCKED_ACCOUNT_MESSAGE = 'Tu cuenta ha sido suspendida. Contacta a soporte para más información';
+
+    /**
      * Corrección de inconsistencia (ver PLAN_CORRECCION_INCONSISTENCIAS.md,
      * Fase 1.2): antes, login() solo llamaba a Auth::attempt(), sin verificar
      * User.state. Una cuenta bloqueada podía iniciar sesión con normalidad.
@@ -24,7 +31,7 @@ class AuthService
     public function ensureUserIsNotBlocked(User $user): void
     {
         if ($user->state === 'blocked') {
-            throw new AccountBlockedException('Esta cuenta ha sido bloqueada.');
+            throw new AccountBlockedException(self::BLOCKED_ACCOUNT_MESSAGE);
         }
     }
 
