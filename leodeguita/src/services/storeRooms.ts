@@ -1,3 +1,4 @@
+import axios from 'axios'
 import client from '../api/client'
 
 /**
@@ -97,4 +98,59 @@ export async function uploadStoreRoomPhotos(
   await client.post(`/store-rooms/${storeRoomId}/photos`, form, {
     headers: { 'Content-Type': 'multipart/form-data' },
   })
+}
+
+/**
+ * HUL-04: list the store rooms owned by the signed-in gestor for the
+ * `/mis-bodegas` overview.
+ *
+ * `GET /api/landlords/{id}/storeRooms` (StoreRoomsController::getByLandlord)
+ * returns one object per non-deleted room. Phase 1 of this change made it
+ * answer `200 []` for an existing landlord with no rooms, but a stale backend
+ * (or the unknown-landlord case) can still answer `404`; we swallow that into
+ * an empty list here so the screen never has to know HTTP codes. Every other
+ * error rethrows.
+ */
+
+export type PublicationStatus = 'pending' | 'approved' | 'rejected'
+
+export interface StorePrice {
+  mode: string
+  price: string | number
+  disponibility: string | number | boolean
+  [key: string]: unknown
+}
+
+export interface MyStoreRoom {
+  id: number
+  title: string
+  direction: string
+  city: string
+  size: number | string
+  publication_status: PublicationStatus
+  storage_type: StorageType
+  room_type: RoomType
+  active_reservations_count: number
+  image: string | null
+  storePrices: StorePrice[]
+}
+
+export async function listMyStoreRooms(
+  landlordId: number,
+): Promise<MyStoreRoom[]> {
+  try {
+    const { data } = await client.get<
+      (Omit<MyStoreRoom, 'storePrices'> & { store_prices?: StorePrice[] })[]
+    >(`/landlords/${landlordId}/storeRooms`)
+
+    return data.map(({ store_prices, ...room }) => ({
+      ...room,
+      storePrices: store_prices ?? [],
+    }))
+  } catch (error) {
+    if (axios.isAxiosError(error) && error.response?.status === 404) {
+      return []
+    }
+    throw error
+  }
 }
