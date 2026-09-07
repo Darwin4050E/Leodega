@@ -85,6 +85,16 @@ const PreguntaInicio7 = () => {
       formData.append("cancellation_policy_tier", cancellationPolicyTier);
       formData.append("firefighter_permit", wizardCtx.permit);
 
+      // Coordinates picked on the map (PreguntaInicio4) are only appended
+      // when both values are present numbers — a missing or malformed
+      // position is omitted rather than sent as "undefined", which the
+      // backend's nullable validation rules already accept.
+      const position = data.location?.position;
+      if (Array.isArray(position) && typeof position[0] === "number" && typeof position[1] === "number") {
+        formData.append("latitude", String(position[0]));
+        formData.append("longitude", String(position[1]));
+      }
+
       formData.append("storePrices[0][mode]", "month");
       formData.append("storePrices[0][price]", String(Number(data.priceData?.precio) || 0));
       formData.append("storePrices[0][disponibility]", "true");

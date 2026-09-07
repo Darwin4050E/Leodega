@@ -36,6 +36,8 @@ class StoreStoreRoomRequest extends FormRequest
             'security' => 'required|string',
             'firefighter_permit' => 'required|file|mimes:pdf,jpg,jpeg,png|max:5120',
             'cancellation_policy_tier' => 'required|in:flexible,moderada,estricta',
+            'latitude' => 'nullable|numeric|between:-90,90',
+            'longitude' => 'nullable|numeric|between:-180,180',
         ];
     }
 

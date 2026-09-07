@@ -292,7 +292,11 @@ class StoreRoomsController extends ApiController
             'direction' => $room->direction,
             'city' => $room->city,
             'size' => $room->size,
-            'security' => $room->security,
+            // Raw string, NOT the SecurityFeatures-cast array: this endpoint's
+            // contract predates the cast and BodegaDetalle.tsx JSON.parse()s
+            // this field. The typed object is served only by the new
+            // /store-rooms/{id}/moderation-detail endpoint.
+            'security' => $room->getRawOriginal('security'),
             'room_type' => $room->room_type,
             'storage_type' => $room->storage_type,
             'active_reservations_count' => $room->active_reservations_count,

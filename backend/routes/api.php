@@ -19,6 +19,7 @@ use App\Http\Controllers\SecurityController;
 use App\Http\Controllers\SessionController;
 use App\Http\Controllers\StoreDisponibilityController;
 use App\Http\Controllers\StoreModerationController;
+use App\Http\Controllers\StoreModerationQueueController;
 use App\Http\Controllers\StorePermitController;
 use App\Http\Controllers\StorePhotoController;
 use App\Http\Controllers\StorePricesController;
@@ -228,4 +229,6 @@ Route::middleware('auth.api:sanctum')->group(function () {
 
 Route::middleware(['auth.api:sanctum', 'role:admin'])->group(function () {
     Route::get('/store-rooms/{storeRoom}/permit/download', [StorePermitController::class, 'download']);
+    Route::get('/store-rooms/pending', [StoreModerationQueueController::class, 'pending']);
+    Route::get('/store-rooms/{id}/moderation-detail', [StoreModerationQueueController::class, 'moderationDetail']);
 });

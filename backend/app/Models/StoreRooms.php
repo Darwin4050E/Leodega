@@ -2,6 +2,7 @@
 
 namespace App\Models;
 
+use App\Casts\SecurityFeatures;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\SoftDeletes;
@@ -27,6 +28,12 @@ class StoreRooms extends Model
         'publication_date',
         'firefighter_permit_path',
         'cancellation_policy_tier',
+        'latitude',
+        'longitude',
+    ];
+
+    protected $casts = [
+        'security' => SecurityFeatures::class,
     ];
 
     public function landlord()
