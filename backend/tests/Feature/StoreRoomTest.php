@@ -434,6 +434,67 @@ class StoreRoomTest extends TestCase
     }
 
     /**
+     * HUL-04 escenario: un gestor existente sin bodegas obtiene 200 con una
+     * lista vacía, no un 404.
+     */
+    public function test_get_by_landlord_returns_empty_array_when_landlord_has_no_rooms()
+    {
+        $user = User::factory()->create(['role' => 'landlord']);
+        $landlord = Landlords::factory()->create(['user_id' => $user->id]);
+
+        $response = $this->actingAs($user, 'sanctum')
+            ->getJson("/api/landlords/{$landlord->id}/storeRooms");
+
+        $response->assertStatus(200);
+        $response->assertJsonCount(0);
+    }
+
+    /**
+     * HUL-04 escenario: un gestor con bodegas obtiene 200 con un objeto por
+     * bodega; las bodegas con soft delete quedan excluidas del resultado.
+     */
+    public function test_get_by_landlord_returns_one_object_per_room_excluding_soft_deleted()
+    {
+        $user = User::factory()->create(['role' => 'landlord']);
+        $landlord = Landlords::factory()->create(['user_id' => $user->id]);
+
+        StoreRooms::factory()->create([
+            'landlord_id' => $landlord->id,
+            'title' => 'Bodega Norte',
+        ]);
+        StoreRooms::factory()->create([
+            'landlord_id' => $landlord->id,
+            'title' => 'Bodega Sur',
+        ]);
+        StoreRooms::factory()->create([
+            'landlord_id' => $landlord->id,
+            'title' => 'Bodega Eliminada',
+        ])->delete();
+
+        $response = $this->actingAs($user, 'sanctum')
+            ->getJson("/api/landlords/{$landlord->id}/storeRooms");
+
+        $response->assertStatus(200);
+        $response->assertJsonCount(2);
+        $response->assertJsonStructure([
+            ['id', 'title', 'direction', 'city', 'size', 'publication_status', 'active_reservations_count'],
+        ]);
+    }
+
+    /**
+     * HUL-04 escenario: un id de gestor inexistente sigue devolviendo 404.
+     */
+    public function test_get_by_landlord_returns_404_for_unknown_landlord_id()
+    {
+        $user = User::factory()->create(['role' => 'landlord']);
+
+        $response = $this->actingAs($user, 'sanctum')
+            ->getJson('/api/landlords/999999/storeRooms');
+
+        $response->assertStatus(404);
+    }
+
+    /**
      * Un nombre liberado al eliminar una bodega (HUG-07, soft delete) puede
      * volver a usarse: la regla ignora las filas con deleted_at.
      */

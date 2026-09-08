@@ -306,10 +306,6 @@ class StoreRoomsController extends ApiController
                 ];
             });
 
-        if ($storeRooms->isEmpty()) {
-            return response()->json(['message' => 'No se encontraron bodegas para este landlord'], 404);
-        }
-
         return response()->json($storeRooms, 200);
     }
 
