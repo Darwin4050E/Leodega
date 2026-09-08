@@ -113,6 +113,17 @@ export default function SidebarAdmin(
                 </div>
 
                 <nav className="flex-1 py-6 overflow-y-auto">
+                    {role === "admin" && (
+                        <SidebarItem
+                            label="Resumen"
+                            active={activeItem === 'resumen'}
+                            onClick={() => handleItemClick(() => {
+                                setActiveItem('resumen');
+                                navigate(`${basePath}/resumen`);
+                            })}
+                        />
+                    )}
+
                     <SidebarItem
                         label="Bodegas"
                         active={activeItem === 'bodegas'}

@@ -5,6 +5,7 @@ use App\Http\Controllers\AdminController;
 use App\Http\Controllers\AuthController;
 use App\Http\Controllers\CancelationsPolicesController;
 use App\Http\Controllers\ConversationController;
+use App\Http\Controllers\DashboardController;
 use App\Http\Controllers\FavoritesController;
 use App\Http\Controllers\LandlordsController;
 use App\Http\Controllers\MessageController;
@@ -232,6 +233,8 @@ Route::middleware('auth.api:sanctum')->group(function () {
 
 Route::middleware(['auth.api:sanctum', 'role:admin'])->group(function () {
     Route::get('/store-rooms/{storeRoom}/permit/download', [StorePermitController::class, 'download']);
+    Route::get('/dashboard/summary', [DashboardController::class, 'summary']);
     Route::get('/store-rooms/pending', [StoreModerationQueueController::class, 'pending']);
     Route::get('/store-rooms/{id}/moderation-detail', [StoreModerationQueueController::class, 'moderationDetail']);
+    Route::get('/dashboard/activity', [DashboardController::class, 'activity']);
 });
