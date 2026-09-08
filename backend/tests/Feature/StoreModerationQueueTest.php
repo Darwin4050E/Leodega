@@ -130,6 +130,8 @@ class StoreModerationQueueTest extends TestCase
             'latitude' => -2.118,
             'longitude' => -79.955,
             'firefighter_permit_path' => 'firefighter_permits/permit.pdf',
+            'room_type' => 'bodega',
+            'storage_type' => 'privado',
         ]);
         $storeRoom->storePrices()->create(['mode' => 'month', 'price' => 200, 'disponibility' => true]);
         $storeRoom->storePhotos()->create(['photo_url' => 'photos/one.jpg']);
@@ -156,6 +158,8 @@ class StoreModerationQueueTest extends TestCase
         $response->assertJsonPath('security.acceso', true);
         $response->assertJsonPath('permit_attached', true);
         $response->assertJsonCount(1, 'photos');
+        $response->assertJsonPath('room_type', 'bodega');
+        $response->assertJsonPath('storage_type', 'privado');
     }
 
     public function test_moderation_detail_returns_404_for_unknown_id(): void

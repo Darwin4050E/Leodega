@@ -86,3 +86,77 @@ export function uploadStoreRoomPhotos(storeRoomId: number | string, formData: Fo
 export function deleteStoreRoom(id: number | string) {
   return api.delete(`/storeRooms/${id}`);
 }
+
+export interface Landlord {
+  name: string | null;
+  email: string | null;
+}
+
+export interface SecurityFeatures {
+  camara: boolean;
+  ruido: boolean;
+  control: boolean;
+  acceso: boolean;
+}
+
+export const REASON_CODE = {
+  FOTOS: "fotos",
+  INFO: "info",
+  PERMISO: "permiso",
+  OTRO: "otro",
+} as const;
+export type ReasonCode = (typeof REASON_CODE)[keyof typeof REASON_CODE];
+
+export interface ModerationHistoryEntry {
+  status: "approved" | "pending" | "rejected";
+  reason_code: ReasonCode | null;
+  reason_rejected: string | null;
+  admin_id: number | null;
+  moderation_date: string;
+  permit_waived_at: string | null;
+}
+
+export interface StoreRoomQueueItem {
+  id: number;
+  title: string;
+  city: string;
+  size: number;
+  submitted_at: string;
+  landlord: Landlord;
+  image: string | null;
+}
+
+export interface StoreRoomModerationDetail {
+  id: number;
+  title: string;
+  landlord: Landlord;
+  submitted_at: string;
+  photos: string[];
+  direction: string | null;
+  city: string;
+  latitude: number | null;
+  longitude: number | null;
+  size: number;
+  monthly_price: number;
+  leodega_fee: number;
+  landlord_share: number;
+  description: string | null;
+  cancellation_policy_tier: string | null;
+  security: SecurityFeatures;
+  permit_attached: boolean;
+  moderation_history: ModerationHistoryEntry[];
+  room_type: string | null;
+  storage_type: string | null;
+}
+
+export function getPendingStoreRooms() {
+  return api.get<StoreRoomQueueItem[]>("/store-rooms/pending");
+}
+
+export function getModerationDetail(id: number | string) {
+  return api.get<StoreRoomModerationDetail>(`/store-rooms/${id}/moderation-detail`);
+}
+
+export function downloadStoreRoomPermit(id: number | string) {
+  return api.get<Blob>(`/store-rooms/${id}/permit/download`, { responseType: "blob" });
+}

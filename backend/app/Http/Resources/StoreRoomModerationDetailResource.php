@@ -20,6 +20,9 @@ use Illuminate\Http\Resources\Json\JsonResource;
  * this store room, newest first, sourced from `StoreRooms::moderations()`.
  * Every field asserted by `StoreModerationQueueTest.php` today stays
  * unchanged; this is a new top-level key only.
+ *
+ * `room_type`/`storage_type` (additive, PR1 of SDD 3): raw model columns,
+ * exposed as-is for the expediente's listing-type summary.
  */
 class StoreRoomModerationDetailResource extends JsonResource
 {
@@ -63,6 +66,8 @@ class StoreRoomModerationDetailResource extends JsonResource
             'security' => $this->security,
             'permit_attached' => ! is_null($this->firefighter_permit_path),
             'moderation_history' => $history->values(),
+            'room_type' => $this->room_type,
+            'storage_type' => $this->storage_type,
         ];
     }
 }
