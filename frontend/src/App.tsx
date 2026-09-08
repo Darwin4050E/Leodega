@@ -41,6 +41,7 @@ import Consulta from './Components/Consulta'
 import Detalles from './Dashboard/Detalles'
 import Reportes from './Dashboard/Reportes'
 import UsuariosAdmin from './Dashboard/UsuariosAdmin'
+import ModeracionAdmin from './Dashboard/Moderacion/ModeracionAdmin'
 import GestorReservas from './Dashboard/GestorReservas/GestorReservas'
 import { Outlet } from 'react-router-dom'
 import Protected from './Routes/Protected'
@@ -83,6 +84,7 @@ function App() {
               <Route path="/admin/bodegas" element={<BodegasAdmin />} />
               <Route path="/admin/solicitudes" element={<Solicitudes />} />
               <Route path="/admin/usuarios" element={<UsuariosAdmin />} />
+              <Route path="/admin/moderacion" element={<ModeracionAdmin />} />
 
             </Route>
 
