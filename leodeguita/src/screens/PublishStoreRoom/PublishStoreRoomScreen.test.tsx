@@ -128,6 +128,26 @@ describe('PublishStoreRoomScreen (HUL-03)', () => {
     expect(createMock).not.toHaveBeenCalled()
   })
 
+  it('rejects a non-PDF permit before submit and keeps the flow blocked', async () => {
+    const user = userEvent.setup()
+    renderScreen()
+
+    await walkToLastStep(user)
+    // walkToLastStep leaves a valid PDF attached — drop it, then try a JPG.
+    await user.click(screen.getByRole('button', { name: 'Quitar permiso' }))
+    fireEvent.change(screen.getByLabelText(/Permiso del cuerpo de bomberos/), {
+      target: { files: [jpg()] },
+    })
+
+    expect(
+      await screen.findByText('El permiso debe ser un archivo PDF.'),
+    ).toBeInTheDocument()
+    expect(
+      screen.getByRole('button', { name: 'Enviar a verificación' }),
+    ).toBeDisabled()
+    expect(createMock).not.toHaveBeenCalled()
+  })
+
   it('scenario 3: a duplicate title sends the gestor back to the title step with the warning', async () => {
     const user = userEvent.setup()
     createMock.mockRejectedValueOnce(

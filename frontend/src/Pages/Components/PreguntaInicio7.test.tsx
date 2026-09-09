@@ -139,6 +139,45 @@ describe('PreguntaInicio7 — submit gate and permit requirement', () => {
     expect(btn.disabled).toBe(false);
   });
 
+  it('rejects a non-PDF permit and never stores it in the wizard', () => {
+    const setPermit = vi.fn();
+    const wrapper = WizardWrapper({ permit: null, setPermit });
+    const { container } = render(<PreguntaInicio7 />, { wrapper });
+
+    const input = container.querySelector(
+      'input[type="file"]',
+    ) as HTMLInputElement;
+    fireEvent.change(input, {
+      target: { files: [makeFile('permit.jpg', 'image/jpeg')] },
+    });
+
+    expect(setPermit).not.toHaveBeenCalledWith(expect.any(File));
+    expect(
+      screen.getByText('El permiso debe ser un archivo PDF.'),
+    ).toBeInTheDocument();
+  });
+
+  it('rejects a permit larger than 5 MB', () => {
+    const setPermit = vi.fn();
+    const wrapper = WizardWrapper({ permit: null, setPermit });
+    const { container } = render(<PreguntaInicio7 />, { wrapper });
+
+    const bigPdf = new File(
+      [new Uint8Array(5 * 1024 * 1024 + 1)],
+      'permit.pdf',
+      { type: 'application/pdf' },
+    );
+    const input = container.querySelector(
+      'input[type="file"]',
+    ) as HTMLInputElement;
+    fireEvent.change(input, { target: { files: [bigPdf] } });
+
+    expect(setPermit).not.toHaveBeenCalledWith(expect.any(File));
+    expect(
+      screen.getByText('El permiso no debe superar los 5 MB.'),
+    ).toBeInTheDocument();
+  });
+
   it('submit sends ONE multipart registration request (with the permit) then uploads photos separately', async () => {
     const user = userEvent.setup();
 

@@ -9,6 +9,10 @@ import ModalConfirmacion from "../../Components/ModalConfirmacion";
 import { asApiError } from "../../api/errors";
 import leodegalogo from '../../img/LOGO_LEODEGAISO.png';
 
+// Fire-department permit: PDF only, 5 MB. Must match the backend rule in
+// StoreStoreRoomRequest (`mimes:pdf|max:5120`) and the mobile app.
+const PERMIT_MAX_BYTES = 5 * 1024 * 1024;
+
 const PreguntaInicio7 = () => {
   const navigate = useNavigate();
   const { user } = useAuth();
@@ -28,6 +32,7 @@ const PreguntaInicio7 = () => {
     objetos: false,
   });
   const [cancellationPolicyTier, setCancellationPolicyTier] = useState("");
+  const [permitError, setPermitError] = useState<string | null>(null);
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [isProcessing, setIsProcessing] = useState(false);
 
@@ -39,6 +44,21 @@ const PreguntaInicio7 = () => {
 
   const handlePermitFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0] ?? null;
+
+    if (file) {
+      if (file.type !== "application/pdf") {
+        setPermitError("El permiso debe ser un archivo PDF.");
+        e.target.value = "";
+        return;
+      }
+      if (file.size > PERMIT_MAX_BYTES) {
+        setPermitError("El permiso no debe superar los 5 MB.");
+        e.target.value = "";
+        return;
+      }
+    }
+
+    setPermitError(null);
     wizardCtx.setPermit(file);
   };
 
@@ -237,6 +257,7 @@ const PreguntaInicio7 = () => {
                   type="button"
                   onClick={() => {
                     wizardCtx.setPermit(null);
+                    setPermitError(null);
                     if (permitInputRef.current) permitInputRef.current.value = "";
                   }}
                   className="ml-auto text-gray-400 hover:text-gray-600"
@@ -251,8 +272,14 @@ const PreguntaInicio7 = () => {
                 onClick={() => permitInputRef.current?.click()}
                 className="w-full border-2 border-dashed border-gray-300 rounded-lg p-4 text-center hover:border-purple-400 hover:bg-purple-50 transition-colors text-sm text-gray-600"
               >
-                Seleccionar archivo PDF (máx. 10 MB)
+                Seleccionar archivo PDF (máx. 5 MB)
               </button>
+            )}
+
+            {permitError && (
+              <p role="alert" className="mt-2 text-sm text-red-500">
+                {permitError}
+              </p>
             )}
           </div>
 
