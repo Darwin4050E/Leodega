@@ -149,7 +149,7 @@ const GestorReservas = () => {
     const pago = derivePagoEstado(selected);
     const cancellable = isCancellableByGestor(selected);
     const nombre = clienteNombre(selected);
-    const bodega = selected.storeRooms?.title ?? "Bodega";
+    const bodega = selected.store_rooms?.title ?? "Bodega";
 
     return (
       <div className="px-6 py-5 bg-[#F5F6FA] min-h-screen">
@@ -351,7 +351,7 @@ const GestorReservas = () => {
                       <p className="font-semibold text-gray-900 m-0">{clienteNombre(r)}</p>
                       <p className="text-[11px] text-gray-400 mt-0.5">{r.tenants?.user?.email ?? ""}</p>
                     </td>
-                    <td className="px-[18px] py-[13px] text-gray-700">{r.storeRooms?.title ?? "Bodega"}</td>
+                    <td className="px-[18px] py-[13px] text-gray-700">{r.store_rooms?.title ?? "Bodega"}</td>
                     <td className="px-[18px] py-[13px] text-gray-500 whitespace-nowrap">
                       {r.start_date} → {r.end_date}
                     </td>

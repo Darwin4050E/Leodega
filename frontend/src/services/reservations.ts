@@ -17,7 +17,8 @@ export interface LandlordReservation {
    * and the endpoint will disagree across a timezone boundary.
    */
   can_be_cancelled: boolean;
-  storeRooms?: {
+  // Laravel serializes the `storeRooms()` relation snake_cased.
+  store_rooms?: {
     id?: number;
     title?: string;
   };
