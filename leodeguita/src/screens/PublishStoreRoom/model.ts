@@ -60,8 +60,8 @@ export const STEPS: StepDef[] = [
   },
   {
     title: 'Agrega fotos de tu bodega',
-    sub: 'Necesitas al menos una foto. Recomendamos cinco.',
-    isComplete: (v) => v.photos.length >= 1,
+    sub: 'Necesitas al menos 3 fotos. Recomendamos cinco.',
+    isComplete: (v) => v.photos.length >= 3,
   },
   {
     title: '¿Dónde se encuentra tu espacio?',

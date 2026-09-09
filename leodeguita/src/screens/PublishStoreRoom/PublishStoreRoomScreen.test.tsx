@@ -80,7 +80,7 @@ async function walkToLastStep(user: ReturnType<typeof userEvent.setup>) {
   await user.click(screen.getByRole('button', { name: /Una bodega completa/ }))
   await next(user)
   fireEvent.change(screen.getByLabelText('Agregar fotos'), {
-    target: { files: [jpg()] },
+    target: { files: [jpg(), jpg(), jpg()] },
   })
   await next(user)
   await user.type(screen.getByLabelText('Dirección'), 'Km 11.5 Vía a Daule')
@@ -173,6 +173,26 @@ describe('PublishStoreRoomScreen (HUL-03)', () => {
     expect(createMock).not.toHaveBeenCalled()
   })
 
+  it('photo step stays blocked until at least three photos are added', async () => {
+    const user = userEvent.setup()
+    renderScreen()
+
+    await user.click(screen.getByRole('button', { name: 'Bodega independiente' }))
+    await next(user)
+    await user.click(screen.getByRole('button', { name: /Una bodega completa/ }))
+    await next(user)
+
+    fireEvent.change(screen.getByLabelText('Agregar fotos'), {
+      target: { files: [jpg(), jpg()] },
+    })
+    expect(screen.getByRole('button', { name: 'Continuar' })).toBeDisabled()
+
+    fireEvent.change(screen.getByLabelText('Agregar fotos'), {
+      target: { files: [jpg()] },
+    })
+    expect(screen.getByRole('button', { name: 'Continuar' })).toBeEnabled()
+  })
+
   it('sends latitude/longitude when the gestor drops a pin on the map', async () => {
     const user = userEvent.setup()
     createMock.mockResolvedValueOnce({
@@ -188,7 +208,7 @@ describe('PublishStoreRoomScreen (HUL-03)', () => {
     await user.click(screen.getByRole('button', { name: /Una bodega completa/ }))
     await next(user)
     fireEvent.change(screen.getByLabelText('Agregar fotos'), {
-      target: { files: [jpg()] },
+      target: { files: [jpg(), jpg(), jpg()] },
     })
     await next(user)
 

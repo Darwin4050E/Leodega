@@ -13,7 +13,10 @@ const PreguntaInicio3: React.FC = () => {
   const [imagePreviews, setImagePreviews] = useState<string[]>([]);
   const [files, setFiles] = useState<File[]>([]);
 
-  const MIN_PHOTOS = 5;
+  // Three is the floor for a usable listing, matching the backend
+  // (StoreStorePhotoRequest: `min:3`) and the mobile wizard. Five stays a
+  // recommendation.
+  const MIN_PHOTOS = 3;
   const MAX_PHOTOS = 10;
   const canContinue = files.length >= MIN_PHOTOS && files.length <= MAX_PHOTOS;
 
@@ -64,7 +67,7 @@ const PreguntaInicio3: React.FC = () => {
           </h1>
   
           <p className="text-center text-[#6b7280] mb-6 md:mb-8 text-[14px] sm:text-[15px] md:text-[16px] px-2">
-            Para empezar, necesitarás cinco fotos. Después podrás agregar más o hacer cambios.
+            Necesitas al menos 3 fotos, y recomendamos cinco. Después podrás agregar más o hacer cambios.
           </p>
 
           <div className="mb-2 sm:mb-4 md:mb- flex justify-center px-2 sm:px-0">
@@ -80,7 +83,7 @@ const PreguntaInicio3: React.FC = () => {
                   Haz clic para subir tus imágenes
                 </span>
                 <span className="text-[13px] text-gray-400">
-                  Mínimo 5 fotos · JPG, PNG o WEBP
+                  Mínimo 3 fotos, recomendado 5 · JPG, PNG o WEBP
                 </span>
               </button>
             ) : (
