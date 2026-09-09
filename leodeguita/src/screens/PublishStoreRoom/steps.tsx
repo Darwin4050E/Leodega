@@ -1,4 +1,4 @@
-import { useMemo, useRef } from 'react'
+import { useMemo, useRef, useState } from 'react'
 import TextField, { TextAreaField } from '../../components/TextField'
 import type { NewStoreRoom } from '../../services/storeRooms'
 import {
@@ -20,6 +20,10 @@ interface StepProps {
 
 const cardBase =
   'flex cursor-pointer flex-col items-center justify-center gap-2 rounded-2xl border-2 bg-white p-3 text-center transition-colors'
+
+// Fire-department permit: PDF only, 5 MB. Must match the backend rule in
+// StoreStoreRoomRequest (`mimes:pdf|max:5120`) and the web wizard.
+const PERMIT_MAX_BYTES = 5 * 1024 * 1024
 
 export default function StepBody({ step, values, set, errors }: StepProps) {
   switch (step) {
@@ -303,6 +307,22 @@ function SecurityStep({
   errors: FormErrors
 }) {
   const permitRef = useRef<HTMLInputElement | null>(null)
+  const [permitError, setPermitError] = useState<string | null>(null)
+
+  function pickPermit(file: File | null) {
+    if (file) {
+      if (file.type !== 'application/pdf') {
+        setPermitError('El permiso debe ser un archivo PDF.')
+        return
+      }
+      if (file.size > PERMIT_MAX_BYTES) {
+        setPermitError('El permiso no debe superar los 5 MB.')
+        return
+      }
+    }
+    setPermitError(null)
+    set('permit', file)
+  }
 
   return (
     <div className="flex flex-col gap-5">
@@ -376,8 +396,11 @@ function SecurityStep({
           ref={permitRef}
           id="permit"
           type="file"
-          accept="application/pdf,image/jpeg,image/png"
-          onChange={(e) => set('permit', e.target.files?.[0] ?? null)}
+          accept="application/pdf"
+          onChange={(e) => {
+            pickPermit(e.target.files?.[0] ?? null)
+            e.target.value = ''
+          }}
           className="hidden"
         />
         {values.permit ? (
@@ -387,7 +410,10 @@ function SecurityStep({
             </span>
             <button
               type="button"
-              onClick={() => set('permit', null)}
+              onClick={() => {
+                setPermitError(null)
+                set('permit', null)
+              }}
               aria-label="Quitar permiso"
               className="text-lg-t4"
             >
@@ -399,17 +425,21 @@ function SecurityStep({
             type="button"
             onClick={() => permitRef.current?.click()}
             className={`mt-1.5 flex w-full flex-col items-center gap-2 rounded-xl border-2 border-dashed bg-lg-bg p-5 text-sm font-semibold text-lg-t2 ${
-              errors.firefighter_permit ? 'border-lg-err' : 'border-lg-line2'
+              errors.firefighter_permit || permitError
+                ? 'border-lg-err'
+                : 'border-lg-line2'
             }`}
           >
             Sube el PDF del permiso
             <span className="text-xs font-normal text-lg-t4">
-              Obligatorio para la verificación
+              Obligatorio · PDF, máximo 5 MB
             </span>
           </button>
         )}
-        {errors.firefighter_permit && (
-          <p className="mt-1 text-xs text-lg-err">{errors.firefighter_permit}</p>
+        {(permitError || errors.firefighter_permit) && (
+          <p className="mt-1 text-xs text-lg-err">
+            {permitError ?? errors.firefighter_permit}
+          </p>
         )}
       </div>
 

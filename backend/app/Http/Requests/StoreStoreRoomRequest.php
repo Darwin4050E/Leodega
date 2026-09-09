@@ -37,7 +37,7 @@ class StoreStoreRoomRequest extends FormRequest
             'title' => ['required', 'string', $this->uniqueTitlePerLandlord()],
             'description' => 'required|string',
             'security' => 'required|string',
-            'firefighter_permit' => 'required|file|mimes:pdf,jpg,jpeg,png|max:5120',
+            'firefighter_permit' => 'required|file|mimes:pdf|max:5120',
             'cancellation_policy_tier' => 'required|in:flexible,moderada,estricta',
             'latitude' => 'nullable|numeric|between:-90,90',
             'longitude' => 'nullable|numeric|between:-180,180',
@@ -49,7 +49,7 @@ class StoreStoreRoomRequest extends FormRequest
         return [
             'title.unique' => 'Ya tienes una bodega publicada con ese nombre. Elige otro nombre para continuar.',
             'firefighter_permit.required' => 'Debe adjuntar el permiso de bomberos vigente para continuar.',
-            'firefighter_permit.mimes' => 'El permiso debe ser un archivo PDF, JPG, JPEG o PNG.',
+            'firefighter_permit.mimes' => 'El permiso debe ser un archivo PDF.',
             'firefighter_permit.max' => 'El permiso no debe superar los 5 MB.',
         ];
     }

@@ -249,6 +249,21 @@ class StoreRoomTest extends TestCase
         Storage::disk('private')->assertDirectoryEmpty('firefighter_permits');
     }
 
+    public function test_permit_image_is_rejected_only_pdf_allowed()
+    {
+        $user = User::factory()->create(['role' => 'landlord']);
+        Landlords::factory()->create(['user_id' => $user->id]);
+
+        $response = $this->actingAs($user, 'sanctum')->post('/api/storeRooms', $this->validPayload([
+            'firefighter_permit' => UploadedFile::fake()->image('permiso.jpg'),
+        ]));
+
+        $response->assertStatus(400);
+        $response->assertJsonValidationErrors(['firefighter_permit']);
+        $this->assertDatabaseCount('storeRooms', 0);
+        Storage::disk('private')->assertDirectoryEmpty('firefighter_permits');
+    }
+
     public function test_permit_oversized_returns_400()
     {
         $user = User::factory()->create(['role' => 'landlord']);
