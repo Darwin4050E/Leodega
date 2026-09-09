@@ -26,7 +26,7 @@ const reservations = [
     payment_status: 'paid',
     can_be_cancelled: true,
     has_refund_obligation: false,
-    storeRooms: { title: 'Bodega Norte' },
+    store_rooms: { title: 'Bodega Norte' },
     tenants: { user: { name: 'Ana', lastname: 'Torres', email: 'ana@example.com' } },
   },
   {
@@ -41,7 +41,7 @@ const reservations = [
     payment_status: 'pending',
     can_be_cancelled: false,
     has_refund_obligation: false,
-    storeRooms: { title: 'Bodega Sur' },
+    store_rooms: { title: 'Bodega Sur' },
     tenants: { user: { name: 'Luis', lastname: 'Perez', email: 'luis@example.com' } },
   },
   {
@@ -56,7 +56,7 @@ const reservations = [
     payment_status: 'paid',
     can_be_cancelled: false,
     has_refund_obligation: true,
-    storeRooms: { title: 'Bodega Norte' },
+    store_rooms: { title: 'Bodega Norte' },
     tenants: { user: { name: 'Marta', lastname: 'Ruiz', email: 'marta@example.com' } },
   },
   {
@@ -71,7 +71,7 @@ const reservations = [
     payment_status: 'pending',
     can_be_cancelled: false,
     has_refund_obligation: false,
-    storeRooms: { title: 'Bodega Sur' },
+    store_rooms: { title: 'Bodega Sur' },
     tenants: { user: { name: 'Carlos', lastname: 'Diaz', email: 'carlos@example.com' } },
   },
 ];
@@ -90,6 +90,21 @@ describe('GestorReservas', () => {
     expect(screen.getAllByText('Pago pendiente').length).toBeGreaterThan(0);
     expect(screen.getAllByText('Reembolsado').length).toBeGreaterThan(0);
     expect(screen.getAllByText('Sin cobro').length).toBeGreaterThan(0);
+  });
+
+  it('shows the store room name from the API `store_rooms` relation, not the "Bodega" fallback', async () => {
+    render(<GestorReservas />);
+
+    const rows = await screen.findAllByRole('row');
+    const dataRows = rows.slice(1); // drop the header row
+    const bodegaCells = dataRows.map((row) => within(row).getAllByRole('cell')[2]);
+
+    expect(bodegaCells.map((c) => c.textContent)).toEqual([
+      'Bodega Norte',
+      'Bodega Sur',
+      'Bodega Norte',
+      'Bodega Sur',
+    ]);
   });
 
   it('computes KPI tiles (Reservas/Activas/Futuras/Cobrado) excluding cancelled from Cobrado', async () => {

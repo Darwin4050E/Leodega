@@ -38,7 +38,7 @@ const Calendario = () => {
                     ) {
                         if (reservation.status !== 'confirmed') return;
 
-                        const roomTitle = reservation.storeRooms?.title ?? 'Bodega';
+                        const roomTitle = reservation.store_rooms?.title ?? 'Bodega';
                         const tenantName = reservation.tenants?.user
                             ? `${reservation.tenants.user.name} ${reservation.tenants.user.lastname}`
                             : 'Arrendatario';
