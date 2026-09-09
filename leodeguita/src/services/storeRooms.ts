@@ -35,6 +35,9 @@ export interface NewStoreRoom {
   security: Record<string, boolean>
   cancellation_policy_tier: CancellationPolicyTier | ''
   permit: File | null
+  /** Optional map pin. Both set together or both null (backend accepts `nullable`). */
+  latitude: number | null
+  longitude: number | null
 }
 
 export interface CreateStoreRoomResult {
@@ -70,6 +73,11 @@ export async function createStoreRoom(
 
   if (data.permit) {
     form.append('firefighter_permit', data.permit)
+  }
+
+  if (data.latitude !== null && data.longitude !== null) {
+    form.append('latitude', String(data.latitude))
+    form.append('longitude', String(data.longitude))
   }
 
   form.append('storePrices[0][mode]', 'month')

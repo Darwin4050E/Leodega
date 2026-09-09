@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
-import { render, screen, fireEvent } from '@testing-library/react'
+import { render, screen, fireEvent, act } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { MemoryRouter, Routes, Route } from 'react-router-dom'
 import { AxiosError } from 'axios'
@@ -11,6 +11,31 @@ vi.mock('../../services/storeRooms', () => ({
   createStoreRoom: vi.fn(),
   uploadStoreRoomPhotos: vi.fn(),
 }))
+
+// react-leaflet renders a real map that jsdom cannot lay out; stub it and
+// expose the map-click handler so a test can simulate dropping a pin.
+const leaflet = vi.hoisted(() => ({
+  onMapClick: null as
+    | ((e: { latlng: { lat: number; lng: number } }) => void)
+    | null,
+}))
+
+vi.mock('react-leaflet', () => ({
+  MapContainer: ({ children }: { children: React.ReactNode }) => (
+    <div data-testid="map">{children}</div>
+  ),
+  TileLayer: () => null,
+  Marker: () => <div data-testid="map-marker" />,
+  useMap: () => ({ invalidateSize: vi.fn() }),
+  useMapEvents: (handlers: {
+    click: (e: { latlng: { lat: number; lng: number } }) => void
+  }) => {
+    leaflet.onMapClick = handlers.click
+    return null
+  },
+}))
+
+vi.mock('leaflet', () => ({ default: { icon: () => ({}) } }))
 
 const createMock = vi.mocked(createStoreRoom)
 const uploadMock = vi.mocked(uploadStoreRoomPhotos)
@@ -146,6 +171,57 @@ describe('PublishStoreRoomScreen (HUL-03)', () => {
       screen.getByRole('button', { name: 'Enviar a verificación' }),
     ).toBeDisabled()
     expect(createMock).not.toHaveBeenCalled()
+  })
+
+  it('sends latitude/longitude when the gestor drops a pin on the map', async () => {
+    const user = userEvent.setup()
+    createMock.mockResolvedValueOnce({
+      item: { id: 12, title: 'Bodega Norte', publication_status: 'pending' },
+      message: 'ok',
+      status: 201,
+    })
+    uploadMock.mockResolvedValueOnce()
+    renderScreen()
+
+    await user.click(screen.getByRole('button', { name: 'Bodega independiente' }))
+    await next(user)
+    await user.click(screen.getByRole('button', { name: /Una bodega completa/ }))
+    await next(user)
+    fireEvent.change(screen.getByLabelText('Agregar fotos'), {
+      target: { files: [jpg()] },
+    })
+    await next(user)
+
+    // Step 3: address plus a map pin.
+    await user.type(screen.getByLabelText('Dirección'), 'Km 11.5 Vía a Daule')
+    await user.type(screen.getByLabelText('Ciudad'), 'Guayaquil')
+    act(() => {
+      leaflet.onMapClick?.({ latlng: { lat: -2.15, lng: -79.9 } })
+    })
+    expect(
+      await screen.findByText('Marcado: -2.15000, -79.90000'),
+    ).toBeInTheDocument()
+    await next(user)
+
+    await user.type(screen.getByLabelText('Título'), 'Bodega Norte')
+    await user.type(screen.getByLabelText('Descripción'), 'Espacio amplio y seco')
+    await next(user)
+    await user.type(screen.getByLabelText('Tarifa mensual (USD)'), '150')
+    await user.type(screen.getByLabelText('Tamaño (m²)'), '45')
+    await next(user)
+    await user.selectOptions(
+      screen.getByLabelText('Política de cancelación'),
+      'flexible',
+    )
+    fireEvent.change(screen.getByLabelText(/Permiso del cuerpo de bomberos/), {
+      target: { files: [pdf()] },
+    })
+    await user.click(screen.getByRole('button', { name: 'Enviar a verificación' }))
+
+    await screen.findByText('Tu espacio quedó pendiente de verificación')
+    expect(createMock).toHaveBeenCalledWith(
+      expect.objectContaining({ latitude: -2.15, longitude: -79.9 }),
+    )
   })
 
   it('scenario 3: a duplicate title sends the gestor back to the title step with the warning', async () => {
