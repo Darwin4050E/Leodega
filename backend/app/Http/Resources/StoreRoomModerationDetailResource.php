@@ -6,8 +6,10 @@ use Illuminate\Http\Request;
 use Illuminate\Http\Resources\Json\JsonResource;
 
 /**
- * The verification expediente for GET /store-rooms/{id}/moderation-detail.
- * New surface only — see StoreRoomQueueItemResource for the same note.
+ * The verification expediente shape, shared by GET /store-rooms/pending
+ * and GET /store-rooms/{id}/moderation-detail so both endpoints can never
+ * drift from each other (StoreRoomQueueItemResource was deleted for this
+ * reason — see StoreModerationQueueController).
  *
  * `latitude`/`longitude` are never invented, geocoded, or defaulted: a
  * storeroom predating the coordinate columns simply returns nulls here
@@ -20,6 +22,9 @@ use Illuminate\Http\Resources\Json\JsonResource;
  * this store room, newest first, sourced from `StoreRooms::moderations()`.
  * Every field asserted by `StoreModerationQueueTest.php` today stays
  * unchanged; this is a new top-level key only.
+ *
+ * `room_type`/`storage_type` (additive, PR1 of SDD 3): raw model columns,
+ * exposed as-is for the expediente's listing-type summary.
  */
 class StoreRoomModerationDetailResource extends JsonResource
 {
@@ -28,9 +33,9 @@ class StoreRoomModerationDetailResource extends JsonResource
         $monthlyPrice = $this->storePrices->firstWhere('mode', 'month');
         $price = $monthlyPrice?->price ? (float) $monthlyPrice->price : 0.0;
 
-        // Ordering (newest first) is applied by the eager-load constraint in
-        // StoreModerationQueueController::moderationDetail() — this resource
-        // only maps the already-ordered collection.
+        // Ordering (newest first) is applied by the shared eager-load
+        // constraint in StoreModerationQueueController::moderationEagerLoads()
+        // — this resource only maps the already-ordered collection.
         $history = $this->moderations
             ->map(fn ($moderation) => [
                 'status' => $moderation->status,
@@ -62,7 +67,10 @@ class StoreRoomModerationDetailResource extends JsonResource
             'cancellation_policy_tier' => $this->cancellation_policy_tier,
             'security' => $this->security,
             'permit_attached' => ! is_null($this->firefighter_permit_path),
+            'permit_filename' => $this->firefighter_permit_path ? basename($this->firefighter_permit_path) : null,
             'moderation_history' => $history->values(),
+            'room_type' => $this->room_type,
+            'storage_type' => $this->storage_type,
         ];
     }
 }

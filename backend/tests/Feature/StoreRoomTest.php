@@ -387,6 +387,8 @@ class StoreRoomTest extends TestCase
         $response->assertStatus(200);
         $this->assertIsString($response->json('security'));
         $this->assertSame($stored, $response->json('security'));
+    }
+
     /**
      * HUL-03 escenario 3: el mismo gestor no puede publicar dos bodegas con
      * el mismo título; la segunda solicitud se rechaza sin registrar nada.

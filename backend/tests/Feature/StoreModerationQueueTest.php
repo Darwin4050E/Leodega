@@ -65,7 +65,29 @@ class StoreModerationQueueTest extends TestCase
     {
         $admin = $this->makeUser('admin');
 
-        $pending = StoreRooms::factory()->create(['publication_status' => 'pending']);
+        Storage::fake('private');
+
+        $landlordUser = User::factory()->create(['name' => 'Ana Torres', 'email' => 'ana@example.com']);
+        $landlord = Landlords::factory()->create(['user_id' => $landlordUser->id]);
+
+        $pending = StoreRooms::factory()->create([
+            'landlord_id' => $landlord->id,
+            'publication_status' => 'pending',
+            'direction' => 'Av. Kennedy',
+            'city' => 'Guayaquil',
+            'size' => 30.5,
+            'description' => 'Bodega amplia y segura',
+            'cancellation_policy_tier' => 'moderada',
+            'security' => json_encode(['camara' => true, 'ruido' => false, 'control' => true, 'acceso' => true]),
+            'latitude' => -2.118,
+            'longitude' => -79.955,
+            'firefighter_permit_path' => 'firefighter_permits/permit.pdf',
+            'room_type' => 'bodega',
+            'storage_type' => 'privado',
+        ]);
+        $pending->storePrices()->create(['mode' => 'month', 'price' => 200, 'disponibility' => true]);
+        $pending->storePhotos()->create(['photo_url' => 'photos/one.jpg']);
+
         StoreRooms::factory()->create(['publication_status' => 'approved']);
         StoreRooms::factory()->create(['publication_status' => 'rejected']);
 
@@ -74,6 +96,86 @@ class StoreModerationQueueTest extends TestCase
         $response->assertStatus(200);
         $response->assertJsonCount(1);
         $response->assertJsonPath('0.id', $pending->id);
+        $response->assertJsonPath('0.landlord.name', 'Ana Torres');
+        $response->assertJsonPath('0.landlord.email', 'ana@example.com');
+        $response->assertJsonPath('0.direction', 'Av. Kennedy');
+        $response->assertJsonPath('0.city', 'Guayaquil');
+        $response->assertJsonPath('0.latitude', -2.118);
+        $response->assertJsonPath('0.longitude', -79.955);
+        $response->assertJsonPath('0.size', 30.5);
+        $response->assertJsonPath('0.monthly_price', 200);
+        $response->assertJsonPath('0.leodega_fee', 20);
+        $response->assertJsonPath('0.landlord_share', 180);
+        $response->assertJsonPath('0.description', 'Bodega amplia y segura');
+        $response->assertJsonPath('0.cancellation_policy_tier', 'moderada');
+        $response->assertJsonPath('0.security.camara', true);
+        $response->assertJsonPath('0.security.ruido', false);
+        $response->assertJsonPath('0.security.control', true);
+        $response->assertJsonPath('0.security.acceso', true);
+        $response->assertJsonPath('0.permit_attached', true);
+        $response->assertJsonPath('0.permit_filename', 'permit.pdf');
+        $response->assertJsonCount(1, '0.photos');
+        $response->assertJsonPath('0.room_type', 'bodega');
+        $response->assertJsonPath('0.storage_type', 'privado');
+    }
+
+    public function test_pending_history_orders_newest_first_via_shared_eager_load(): void
+    {
+        $admin = $this->makeUser('admin');
+        $storeRoom = StoreRooms::factory()->create(['publication_status' => 'pending']);
+
+        $storeRoom->moderations()->create([
+            'status' => 'rejected',
+            'reason_code' => 'fotos',
+            'reason_rejected' => 'Fotos borrosas',
+            'admin_id' => $admin->id,
+            'moderation_date' => now()->subDays(2),
+        ]);
+        $storeRoom->moderations()->create([
+            'status' => 'rejected',
+            'reason_code' => 'info',
+            'reason_rejected' => 'Descripción incompleta',
+            'admin_id' => $admin->id,
+            'moderation_date' => now()->subDay(),
+        ]);
+
+        $response = $this->actingAs($admin, 'sanctum')->getJson('/api/store-rooms/pending');
+
+        $response->assertStatus(200);
+        $response->assertJsonPath('0.moderation_history.0.reason_code', 'info');
+        $response->assertJsonPath('0.moderation_history.0.reason_rejected', 'Descripción incompleta');
+        $response->assertJsonPath('0.moderation_history.0.admin_id', $admin->id);
+        $response->assertJsonPath('0.moderation_history.1.reason_code', 'fotos');
+    }
+
+    public function test_pending_permit_filename_present_when_attached(): void
+    {
+        $admin = $this->makeUser('admin');
+
+        $storeRoom = StoreRooms::factory()->create([
+            'publication_status' => 'pending',
+            'firefighter_permit_path' => 'firefighter_permits/permiso_bomberos_daule.pdf',
+        ]);
+
+        $response = $this->actingAs($admin, 'sanctum')->getJson('/api/store-rooms/pending');
+
+        $response->assertStatus(200);
+        $response->assertJsonPath('0.permit_filename', 'permiso_bomberos_daule.pdf');
+    }
+
+    public function test_pending_permit_filename_null_when_absent(): void
+    {
+        $admin = $this->makeUser('admin');
+
+        StoreRooms::factory()->create([
+            'publication_status' => 'pending',
+            'firefighter_permit_path' => null,
+        ]);
+
+        $response = $this->actingAs($admin, 'sanctum')->getJson('/api/store-rooms/pending');
+
+        $response->assertStatus(200);
+        $response->assertJsonPath('0.permit_filename', null);
     }
 
     // -- moderationDetail() ------------------------------------------------
@@ -130,6 +232,8 @@ class StoreModerationQueueTest extends TestCase
             'latitude' => -2.118,
             'longitude' => -79.955,
             'firefighter_permit_path' => 'firefighter_permits/permit.pdf',
+            'room_type' => 'bodega',
+            'storage_type' => 'privado',
         ]);
         $storeRoom->storePrices()->create(['mode' => 'month', 'price' => 200, 'disponibility' => true]);
         $storeRoom->storePhotos()->create(['photo_url' => 'photos/one.jpg']);
@@ -155,7 +259,10 @@ class StoreModerationQueueTest extends TestCase
         $response->assertJsonPath('security.control', true);
         $response->assertJsonPath('security.acceso', true);
         $response->assertJsonPath('permit_attached', true);
+        $response->assertJsonPath('permit_filename', 'permit.pdf');
         $response->assertJsonCount(1, 'photos');
+        $response->assertJsonPath('room_type', 'bodega');
+        $response->assertJsonPath('storage_type', 'privado');
     }
 
     public function test_moderation_detail_returns_404_for_unknown_id(): void

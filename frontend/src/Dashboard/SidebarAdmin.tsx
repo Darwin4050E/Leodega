@@ -113,6 +113,28 @@ export default function SidebarAdmin(
                 </div>
 
                 <nav className="flex-1 py-6 overflow-y-auto">
+                    {role === "admin" && (
+                        <SidebarItem
+                            label="Resumen"
+                            active={activeItem === 'resumen'}
+                            onClick={() => handleItemClick(() => {
+                                setActiveItem('resumen');
+                                navigate(`${basePath}/resumen`);
+                            })}
+                        />
+                    )}
+
+                    {role === "admin" && (
+                        <SidebarItem
+                            label="Moderación"
+                            active={activeItem === 'moderacion'}
+                            onClick={() => handleItemClick(() => {
+                                setActiveItem('moderacion');
+                                navigate(`${basePath}/moderacion`);
+                            })}
+                        />
+                    )}
+
                     <SidebarItem
                         label="Bodegas"
                         active={activeItem === 'bodegas'}
@@ -122,8 +144,15 @@ export default function SidebarAdmin(
                         })}
                     />
 
+                    {/*
+                      Same route segment, two different screens: for an admin
+                      `/admin/solicitudes` lists user reports, while for a
+                      landlord `/arrendador/solicitudes` lists reservation
+                      requests. The label follows the role so neither side is
+                      mislabelled.
+                    */}
                     <SidebarItem
-                        label="Solicitudes"
+                        label={role === "admin" ? "Reportes" : "Solicitudes"}
                         active={activeItem === 'solicitudes'}
                         onClick={() => handleItemClick(() => {
                             setActiveItem('solicitudes');

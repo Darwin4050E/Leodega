@@ -1,3 +1,4 @@
+import type { ReactNode } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 
 interface ModalConfirmacionProps {
@@ -7,6 +8,8 @@ interface ModalConfirmacionProps {
   mensaje?: string;
   textoBoton?: string;
   onConfirm: () => void;
+  children?: ReactNode;
+  confirmDisabled?: boolean;
 }
 
 const ModalConfirmacion = ({
@@ -16,6 +19,8 @@ const ModalConfirmacion = ({
   mensaje,
   textoBoton = "Aceptar",
   onConfirm,
+  children,
+  confirmDisabled = false,
 }: ModalConfirmacionProps) => {
   return (
     <AnimatePresence>
@@ -64,12 +69,15 @@ const ModalConfirmacion = ({
               </p>
             )}
 
+            {children && <div className="mb-6 text-left">{children}</div>}
+
             <motion.button
               onClick={() => {
                 onConfirm();
                 onClose();
               }}
-              className="bg-purple-600 text-white w-full py-3 rounded-xl font-medium hover:bg-purple-700 shadow-md hover:shadow-lg transition-all"
+              disabled={confirmDisabled}
+              className="bg-purple-600 text-white w-full py-3 rounded-xl font-medium hover:bg-purple-700 shadow-md hover:shadow-lg transition-all disabled:cursor-not-allowed disabled:opacity-50"
               whileTap={{ scale: 0.97 }}
             >
               {textoBoton}

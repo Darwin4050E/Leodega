@@ -26,4 +26,13 @@ class StoreModeration extends Model
     {
         return $this->belongsTo(StoreRooms::class, 'store_id');
     }
+
+    // Mirrors AccountModeration::admin():
+    // resolves the deciding admin for the activity feed. Nullable — both
+    // `admin_id` columns are nullable with `nullOnDelete`, and rows
+    // predating SDD 2 have none.
+    public function admin()
+    {
+        return $this->belongsTo(User::class, 'admin_id');
+    }
 }
