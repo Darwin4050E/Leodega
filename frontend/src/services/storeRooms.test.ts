@@ -20,7 +20,6 @@ import {
   uploadStoreRoomPhotos,
   deleteStoreRoom,
   getPendingStoreRooms,
-  getModerationDetail,
   downloadStoreRoomPermit,
 } from './storeRooms';
 
@@ -126,51 +125,36 @@ describe('storeRooms service', () => {
     await expect(deleteStoreRoom(5)).rejects.toEqual(error);
   });
 
-  it('getPendingStoreRooms calls GET /store-rooms/pending and returns a bare array', async () => {
+  it('getPendingStoreRooms calls GET /store-rooms/pending and returns the full dossier shape', async () => {
     const queue = [
       {
         id: 1,
         title: 'Bodega A',
-        city: 'Guayaquil',
-        size: 30,
-        submitted_at: '2026-01-01T00:00:00Z',
         landlord: { name: 'Ana Torres', email: 'ana@example.com' },
-        image: null,
+        submitted_at: '2026-01-01T00:00:00Z',
+        photos: [],
+        direction: 'Av. Kennedy',
+        city: 'Guayaquil',
+        latitude: -2.118,
+        longitude: -79.955,
+        size: 30,
+        monthly_price: 200,
+        leodega_fee: 20,
+        landlord_share: 180,
+        description: 'Bodega amplia',
+        cancellation_policy_tier: 'moderada',
+        security: { camara: true, ruido: false, control: true, acceso: true },
+        permit_attached: true,
+        permit_filename: 'permiso.pdf',
+        moderation_history: [],
+        room_type: 'individual',
+        storage_type: 'seco',
       },
     ];
     mockApi.get.mockResolvedValue({ data: queue });
     const res = await getPendingStoreRooms();
     expect(mockApi.get).toHaveBeenCalledWith('/store-rooms/pending');
     expect(res.data).toEqual(queue);
-  });
-
-  it('getModerationDetail calls GET /store-rooms/:id/moderation-detail', async () => {
-    const detail = {
-      id: 1,
-      title: 'Bodega A',
-      landlord: { name: 'Ana Torres', email: 'ana@example.com' },
-      submitted_at: '2026-01-01T00:00:00Z',
-      photos: [],
-      direction: 'Av. Kennedy',
-      city: 'Guayaquil',
-      latitude: -2.118,
-      longitude: -79.955,
-      size: 30,
-      monthly_price: 200,
-      leodega_fee: 20,
-      landlord_share: 180,
-      description: 'Bodega amplia',
-      cancellation_policy_tier: 'moderada',
-      security: { camara: true, ruido: false, control: true, acceso: true },
-      permit_attached: true,
-      moderation_history: [],
-      room_type: 'individual',
-      storage_type: 'seco',
-    };
-    mockApi.get.mockResolvedValue({ data: detail });
-    const res = await getModerationDetail(1);
-    expect(mockApi.get).toHaveBeenCalledWith('/store-rooms/1/moderation-detail');
-    expect(res.data).toEqual(detail);
   });
 
   it('downloadStoreRoomPermit calls GET /store-rooms/:id/permit/download with responseType blob', () => {

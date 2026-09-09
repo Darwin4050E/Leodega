@@ -1,19 +1,23 @@
 import React from "react";
-import { FileText, AlertTriangle } from "lucide-react";
+import pdfIcon from "../../img/pdf-icon.png";
 import { downloadStoreRoomPermit } from "../../services/storeRooms";
 
 interface PermitRowProps {
   storeRoomId: number;
-  permitAttached: boolean;
+  permitFilename: string | null;
 }
 
 /**
- * Shows whether the fire-department permit was attached. When it was, a
- * click streams the admin-only endpoint as a blob and opens it in a new
- * tab. When it was not, states so plainly — no download control renders.
+ * Fire-department permit row — matches the prototype's `ADPermisoRow`
+ * (`AdminPanel.jsx:136-157`). Five state-dependent signals, all driven by
+ * whether a permit is attached: filename text, dimmed PDF icon, border
+ * color, click affordance, and a warning footer strip.
  */
-const PermitRow: React.FC<PermitRowProps> = ({ storeRoomId, permitAttached }) => {
+const PermitRow: React.FC<PermitRowProps> = ({ storeRoomId, permitFilename }) => {
+  const attached = permitFilename !== null;
+
   const handleDownload = async () => {
+    if (!attached) return;
     try {
       const { data } = await downloadStoreRoomPermit(storeRoomId);
       const url = URL.createObjectURL(data);
@@ -24,29 +28,46 @@ const PermitRow: React.FC<PermitRowProps> = ({ storeRoomId, permitAttached }) =>
     }
   };
 
-  if (!permitAttached) {
-    return (
-      <div className="flex items-center gap-3 rounded-xl border border-red-200 bg-red-50 px-4 py-3">
-        <AlertTriangle className="text-red-600 flex-shrink-0" size={20} />
-        <p className="text-sm text-red-700 font-medium">
-          Sin permiso de bomberos adjunto.
-        </p>
-      </div>
-    );
-  }
-
   return (
-    <button
-      type="button"
-      onClick={handleDownload}
-      className="w-full flex items-center gap-3 rounded-xl border border-gray-200 bg-white px-4 py-3 hover:bg-gray-50 transition-colors text-left"
+    <div
+      className={`rounded-xl overflow-hidden bg-white border ${
+        attached ? "border-gray-200" : "border-red-200"
+      }`}
     >
-      <FileText className="text-purple-600 flex-shrink-0" size={20} />
-      <div className="flex-1 min-w-0">
-        <p className="text-sm font-semibold text-gray-900">Permiso del cuerpo de bomberos</p>
-        <p className="text-xs text-gray-500">Descargar documento</p>
+      <div
+        role={attached ? "button" : undefined}
+        tabIndex={attached ? 0 : undefined}
+        onClick={attached ? handleDownload : undefined}
+        className={`flex items-center gap-3 px-4 py-4 ${
+          attached ? "cursor-pointer hover:bg-gray-50" : "cursor-default"
+        }`}
+      >
+        <div className="w-14 h-16 rounded-lg border border-gray-100 bg-gray-50 flex items-center justify-center flex-shrink-0">
+          <img
+            src={pdfIcon}
+            alt="PDF"
+            width={30}
+            height={30}
+            className={attached ? "" : "grayscale opacity-45"}
+          />
+        </div>
+        <div className="flex-1 min-w-0">
+          <p className="text-sm font-semibold text-gray-900 m-0">
+            Permiso del cuerpo de bomberos
+          </p>
+          <p
+            className={`text-xs text-gray-400 mt-1 truncate ${attached ? "font-mono" : ""}`}
+          >
+            {permitFilename ?? "Ningún archivo adjunto"}
+          </p>
+        </div>
       </div>
-    </button>
+      {!attached && (
+        <p className="m-0 px-4 py-2.5 border-t border-red-200 bg-red-50 text-xs text-red-700 font-medium">
+          El gestor debe adjuntar el permiso antes de aprobar.
+        </p>
+      )}
+    </div>
   );
 };
 

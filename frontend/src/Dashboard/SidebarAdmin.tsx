@@ -124,6 +124,17 @@ export default function SidebarAdmin(
                         />
                     )}
 
+                    {role === "admin" && (
+                        <SidebarItem
+                            label="Moderación"
+                            active={activeItem === 'moderacion'}
+                            onClick={() => handleItemClick(() => {
+                                setActiveItem('moderacion');
+                                navigate(`${basePath}/moderacion`);
+                            })}
+                        />
+                    )}
+
                     <SidebarItem
                         label="Bodegas"
                         active={activeItem === 'bodegas'}
@@ -133,8 +144,15 @@ export default function SidebarAdmin(
                         })}
                     />
 
+                    {/*
+                      Same route segment, two different screens: for an admin
+                      `/admin/solicitudes` lists user reports, while for a
+                      landlord `/arrendador/solicitudes` lists reservation
+                      requests. The label follows the role so neither side is
+                      mislabelled.
+                    */}
                     <SidebarItem
-                        label="Solicitudes"
+                        label={role === "admin" ? "Reportes" : "Solicitudes"}
                         active={activeItem === 'solicitudes'}
                         onClick={() => handleItemClick(() => {
                             setActiveItem('solicitudes');
@@ -149,17 +167,6 @@ export default function SidebarAdmin(
                             onClick={() => handleItemClick(() => {
                                 setActiveItem('usuarios');
                                 navigate(`${basePath}/usuarios`);
-                            })}
-                        />
-                    )}
-
-                    {role === "admin" && (
-                        <SidebarItem
-                            label="Moderación"
-                            active={activeItem === 'moderacion'}
-                            onClick={() => handleItemClick(() => {
-                                setActiveItem('moderacion');
-                                navigate(`${basePath}/moderacion`);
                             })}
                         />
                     )}

@@ -116,16 +116,6 @@ export interface ModerationHistoryEntry {
   permit_waived_at: string | null;
 }
 
-export interface StoreRoomQueueItem {
-  id: number;
-  title: string;
-  city: string;
-  size: number;
-  submitted_at: string;
-  landlord: Landlord;
-  image: string | null;
-}
-
 export interface StoreRoomModerationDetail {
   id: number;
   title: string;
@@ -144,17 +134,14 @@ export interface StoreRoomModerationDetail {
   cancellation_policy_tier: string | null;
   security: SecurityFeatures;
   permit_attached: boolean;
+  permit_filename: string | null;
   moderation_history: ModerationHistoryEntry[];
   room_type: string | null;
   storage_type: string | null;
 }
 
 export function getPendingStoreRooms() {
-  return api.get<StoreRoomQueueItem[]>("/store-rooms/pending");
-}
-
-export function getModerationDetail(id: number | string) {
-  return api.get<StoreRoomModerationDetail>(`/store-rooms/${id}/moderation-detail`);
+  return api.get<StoreRoomModerationDetail[]>("/store-rooms/pending");
 }
 
 export function downloadStoreRoomPermit(id: number | string) {

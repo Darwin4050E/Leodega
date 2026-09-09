@@ -6,8 +6,10 @@ interface LightboxProps {
 }
 
 /**
- * Photo grid with click-to-enlarge overlay. No external lightbox library —
- * local `activeIndex` state drives which photo shows fullscreen.
+ * Large cover photo (click-to-enlarge) followed by an up-to-4 thumbnail
+ * strip, matching the prototype's `ADExpediente` visual column
+ * (`AdminPanel.jsx:432-441`) rather than a uniform photo grid. The
+ * fullscreen overlay mechanism and `z-90` stacking are unchanged.
  */
 const Lightbox: React.FC<LightboxProps> = ({ photos }) => {
   const [activeIndex, setActiveIndex] = useState<number | null>(null);
@@ -16,24 +18,37 @@ const Lightbox: React.FC<LightboxProps> = ({ photos }) => {
     return <p className="text-sm text-gray-400">Sin fotos adjuntas.</p>;
   }
 
+  const cover = photos[0];
+  const thumbnails = photos.slice(1, 5);
+
   return (
     <>
-      <div className="grid grid-cols-4 gap-2">
-        {photos.map((photo, index) => (
-          <button
-            key={photo}
-            type="button"
-            onClick={() => setActiveIndex(index)}
-            className="h-20 rounded-lg overflow-hidden bg-gray-100"
-          >
-            <img
-              src={photo}
-              alt={`Foto ${index + 1}`}
-              className="w-full h-full object-cover"
-            />
-          </button>
-        ))}
-      </div>
+      <button
+        type="button"
+        onClick={() => setActiveIndex(0)}
+        className="w-full h-60 rounded-xl overflow-hidden bg-gray-100 block mb-2"
+      >
+        <img src={cover} alt="Portada" className="w-full h-full object-cover" />
+      </button>
+
+      {thumbnails.length > 0 && (
+        <div className="grid grid-cols-4 gap-2 mb-4">
+          {thumbnails.map((photo, index) => (
+            <button
+              key={photo}
+              type="button"
+              onClick={() => setActiveIndex(index + 1)}
+              className="h-16 rounded-lg overflow-hidden bg-gray-100"
+            >
+              <img
+                src={photo}
+                alt={`Foto ${index + 2}`}
+                className="w-full h-full object-cover"
+              />
+            </button>
+          ))}
+        </div>
+      )}
 
       {activeIndex !== null && (
         <div

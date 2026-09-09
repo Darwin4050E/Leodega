@@ -23,6 +23,15 @@ interface MiniMapProps {
  * Read-only location preview for the moderation expediente. Renders nothing
  * when either coordinate is null — never invents or geocodes a position.
  * `ExpedienteCard` owns the direction/city text fallback for that case.
+ *
+ * The wrapper carries `isolate` (CSS `isolation: isolate`) on purpose.
+ * leaflet.css assigns high z-indexes to its own layers — 600 for the marker
+ * pane, 700 for popups, 1000 for controls — which would otherwise paint over
+ * any overlay in this app, since the modals sit at z-50 and the lightbox at
+ * z-90. Isolating creates a stacking context so those values stay contained
+ * here instead of competing with siblings. Do NOT "fix" an overlay appearing
+ * behind the map by raising that overlay's z-index; that only moves the
+ * collision to the next component.
  */
 const MiniMap: React.FC<MiniMapProps> = ({ latitude, longitude }) => {
   if (latitude === null || longitude === null) {
@@ -32,7 +41,7 @@ const MiniMap: React.FC<MiniMapProps> = ({ latitude, longitude }) => {
   const position: [number, number] = [latitude, longitude];
 
   return (
-    <div className="w-full h-[180px] rounded-xl overflow-hidden border border-gray-100">
+    <div className="isolate w-full aspect-4/3 rounded-xl overflow-hidden border border-gray-100">
       <AnyMapContainer
         center={position}
         zoom={15}
