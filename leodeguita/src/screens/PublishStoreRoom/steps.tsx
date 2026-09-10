@@ -1,4 +1,7 @@
-import { useMemo, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
+import { MapContainer, Marker, TileLayer, useMap, useMapEvents } from 'react-leaflet'
+import L from 'leaflet'
+import 'leaflet/dist/leaflet.css'
 import TextField, { TextAreaField } from '../../components/TextField'
 import type { NewStoreRoom } from '../../services/storeRooms'
 import {
@@ -24,6 +27,22 @@ const cardBase =
 // Fire-department permit: PDF only, 5 MB. Must match the backend rule in
 // StoreStoreRoomRequest (`mimes:pdf|max:5120`) and the web wizard.
 const PERMIT_MAX_BYTES = 5 * 1024 * 1024
+
+// Default map view when no pin is set yet (Guayaquil).
+const MAP_DEFAULT_CENTER: [number, number] = [-2.1894, -79.8891]
+const MAP_DEFAULT_ZOOM = 12
+
+// Leaflet's default icon resolves its images from a relative path that breaks
+// under a bundler; point it at a CDN copy instead (same fix the web wizard uses).
+const markerIcon = L.icon({
+  iconUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/images/marker-icon.png',
+  iconRetinaUrl:
+    'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/images/marker-icon-2x.png',
+  shadowUrl:
+    'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/images/marker-shadow.png',
+  iconSize: [25, 41],
+  iconAnchor: [12, 41],
+})
 
 export default function StepBody({ step, values, set, errors }: StepProps) {
   switch (step) {
@@ -76,24 +95,8 @@ export default function StepBody({ step, values, set, errors }: StepProps) {
       return <PhotoStep values={values} set={set} error={errors.photos} />
 
     case 3:
-      return (
-        <div className="flex flex-col gap-4">
-          <TextField
-            label="Dirección"
-            placeholder="Km 11.5 Vía a Daule"
-            value={values.direction}
-            onChange={(e) => set('direction', e.target.value)}
-            error={errors.direction}
-          />
-          <TextField
-            label="Ciudad"
-            placeholder="Guayaquil"
-            value={values.city}
-            onChange={(e) => set('city', e.target.value)}
-            error={errors.city}
-          />
-        </div>
-      )
+      return <LocationStep values={values} set={set} errors={errors} />
+
 
     case 4:
       return (
@@ -132,6 +135,108 @@ export default function StepBody({ step, values, set, errors }: StepProps) {
     default:
       return null
   }
+}
+
+function LocationStep({
+  values,
+  set,
+  errors,
+}: {
+  values: NewStoreRoom
+  set: StepProps['set']
+  errors: FormErrors
+}) {
+  const pin =
+    values.latitude !== null && values.longitude !== null
+      ? ([values.latitude, values.longitude] as [number, number])
+      : null
+
+  return (
+    <div className="flex flex-col gap-4">
+      <TextField
+        label="Dirección"
+        placeholder="Km 11.5 Vía a Daule"
+        value={values.direction}
+        onChange={(e) => set('direction', e.target.value)}
+        error={errors.direction}
+      />
+      <TextField
+        label="Ciudad"
+        placeholder="Guayaquil"
+        value={values.city}
+        onChange={(e) => set('city', e.target.value)}
+        error={errors.city}
+      />
+
+      <div>
+        <p className="mb-1.5 text-sm font-medium text-lg-t2">
+          Ubicación en el mapa{' '}
+          <span className="font-normal text-lg-t4">(opcional)</span>
+        </p>
+        <div className="h-56 overflow-hidden rounded-2xl border border-lg-line">
+          <MapContainer
+            center={pin ?? MAP_DEFAULT_CENTER}
+            zoom={pin ? 15 : MAP_DEFAULT_ZOOM}
+            className="h-full w-full"
+          >
+            <TileLayer
+              attribution="&copy; OpenStreetMap"
+              url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
+            />
+            <MapResizer />
+            <LocationPicker
+              pin={pin}
+              onPick={(lat, lng) => {
+                set('latitude', lat)
+                set('longitude', lng)
+              }}
+            />
+          </MapContainer>
+        </div>
+        <div className="mt-1.5 flex items-center justify-between text-xs text-lg-t4">
+          <span>
+            {pin
+              ? `Marcado: ${pin[0].toFixed(5)}, ${pin[1].toFixed(5)}`
+              : 'Toca el mapa para marcar la ubicación exacta.'}
+          </span>
+          {pin && (
+            <button
+              type="button"
+              onClick={() => {
+                set('latitude', null)
+                set('longitude', null)
+              }}
+              className="font-semibold text-lg-primary"
+            >
+              Quitar
+            </button>
+          )}
+        </div>
+      </div>
+    </div>
+  )
+}
+
+function MapResizer() {
+  const map = useMap()
+  useEffect(() => {
+    const id = setTimeout(() => map.invalidateSize(), 0)
+    return () => clearTimeout(id)
+  }, [map])
+  return null
+}
+
+function LocationPicker({
+  pin,
+  onPick,
+}: {
+  pin: [number, number] | null
+  onPick: (lat: number, lng: number) => void
+}) {
+  useMapEvents({
+    click: (e) => onPick(e.latlng.lat, e.latlng.lng),
+  })
+  return pin ? <Marker position={pin} icon={markerIcon} /> : null
 }
 
 function PhotoStep({

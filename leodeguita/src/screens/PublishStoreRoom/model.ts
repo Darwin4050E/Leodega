@@ -20,6 +20,8 @@ export const EMPTY_STORE_ROOM: NewStoreRoom = {
   security: {},
   cancellation_policy_tier: '',
   permit: null,
+  latitude: null,
+  longitude: null,
 }
 
 export const POLICY_TIERS: { value: CancellationPolicyTier; label: string }[] = [
@@ -102,6 +104,8 @@ const FIELD_STEP: Record<string, number> = {
   security: 6,
   cancellation_policy_tier: 6,
   firefighter_permit: 6,
+  latitude: 3,
+  longitude: 3,
 }
 
 export type FormErrors = Record<string, string>
