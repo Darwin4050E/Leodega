@@ -24,7 +24,8 @@ class StorePhotoController extends ApiController
     public function store(Request $request, $storeRoomId)
     {
 
-        $validator = Validator::make($request->all(), (new StoreStorePhotoRequest)->rules());
+        $rules = new StoreStorePhotoRequest;
+        $validator = Validator::make($request->all(), $rules->rules(), $rules->messages());
 
         if ($validator->fails()) {
             return response()->json([

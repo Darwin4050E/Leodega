@@ -27,8 +27,16 @@ vi.mock('react-router-dom', () => ({
 // Mock ProgressBar and FooterNav to keep rendering focused.
 vi.mock('./ProgressBar', () => ({ default: () => null }));
 vi.mock('./FooterNav', () => ({
-  default: ({ onNext }: { onNext: () => void }) => (
-    <button data-testid="next-btn" onClick={onNext}>Siguiente</button>
+  default: ({
+    onNext,
+    nextDisabled,
+  }: {
+    onNext: () => void;
+    nextDisabled?: boolean;
+  }) => (
+    <button data-testid="next-btn" onClick={onNext} disabled={nextDisabled}>
+      Siguiente
+    </button>
   ),
 }));
 
@@ -45,6 +53,23 @@ describe('PreguntaInicio3', () => {
   it('renders the photos step', () => {
     render(<PreguntaInicio3 />, { wrapper });
     expect(screen.getByText(/Agrega algunas fotos/i)).toBeTruthy();
+  });
+
+  it('gates "Siguiente" until at least three photos are added', async () => {
+    render(<PreguntaInicio3 />, { wrapper });
+    const input = document.querySelector(
+      'input[type="file"]',
+    ) as HTMLInputElement;
+    const photo = (n: number) =>
+      new File(['img'], `p${n}.jpg`, { type: 'image/jpeg' });
+
+    expect(screen.getByTestId('next-btn')).toBeDisabled();
+
+    await userEvent.upload(input, [photo(1), photo(2)]);
+    expect(screen.getByTestId('next-btn')).toBeDisabled();
+
+    await userEvent.upload(input, [photo(3)]);
+    expect(screen.getByTestId('next-btn')).toBeEnabled();
   });
 
   it('clicking next stores File[] in context without writing base64 to localStorage', async () => {

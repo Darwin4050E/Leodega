@@ -287,7 +287,7 @@ function PhotoStep({
         >
           Toca para subir fotos
           <span className="text-xs font-normal text-lg-t4">
-            Recomendado: 5 fotos · JPG, PNG o WEBP
+            Mínimo 3 · recomendado 5 · JPG, PNG o WEBP
           </span>
         </button>
       ) : (
