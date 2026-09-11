@@ -22,7 +22,7 @@ class RatingsService
             ->exists();
 
         if ($alreadyRated) {
-            throw new DuplicateRatingException;
+            throw new DuplicateRatingException('Ya calificaste esta bodega');
         }
 
         return Ratings::create([
