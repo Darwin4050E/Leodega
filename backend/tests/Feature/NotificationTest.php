@@ -22,7 +22,7 @@ class NotificationTest extends TestCase
         $notification = NotificationService::send(
             $sender->id,
             $receiver->id,
-            NotificationType::RESERVATION_REQUEST,
+            NotificationType::RESERVATION_BOOKED_AND_PAID,
             'Nueva solicitud',
             'Tienes una nueva solicitud',
             ['test' => true]

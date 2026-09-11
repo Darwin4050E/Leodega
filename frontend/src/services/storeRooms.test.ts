@@ -4,6 +4,7 @@ const mockApi = vi.hoisted(() => ({
   get: vi.fn(),
   post: vi.fn(),
   put: vi.fn(),
+  delete: vi.fn(),
 }));
 
 vi.mock('../api/axios', () => ({
@@ -17,6 +18,9 @@ import {
   updateStoreRoom,
   getStoreRoomsByLandlord,
   uploadStoreRoomPhotos,
+  deleteStoreRoom,
+  getPendingStoreRooms,
+  downloadStoreRoomPermit,
 } from './storeRooms';
 
 describe('storeRooms service', () => {
@@ -34,16 +38,46 @@ describe('storeRooms service', () => {
     expect(mockApi.get).toHaveBeenCalledWith('/store-rooms/2/detail');
   });
 
-  it('createStoreRoom posts the payload as-is to /storeRooms', () => {
-    const payload = { title: 'Bodega A' };
-    createStoreRoom(payload);
-    expect(mockApi.post).toHaveBeenCalledWith('/storeRooms', payload);
+  it('createStoreRoom posts FormData with multipart headers to /storeRooms', () => {
+    const formData = new FormData();
+    formData.append('title', 'Bodega A');
+    formData.append('firefighter_permit', new Blob([], { type: 'application/pdf' }));
+    createStoreRoom(formData);
+    expect(mockApi.post).toHaveBeenCalledWith('/storeRooms', formData, {
+      headers: { 'Content-Type': 'multipart/form-data' },
+    });
   });
 
   it('updateStoreRoom puts the payload to /storeRooms/:id', () => {
     const payload = { title: 'Bodega B' };
     updateStoreRoom(6, payload);
     expect(mockApi.put).toHaveBeenCalledWith('/storeRooms/6', payload);
+  });
+
+  it('updateStoreRoom passes through the 200 body including a scenario-3 notice', async () => {
+    mockApi.put.mockResolvedValue({
+      data: {
+        data: { id: 6 },
+        message: 'Los cambios se guardaron correctamente.',
+        status: 200,
+        notice: 'Los cambios no afectan a las reservas ya confirmadas; solo aplican a nuevas reservas.',
+      },
+    });
+    const res = await updateStoreRoom(6, { price: 120 });
+    expect(res.data.notice).toBe(
+      'Los cambios no afectan a las reservas ya confirmadas; solo aplican a nuevas reservas.'
+    );
+  });
+
+  it('updateStoreRoom rejects on 400 (validation error) with the errors map intact', async () => {
+    const error = {
+      response: {
+        status: 400,
+        data: { message: 'Validation Error', errors: { price: ['El precio debe ser mayor a 0.'] } },
+      },
+    };
+    mockApi.put.mockRejectedValue(error);
+    await expect(updateStoreRoom(6, { price: 0 })).rejects.toEqual(error);
   });
 
   it('getStoreRoomsByLandlord calls GET landlords/:id/storeRooms (no leading slash, matches current behavior)', () => {
@@ -57,6 +91,76 @@ describe('storeRooms service', () => {
     uploadStoreRoomPhotos(3, formData);
     expect(mockApi.post).toHaveBeenCalledWith('/store-rooms/3/photos', formData, {
       headers: { 'Content-Type': 'multipart/form-data' },
+    });
+  });
+
+  it('deleteStoreRoom calls DELETE /storeRooms/:id', () => {
+    mockApi.delete.mockResolvedValue({ data: { message: 'Bodega eliminada correctamente' } });
+    deleteStoreRoom(5);
+    expect(mockApi.delete).toHaveBeenCalledWith('/storeRooms/5');
+  });
+
+  it('deleteStoreRoom resolves on 200', async () => {
+    mockApi.delete.mockResolvedValue({ data: { message: 'Bodega eliminada correctamente' } });
+    await expect(deleteStoreRoom(5)).resolves.toEqual({
+      data: { message: 'Bodega eliminada correctamente' },
+    });
+  });
+
+  it('deleteStoreRoom rejects on 409 (active reservations)', async () => {
+    const error = { response: { status: 409, data: { message: 'Tiene reservas activas' } } };
+    mockApi.delete.mockRejectedValue(error);
+    await expect(deleteStoreRoom(5)).rejects.toEqual(error);
+  });
+
+  it('deleteStoreRoom rejects on 403 (not the owner)', async () => {
+    const error = { response: { status: 403, data: { message: 'No autorizado' } } };
+    mockApi.delete.mockRejectedValue(error);
+    await expect(deleteStoreRoom(5)).rejects.toEqual(error);
+  });
+
+  it('deleteStoreRoom rejects on 404 (already deleted)', async () => {
+    const error = { response: { status: 404, data: { message: 'Bodega no encontrada' } } };
+    mockApi.delete.mockRejectedValue(error);
+    await expect(deleteStoreRoom(5)).rejects.toEqual(error);
+  });
+
+  it('getPendingStoreRooms calls GET /store-rooms/pending and returns the full dossier shape', async () => {
+    const queue = [
+      {
+        id: 1,
+        title: 'Bodega A',
+        landlord: { name: 'Ana Torres', email: 'ana@example.com' },
+        submitted_at: '2026-01-01T00:00:00Z',
+        photos: [],
+        direction: 'Av. Kennedy',
+        city: 'Guayaquil',
+        latitude: -2.118,
+        longitude: -79.955,
+        size: 30,
+        monthly_price: 200,
+        leodega_fee: 20,
+        landlord_share: 180,
+        description: 'Bodega amplia',
+        cancellation_policy_tier: 'moderada',
+        security: { camara: true, ruido: false, control: true, acceso: true },
+        permit_attached: true,
+        permit_filename: 'permiso.pdf',
+        moderation_history: [],
+        room_type: 'individual',
+        storage_type: 'seco',
+      },
+    ];
+    mockApi.get.mockResolvedValue({ data: queue });
+    const res = await getPendingStoreRooms();
+    expect(mockApi.get).toHaveBeenCalledWith('/store-rooms/pending');
+    expect(res.data).toEqual(queue);
+  });
+
+  it('downloadStoreRoomPermit calls GET /store-rooms/:id/permit/download with responseType blob', () => {
+    downloadStoreRoomPermit(1);
+    expect(mockApi.get).toHaveBeenCalledWith('/store-rooms/1/permit/download', {
+      responseType: 'blob',
     });
   });
 });

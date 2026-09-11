@@ -8,13 +8,20 @@ namespace App\Http\Requests;
  */
 class StoreStoreModerationRequest
 {
-    public function rules(): array
+    /**
+     * @param  string|null  $decision  approved/rejected/pending, passed by the caller
+     *                                 after peeking the raw payload so the shared
+     *                                 ModerationDecisionRules bag can branch on it
+     *                                 before validation runs.
+     * @param  bool  $permitMissing  whether the target store room has no
+     *                               firefighter permit attached.
+     */
+    public function rules(?string $decision = null, bool $permitMissing = false): array
     {
-        return [
+        return array_merge([
             'store_id' => 'required|exists:storeRooms,id',
             'status' => 'required|in:pending,approved,rejected',
-            'reason_rejected' => 'required|string',
             'moderation_date' => 'sometimes|date',
-        ];
+        ], (new ModerationDecisionRules)->rules($decision ?? 'pending', $permitMissing));
     }
 }

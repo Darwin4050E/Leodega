@@ -26,7 +26,8 @@ type Reservation = {
     start_date: string;
     end_date: string;
     status: 'confirmed' | 'pending' | 'cancelled';
-    storeRooms?: {
+    // Laravel serializes the `storeRooms()` relation snake_cased.
+    store_rooms?: {
         title: string;
     };
 };
@@ -59,7 +60,7 @@ const CalendarioTendant = () => {
             for (let d = new Date(start); d <= end; d.setDate(d.getDate() + 1)) {
                 evts.push({
                     id: `${res.id}-${d.toISOString()}`,
-                    title: res.storeRooms?.title || 'Reserva',
+                    title: res.store_rooms?.title || 'Reserva',
                     date: new Date(d),
                     hour: 9,
                     allDay: true,

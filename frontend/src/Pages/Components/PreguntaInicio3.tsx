@@ -2,24 +2,29 @@ import React, { useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import ProgressBar from './ProgressBar';
 import FooterNav from './FooterNav';
+import { useWizard } from '../../context/WizardContext';
 import leodegalogo from '../../img/LOGO_LEODEGAISO.png';
-import agregarFotos from '../../img/agregarFotos.png';
-import { Plus, X } from 'lucide-react';
+import { Plus, X, Upload } from 'lucide-react';
 
 const PreguntaInicio3: React.FC = () => {
   const navigate = useNavigate();
+  const { setPhotos } = useWizard();
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const [imagePreviews, setImagePreviews] = useState<string[]>([]);
   const [files, setFiles] = useState<File[]>([]);
 
-  const MIN_PHOTOS = 5;
+  // Three is the floor for a usable listing, matching the backend
+  // (StoreStorePhotoRequest: `min:3`) and the mobile wizard. Five stays a
+  // recommendation.
+  const MIN_PHOTOS = 3;
   const MAX_PHOTOS = 10;
   const canContinue = files.length >= MIN_PHOTOS && files.length <= MAX_PHOTOS;
 
-  const handleNext = async () => {
-    await savePhotosTemp();
+  const handleNext = () => {
+    // Store File objects in wizard context — no base64 serialization.
+    setPhotos(files);
     navigate('/preguntainicio4');
-  }
+  };
 
   const handleImageClick = () => {
     fileInputRef.current?.click();
@@ -32,26 +37,9 @@ const PreguntaInicio3: React.FC = () => {
 
       const previews = selectedFiles.map(
         file => URL.createObjectURL(file)
-      )
+      );
       setImagePreviews((prev) => [...prev, ...previews]);
     }
-  };
-
-  const filesToBase64 = (files: File[]) => Promise.all(
-    files.map(file => new Promise<string>((resolve) => {
-      const reader = new FileReader();
-      reader.onload = () => resolve(reader.result as string);
-      reader.readAsDataURL(file);
-    }))
-  )
-
-  const savePhotosTemp = async () => {
-    const baseFiles = await filesToBase64(files);
-    const existingData = JSON.parse(localStorage.getItem("optionData") || "{}");
-    localStorage.setItem("optionData", JSON.stringify({
-      ...existingData,
-      photos: baseFiles
-    }));
   };
 
   const removeImage = (index: number) => {
@@ -79,7 +67,7 @@ const PreguntaInicio3: React.FC = () => {
           </h1>
   
           <p className="text-center text-[#6b7280] mb-6 md:mb-8 text-[14px] sm:text-[15px] md:text-[16px] px-2">
-            Para empezar, necesitarás cinco fotos. Después podrás agregar más o hacer cambios.
+            Necesitas al menos 3 fotos, y recomendamos cinco. Después podrás agregar más o hacer cambios.
           </p>
 
           <div className="mb-2 sm:mb-4 md:mb- flex justify-center px-2 sm:px-0">
@@ -88,13 +76,15 @@ const PreguntaInicio3: React.FC = () => {
                 type="button"
                 onClick={handleImageClick}
                 aria-label="Agregar fotos"
-                className="w-full max-w-2xl md:max-w-3xl h-auto cursor-pointer rounded-md overflow-hidden"
+                className="w-full max-w-2xl md:max-w-3xl h-[280px] sm:h-[320px] md:h-[350px] cursor-pointer rounded-lg border-2 border-dashed border-gray-300 flex flex-col items-center justify-center gap-3 hover:border-gray-400 hover:bg-gray-50 transition-colors"
               >
-                <img
-                  src={agregarFotos}
-                  alt="Agregar Fotos"
-                  className=" pt-5 w-full h-auto max-h-[50vh] md:max-h-[60vh] object-contain hover:opacity-80 transition-opacity"
-                />
+                <Upload className="h-10 w-10 text-gray-400" />
+                <span className="text-[15px] sm:text-[16px] font-medium text-gray-600">
+                  Haz clic para subir tus imágenes
+                </span>
+                <span className="text-[13px] text-gray-400">
+                  Mínimo 3 fotos, recomendado 5 · JPG, PNG o WEBP
+                </span>
               </button>
             ) : (
               <div className=" relative w-full h-[300px] sm:h-[320px] md:h-[350px] lg:h-[320px] flex items-center justify-center">

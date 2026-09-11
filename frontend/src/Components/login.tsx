@@ -33,7 +33,7 @@ const Login: React.FC = () => {
             if (data.user.role === "landlord") {
                 navigate("/arrendador/bodegas");
             } else if (data.user.role === "admin") {
-                navigate("/admin/bodegas");
+                navigate("/admin/resumen");
             } else if (data.user.role === "tenant") {
                 navigate("/arrendatario/dashboard");
             } else {

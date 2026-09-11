@@ -39,6 +39,7 @@ class StoreModerationTest extends TestCase
             'store_id' => $storeRoom->id,
             'status' => 'pending',
             'reason_rejected' => '',
+            'reason_code' => null,
         ]);
 
         $response = $this->actingAs($admin, 'sanctum')->getJson('/api/store_moderation');
@@ -64,7 +65,7 @@ class StoreModerationTest extends TestCase
     public function test_store_creates_moderation_record_as_admin()
     {
         $admin = User::factory()->create(['role' => 'admin']);
-        $storeRoom = StoreRooms::factory()->create();
+        $storeRoom = StoreRooms::factory()->create(['firefighter_permit_path' => 'firefighter_permits/permit.pdf']);
 
         $response = $this->actingAs($admin, 'sanctum')->postJson('/api/store_moderation', [
             'store_id' => $storeRoom->id,
@@ -74,5 +75,39 @@ class StoreModerationTest extends TestCase
 
         $response->assertStatus(201);
         $this->assertDatabaseHas('store_moderation', ['store_id' => $storeRoom->id, 'status' => 'approved']);
+    }
+
+    public function test_store_creates_a_rejection_record_with_a_typed_reason_code()
+    {
+        $admin = User::factory()->create(['role' => 'admin']);
+        $storeRoom = StoreRooms::factory()->create();
+
+        $response = $this->actingAs($admin, 'sanctum')->postJson('/api/store_moderation', [
+            'store_id' => $storeRoom->id,
+            'status' => 'rejected',
+            'reason_code' => 'info',
+        ]);
+
+        $response->assertStatus(201);
+        $this->assertDatabaseHas('store_moderation', [
+            'store_id' => $storeRoom->id,
+            'status' => 'rejected',
+            'reason_code' => 'info',
+            'admin_id' => $admin->id,
+        ]);
+    }
+
+    public function test_store_rejection_without_reason_code_fails()
+    {
+        $admin = User::factory()->create(['role' => 'admin']);
+        $storeRoom = StoreRooms::factory()->create();
+
+        $response = $this->actingAs($admin, 'sanctum')->postJson('/api/store_moderation', [
+            'store_id' => $storeRoom->id,
+            'status' => 'rejected',
+        ]);
+
+        $response->assertStatus(422);
+        $response->assertJsonValidationErrors('reason_code');
     }
 }

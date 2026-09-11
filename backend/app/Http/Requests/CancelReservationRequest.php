@@ -4,7 +4,7 @@ namespace App\Http\Requests;
 
 use Illuminate\Foundation\Http\FormRequest;
 
-class UpdateReservationStatusRequest extends FormRequest
+class CancelReservationRequest extends FormRequest
 {
     public function authorize(): bool
     {
@@ -14,8 +14,7 @@ class UpdateReservationStatusRequest extends FormRequest
     public function rules(): array
     {
         return [
-            'status' => ['required', 'in:confirmed,canceled'],
-            'cancelation_reason' => ['nullable', 'string', 'max:1000'],
+            'reason' => ['required', 'string', 'min:10'],
         ];
     }
 }

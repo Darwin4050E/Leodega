@@ -3,16 +3,48 @@
 namespace Tests\Feature;
 
 use App\Models\Landlords;
+use App\Models\StorePhoto;
+use App\Models\StoreRooms;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Http\UploadedFile;
+use Illuminate\Support\Facades\Storage;
 use Tests\TestCase;
 
 class StoreRoomTest extends TestCase
 {
     use RefreshDatabase; // Limpia la base de datos de memoria en cada ejecución
 
+    protected function setUp(): void
+    {
+        parent::setUp();
+
+        Storage::fake('private');
+    }
+
+    private function validPayload(array $overrides = []): array
+    {
+        return array_merge([
+            'room_type' => 'bodega',
+            'storage_type' => 'completa',
+            'direction' => 'Av. Carlos Julio Arosemena',
+            'city' => 'Guayaquil',
+            'size' => 45.5,
+            'title' => 'Bodega Central Norte',
+            'description' => 'Espacio amplio',
+            'security' => 'Alta',
+            'firefighter_permit' => $this->fakePermit(),
+            'cancellation_policy_tier' => 'flexible',
+        ], $overrides);
+    }
+
+    private function fakePermit(string $name = 'permiso.pdf', int $kilobytes = 100): UploadedFile
+    {
+        return UploadedFile::fake()->create($name, $kilobytes, 'application/pdf');
+    }
+
     /**
-     * TC-B-01: Creación de bodega con datos válidos
+     * TC-B-01: Creación de bodega con datos válidos (convertido a multipart, HUG-04).
      */
     public function test_landlord_can_create_store_room_with_valid_data()
     {
@@ -22,20 +54,13 @@ class StoreRoomTest extends TestCase
         ]);
 
         $response = $this->actingAs($user, 'sanctum')
-            ->postJson('/api/storeRooms', [
+            ->post('/api/storeRooms', $this->validPayload([
                 'landlord_id' => $landlord->id,
-                'room_type' => 'bodega',
-                'storage_type' => 'completa',
-                'direction' => 'Av. Carlos Julio Arosemena',
-                'city' => 'Guayaquil',
-                'size' => 45.5,
-                'title' => 'Bodega Central Norte',
-                'description' => 'Espacio amplio',
-                'security' => 'Alta',
                 'publication_status' => 'pending',
-            ]);
+            ]));
 
         $response->assertStatus(201);
+        $response->assertJsonPath('item.publication_status', 'pending');
 
         $this->assertDatabaseHas('storeRooms', [
             'title' => 'Bodega Central Norte',
@@ -44,7 +69,7 @@ class StoreRoomTest extends TestCase
     }
 
     /**
-     * TC-B-03: Validación de tamaño (size) debe ser numérico
+     * TC-B-03: Validación de tamaño (size) debe ser numérico (convertido a multipart, HUG-04).
      */
     public function test_create_store_room_fails_if_size_is_not_numeric()
     {
@@ -53,17 +78,10 @@ class StoreRoomTest extends TestCase
 
         $landlord = Landlords::create(['user_id' => $user->id]);
 
-        $response = $this->actingAs($user, 'sanctum')->postJson('/api/storeRooms', [
+        $response = $this->actingAs($user, 'sanctum')->post('/api/storeRooms', $this->validPayload([
             'landlord_id' => $landlord->id,
             'size' => 'un-texto-invalido',
-            'room_type' => 'bodega',
-            'storage_type' => 'completa', // Agregado para cumplir con validación store
-            'direction' => 'Calle Falsa 123',
-            'city' => 'Guayaquil',
-            'title' => 'Prueba Fallida',
-            'description' => 'Test de validación',
-            'security' => 'Alta',
-        ]);
+        ]));
 
         $response->assertStatus(400);
         $response->assertJsonValidationErrors(['size']);
@@ -79,5 +97,436 @@ class StoreRoomTest extends TestCase
         ]);
 
         $response->assertStatus(401);
+    }
+
+    public function test_tenant_cannot_create_store_room()
+    {
+        $user = User::factory()->create(['role' => 'tenant']);
+
+        $response = $this->actingAs($user, 'sanctum')->post('/api/storeRooms', $this->validPayload());
+
+        $response->assertStatus(403);
+        $response->assertJson(['message' => 'No autorizado']);
+        $this->assertDatabaseCount('storeRooms', 0);
+    }
+
+    public function test_admin_cannot_create_store_room()
+    {
+        $user = User::factory()->create(['role' => 'admin']);
+
+        $response = $this->actingAs($user, 'sanctum')->post('/api/storeRooms', $this->validPayload());
+
+        $response->assertStatus(403);
+        $response->assertJson(['message' => 'No autorizado']);
+        $this->assertDatabaseCount('storeRooms', 0);
+    }
+
+    public function test_landlord_role_without_landlords_row_is_rejected()
+    {
+        $user = User::factory()->create(['role' => 'landlord']);
+
+        $response = $this->actingAs($user, 'sanctum')->post('/api/storeRooms', $this->validPayload());
+
+        $response->assertStatus(403);
+        $response->assertJson([
+            'message' => 'No tienes un registro de landlord asociado a tu cuenta',
+            'status' => 403,
+        ]);
+        $this->assertDatabaseCount('storeRooms', 0);
+        $this->assertDatabaseCount('notifications', 0);
+    }
+
+    public function test_client_supplied_landlord_id_is_ignored()
+    {
+        $user = User::factory()->create(['role' => 'landlord']);
+        $landlord = Landlords::factory()->create(['user_id' => $user->id]);
+        $otherLandlord = Landlords::factory()->create();
+
+        $response = $this->actingAs($user, 'sanctum')->post('/api/storeRooms', $this->validPayload([
+            'landlord_id' => $otherLandlord->id,
+        ]));
+
+        $response->assertStatus(201);
+        $this->assertDatabaseHas('storeRooms', [
+            'id' => $response->json('item.id'),
+            'landlord_id' => $landlord->id,
+        ]);
+    }
+
+    public function test_client_supplied_publication_status_is_ignored()
+    {
+        $user = User::factory()->create(['role' => 'landlord']);
+        $landlord = Landlords::factory()->create(['user_id' => $user->id]);
+
+        $response = $this->actingAs($user, 'sanctum')->post('/api/storeRooms', $this->validPayload([
+            'publication_status' => 'approved',
+        ]));
+
+        $response->assertStatus(201);
+        $this->assertDatabaseHas('storeRooms', [
+            'id' => $response->json('item.id'),
+            'publication_status' => 'pending',
+        ]);
+    }
+
+    public function test_invalid_nested_price_returns_400_with_no_orphaned_data()
+    {
+        $user = User::factory()->create(['role' => 'landlord']);
+        Landlords::factory()->create(['user_id' => $user->id]);
+
+        $response = $this->actingAs($user, 'sanctum')->post('/api/storeRooms', $this->validPayload([
+            'storePrices' => [
+                ['mode' => 'month', 'price' => 0, 'disponibility' => 1],
+            ],
+        ]));
+
+        $response->assertStatus(400);
+        $response->assertJsonValidationErrors(['storePrices.0.price']);
+        $this->assertDatabaseCount('storeRooms', 0);
+    }
+
+    public function test_store_photos_in_registration_body_are_ignored()
+    {
+        $user = User::factory()->create(['role' => 'landlord']);
+        Landlords::factory()->create(['user_id' => $user->id]);
+
+        $response = $this->actingAs($user, 'sanctum')->post('/api/storeRooms', $this->validPayload([
+            'storePhotos' => [
+                ['photo_url' => 'not-a-real-upload.jpg'],
+            ],
+        ]));
+
+        $response->assertStatus(201);
+        $this->assertSame(0, StorePhoto::count());
+    }
+
+    public function test_permit_missing_returns_400_with_exact_message()
+    {
+        $user = User::factory()->create(['role' => 'landlord']);
+        Landlords::factory()->create(['user_id' => $user->id]);
+
+        $payload = $this->validPayload();
+        unset($payload['firefighter_permit']);
+
+        $response = $this->actingAs($user, 'sanctum')->post('/api/storeRooms', $payload);
+
+        $response->assertStatus(400);
+        $response->assertJsonPath(
+            'errors.firefighter_permit.0',
+            'Debe adjuntar el permiso de bomberos vigente para continuar.'
+        );
+        $this->assertDatabaseCount('storeRooms', 0);
+        $this->assertDatabaseCount('notifications', 0);
+    }
+
+    public function test_missing_cancellation_policy_tier_returns_400()
+    {
+        $user = User::factory()->create(['role' => 'landlord']);
+        Landlords::factory()->create(['user_id' => $user->id]);
+
+        $payload = $this->validPayload();
+        unset($payload['cancellation_policy_tier']);
+
+        $response = $this->actingAs($user, 'sanctum')->post('/api/storeRooms', $payload);
+
+        $response->assertStatus(400);
+        $response->assertJsonValidationErrors(['cancellation_policy_tier']);
+        $this->assertDatabaseCount('storeRooms', 0);
+    }
+
+    public function test_permit_with_wrong_mime_type_returns_400()
+    {
+        $user = User::factory()->create(['role' => 'landlord']);
+        Landlords::factory()->create(['user_id' => $user->id]);
+
+        $response = $this->actingAs($user, 'sanctum')->post('/api/storeRooms', $this->validPayload([
+            'firefighter_permit' => UploadedFile::fake()->create('permiso.exe', 100, 'application/octet-stream'),
+        ]));
+
+        $response->assertStatus(400);
+        $response->assertJsonValidationErrors(['firefighter_permit']);
+        $this->assertDatabaseCount('storeRooms', 0);
+        Storage::disk('private')->assertDirectoryEmpty('firefighter_permits');
+    }
+
+    public function test_permit_image_is_rejected_only_pdf_allowed()
+    {
+        $user = User::factory()->create(['role' => 'landlord']);
+        Landlords::factory()->create(['user_id' => $user->id]);
+
+        $response = $this->actingAs($user, 'sanctum')->post('/api/storeRooms', $this->validPayload([
+            'firefighter_permit' => UploadedFile::fake()->image('permiso.jpg'),
+        ]));
+
+        $response->assertStatus(400);
+        $response->assertJsonValidationErrors(['firefighter_permit']);
+        $this->assertDatabaseCount('storeRooms', 0);
+        Storage::disk('private')->assertDirectoryEmpty('firefighter_permits');
+    }
+
+    public function test_permit_oversized_returns_400()
+    {
+        $user = User::factory()->create(['role' => 'landlord']);
+        Landlords::factory()->create(['user_id' => $user->id]);
+
+        $response = $this->actingAs($user, 'sanctum')->post('/api/storeRooms', $this->validPayload([
+            'firefighter_permit' => UploadedFile::fake()->create('permiso.pdf', 6000, 'application/pdf'),
+        ]));
+
+        $response->assertStatus(400);
+        $response->assertJsonValidationErrors(['firefighter_permit']);
+        $this->assertDatabaseCount('storeRooms', 0);
+        Storage::disk('private')->assertDirectoryEmpty('firefighter_permits');
+    }
+
+    public function test_valid_permit_end_to_end_and_bracket_notation_prices()
+    {
+        $user = User::factory()->create(['role' => 'landlord']);
+        Landlords::factory()->create(['user_id' => $user->id]);
+
+        $response = $this->actingAs($user, 'sanctum')->post('/api/storeRooms', $this->validPayload([
+            'storePrices' => [
+                ['mode' => 'month', 'price' => 150, 'disponibility' => 'true'],
+            ],
+        ]));
+
+        $response->assertStatus(201);
+
+        $permitPath = $response->json('item.firefighter_permit_path');
+        $this->assertNotNull($permitPath);
+        $this->assertStringStartsWith('firefighter_permits/', $permitPath);
+        Storage::disk('private')->assertExists($permitPath);
+
+        $this->assertDatabaseHas('store_prices', [
+            'store_room_id' => $response->json('item.id'),
+            'mode' => 'month',
+            'price' => 150,
+        ]);
+    }
+
+    public function test_response_contains_item_id_for_photo_upload_chaining()
+    {
+        $user = User::factory()->create(['role' => 'landlord']);
+        Landlords::factory()->create(['user_id' => $user->id]);
+
+        $response = $this->actingAs($user, 'sanctum')->post('/api/storeRooms', $this->validPayload());
+
+        $response->assertStatus(201);
+        $this->assertIsInt($response->json('item.id'));
+    }
+
+    public function test_successful_registration_notifies_every_admin()
+    {
+        $admins = User::factory()->count(2)->create(['role' => 'admin']);
+        $user = User::factory()->create(['role' => 'landlord']);
+        Landlords::factory()->create(['user_id' => $user->id]);
+
+        $response = $this->actingAs($user, 'sanctum')->post('/api/storeRooms', $this->validPayload());
+
+        $response->assertStatus(201);
+        foreach ($admins as $admin) {
+            $this->assertDatabaseHas('notifications', [
+                'receiver_id' => $admin->id,
+                'type' => 'store_created',
+            ]);
+        }
+    }
+
+    public function test_registration_with_valid_coordinates_persists_them()
+    {
+        $user = User::factory()->create(['role' => 'landlord']);
+        Landlords::factory()->create(['user_id' => $user->id]);
+
+        $response = $this->actingAs($user, 'sanctum')->post('/api/storeRooms', $this->validPayload([
+            'latitude' => -2.118,
+            'longitude' => -79.955,
+        ]));
+
+        $response->assertStatus(201);
+        $this->assertDatabaseHas('storeRooms', [
+            'id' => $response->json('item.id'),
+            'latitude' => -2.118,
+            'longitude' => -79.955,
+        ]);
+    }
+
+    public function test_registration_with_out_of_range_latitude_is_rejected()
+    {
+        $user = User::factory()->create(['role' => 'landlord']);
+        Landlords::factory()->create(['user_id' => $user->id]);
+
+        $response = $this->actingAs($user, 'sanctum')->post('/api/storeRooms', $this->validPayload([
+            'latitude' => 95,
+            'longitude' => -79.955,
+        ]));
+
+        $response->assertStatus(400);
+        $response->assertJsonValidationErrors(['latitude']);
+        $this->assertDatabaseCount('storeRooms', 0);
+    }
+
+    public function test_registration_with_out_of_range_longitude_is_rejected()
+    {
+        $user = User::factory()->create(['role' => 'landlord']);
+        Landlords::factory()->create(['user_id' => $user->id]);
+
+        $response = $this->actingAs($user, 'sanctum')->post('/api/storeRooms', $this->validPayload([
+            'latitude' => -2.118,
+            'longitude' => -200,
+        ]));
+
+        $response->assertStatus(400);
+        $response->assertJsonValidationErrors(['longitude']);
+        $this->assertDatabaseCount('storeRooms', 0);
+    }
+
+    /**
+     * Contract regression guard. `detail()` predates the SecurityFeatures
+     * cast and MUST keep returning `security` as the raw JSON string:
+     * frontend/src/Dashboard/BodegaDetalle.tsx JSON.parse()s this field, and
+     * serving the cast array here crashes that screen. The typed object is
+     * served only by GET /store-rooms/{id}/moderation-detail.
+     */
+    public function test_detail_returns_security_as_raw_string_not_cast_array()
+    {
+        $stored = json_encode(['camara' => true, 'ruido' => false, 'control' => true, 'objetos' => false]);
+
+        $landlord = Landlords::factory()->create();
+        $room = \App\Models\StoreRooms::factory()->create([
+            'landlord_id' => $landlord->id,
+            'security' => $stored,
+        ]);
+
+        $response = $this->getJson("/api/store-rooms/{$room->id}/detail");
+
+        $response->assertStatus(200);
+        $this->assertIsString($response->json('security'));
+        $this->assertSame($stored, $response->json('security'));
+    }
+
+    /**
+     * HUL-03 escenario 3: el mismo gestor no puede publicar dos bodegas con
+     * el mismo título; la segunda solicitud se rechaza sin registrar nada.
+     */
+    public function test_duplicate_title_for_same_landlord_is_rejected()
+    {
+        $user = User::factory()->create(['role' => 'landlord']);
+        $landlord = Landlords::factory()->create(['user_id' => $user->id]);
+        StoreRooms::factory()->create([
+            'landlord_id' => $landlord->id,
+            'title' => 'Bodega Central Norte',
+        ]);
+
+        $response = $this->actingAs($user, 'sanctum')
+            ->post('/api/storeRooms', $this->validPayload(['title' => 'Bodega Central Norte']));
+
+        $response->assertStatus(400);
+        $response->assertJsonPath(
+            'errors.title.0',
+            'Ya tienes una bodega publicada con ese nombre. Elige otro nombre para continuar.'
+        );
+        $this->assertDatabaseCount('storeRooms', 1);
+    }
+
+    /**
+     * El alcance del título único es por gestor: dos gestores distintos
+     * pueden publicar bodegas con el mismo nombre.
+     */
+    public function test_same_title_is_allowed_for_a_different_landlord()
+    {
+        $otherLandlord = Landlords::factory()->create();
+        StoreRooms::factory()->create([
+            'landlord_id' => $otherLandlord->id,
+            'title' => 'Bodega Central Norte',
+        ]);
+
+        $user = User::factory()->create(['role' => 'landlord']);
+        Landlords::factory()->create(['user_id' => $user->id]);
+
+        $response = $this->actingAs($user, 'sanctum')
+            ->post('/api/storeRooms', $this->validPayload(['title' => 'Bodega Central Norte']));
+
+        $response->assertStatus(201);
+        $this->assertDatabaseCount('storeRooms', 2);
+    }
+
+    /**
+     * HUL-04 escenario: un gestor existente sin bodegas obtiene 200 con una
+     * lista vacía, no un 404.
+     */
+    public function test_get_by_landlord_returns_empty_array_when_landlord_has_no_rooms()
+    {
+        $user = User::factory()->create(['role' => 'landlord']);
+        $landlord = Landlords::factory()->create(['user_id' => $user->id]);
+
+        $response = $this->actingAs($user, 'sanctum')
+            ->getJson("/api/landlords/{$landlord->id}/storeRooms");
+
+        $response->assertStatus(200);
+        $response->assertJsonCount(0);
+    }
+
+    /**
+     * HUL-04 escenario: un gestor con bodegas obtiene 200 con un objeto por
+     * bodega; las bodegas con soft delete quedan excluidas del resultado.
+     */
+    public function test_get_by_landlord_returns_one_object_per_room_excluding_soft_deleted()
+    {
+        $user = User::factory()->create(['role' => 'landlord']);
+        $landlord = Landlords::factory()->create(['user_id' => $user->id]);
+
+        StoreRooms::factory()->create([
+            'landlord_id' => $landlord->id,
+            'title' => 'Bodega Norte',
+        ]);
+        StoreRooms::factory()->create([
+            'landlord_id' => $landlord->id,
+            'title' => 'Bodega Sur',
+        ]);
+        StoreRooms::factory()->create([
+            'landlord_id' => $landlord->id,
+            'title' => 'Bodega Eliminada',
+        ])->delete();
+
+        $response = $this->actingAs($user, 'sanctum')
+            ->getJson("/api/landlords/{$landlord->id}/storeRooms");
+
+        $response->assertStatus(200);
+        $response->assertJsonCount(2);
+        $response->assertJsonStructure([
+            ['id', 'title', 'direction', 'city', 'size', 'publication_status', 'active_reservations_count'],
+        ]);
+    }
+
+    /**
+     * HUL-04 escenario: un id de gestor inexistente sigue devolviendo 404.
+     */
+    public function test_get_by_landlord_returns_404_for_unknown_landlord_id()
+    {
+        $user = User::factory()->create(['role' => 'landlord']);
+
+        $response = $this->actingAs($user, 'sanctum')
+            ->getJson('/api/landlords/999999/storeRooms');
+
+        $response->assertStatus(404);
+    }
+
+    /**
+     * Un nombre liberado al eliminar una bodega (HUG-07, soft delete) puede
+     * volver a usarse: la regla ignora las filas con deleted_at.
+     */
+    public function test_title_of_a_soft_deleted_room_can_be_reused()
+    {
+        $user = User::factory()->create(['role' => 'landlord']);
+        $landlord = Landlords::factory()->create(['user_id' => $user->id]);
+        StoreRooms::factory()->create([
+            'landlord_id' => $landlord->id,
+            'title' => 'Bodega Central Norte',
+        ])->delete();
+
+        $response = $this->actingAs($user, 'sanctum')
+            ->post('/api/storeRooms', $this->validPayload(['title' => 'Bodega Central Norte']));
+
+        $response->assertStatus(201);
     }
 }

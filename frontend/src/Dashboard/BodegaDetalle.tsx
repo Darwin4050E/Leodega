@@ -1,6 +1,5 @@
 import React, { useState, useEffect } from 'react';
 import { MapPin, MoveLeft } from 'lucide-react';
-import BodegaModal from './BodegaModal';
 import { getStoreRoomDetail, type StoreRoomDetail } from '../services/storeRooms';
 
 interface BodegaDetalleProps {
@@ -13,7 +12,6 @@ interface BodegaDetalleProps {
 const BodegaDetalle: React.FC<BodegaDetalleProps> = ({ bodega, onVolver }) => {
     const [detalle, setDetalle] = useState<StoreRoomDetail | null>(null);
     const [loading, setLoading] = useState(true);
-    const [mostrarModal, setMostrarModal] = useState(false);
     const [, setActiveImage] = useState<string | null>(null);
 
 
@@ -136,13 +134,6 @@ const BodegaDetalle: React.FC<BodegaDetalleProps> = ({ bodega, onVolver }) => {
                             <span>{detalle.size} m²</span>
                         </div>
                     </div>
-
-                    <button
-                        onClick={() => setMostrarModal(true)}
-                        className="bg-orange-500 hover:bg-orange-600 text-white font-semibold px-8 py-3 rounded-lg transition-colors"
-                    >
-                        Aprobar
-                    </button>
                 </div>
 
                 {/* DESCRIPCIÓN */}
@@ -235,12 +226,6 @@ const BodegaDetalle: React.FC<BodegaDetalleProps> = ({ bodega, onVolver }) => {
                 )}
 
             </div>
-
-            <BodegaModal
-                isOpen={mostrarModal}
-                onClose={() => setMostrarModal(false)}
-                storeId={bodega.id}
-            />
         </div>
     );
 };

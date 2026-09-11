@@ -13,8 +13,19 @@ class StoreStorePhotoRequest
     public function rules(): array
     {
         return [
-            'photos' => 'required|array|min:1',
+            'photos' => 'required|array|min:3',
             'photos.*' => 'image|mimes:jpg,jpeg,png,webp|max:2048',
+        ];
+    }
+
+    public function messages(): array
+    {
+        return [
+            'photos.required' => 'Debe adjuntar al menos 3 fotos de la bodega.',
+            'photos.min' => 'Debe adjuntar al menos 3 fotos de la bodega.',
+            'photos.*.image' => 'Cada archivo debe ser una imagen.',
+            'photos.*.mimes' => 'Las fotos deben ser JPG, JPEG, PNG o WEBP.',
+            'photos.*.max' => 'Cada foto no debe superar los 2 MB.',
         ];
     }
 }

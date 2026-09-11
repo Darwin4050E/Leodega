@@ -1,9 +1,11 @@
 <?php
 
+use App\Http\Controllers\AccountModerationController;
 use App\Http\Controllers\AdminController;
 use App\Http\Controllers\AuthController;
 use App\Http\Controllers\CancelationsPolicesController;
 use App\Http\Controllers\ConversationController;
+use App\Http\Controllers\DashboardController;
 use App\Http\Controllers\FavoritesController;
 use App\Http\Controllers\LandlordsController;
 use App\Http\Controllers\MessageController;
@@ -18,6 +20,8 @@ use App\Http\Controllers\SecurityController;
 use App\Http\Controllers\SessionController;
 use App\Http\Controllers\StoreDisponibilityController;
 use App\Http\Controllers\StoreModerationController;
+use App\Http\Controllers\StoreModerationQueueController;
+use App\Http\Controllers\StorePermitController;
 use App\Http\Controllers\StorePhotoController;
 use App\Http\Controllers\StorePricesController;
 use App\Http\Controllers\StoreRoomsController;
@@ -64,6 +68,13 @@ Route::middleware(['auth.api:sanctum', 'role:admin'])->group(function () {
     Route::delete('/user/{id}', [UserController::class, 'destroy']);
 });
 
+// HUA-03: moderación de cuentas. Endpoints semánticos con auditoría, revocación
+// de tokens y notificación — separados del PUT genérico de /user/{id}.
+Route::middleware(['auth.api:sanctum', 'role:admin'])->group(function () {
+    Route::patch('/user/{id}/block', [AccountModerationController::class, 'block']);
+    Route::patch('/user/{id}/reactivate', [AccountModerationController::class, 'reactivate']);
+});
+
 Route::get('/landlords', [LandlordsController::class, 'index']);
 Route::get('/landlords/{id}', [LandlordsController::class, 'show']);
 Route::middleware('auth.api:sanctum')->group(function () {
@@ -92,10 +103,19 @@ Route::middleware('auth.api:sanctum')->group(function () {
 Route::get('/storeRooms', [StoreRoomsController::class, 'index']);
 Route::get('/storeRooms/{id}', [StoreRoomsController::class, 'show']);
 Route::get('/store-rooms/{id}/detail', [StoreRoomsController::class, 'detail']);
-Route::middleware('auth.api:sanctum')->group(function () {
+// El registro (POST) queda restringido a landlords autenticados (HUG-04);
+// PUT/DELETE se mantienen en su propio grupo solo-auth porque PUT es el
+// camino de moderación admin (StoreModerationService::moderate) y no debe
+// exigir role:landlord.
+Route::middleware(['auth.api:sanctum', 'role:landlord'])->group(function () {
     Route::post('/storeRooms', [StoreRoomsController::class, 'store']);
+});
+Route::middleware('auth.api:sanctum')->group(function () {
     Route::put('/storeRooms/{id}', [StoreRoomsController::class, 'update']);
     Route::delete('/storeRooms/{id}', [StoreRoomsController::class, 'destroy']);
+    // SDD 2: explicit resubmission action for a rejected listing's owning
+    // gestor (decision #172.1). Empty body — see StoreRoomsController::resubmit().
+    Route::post('/storeRooms/{id}/resubmit', [StoreRoomsController::class, 'resubmit']);
 });
 
 Route::get('/storePrices', [StorePricesController::class, 'index']);
@@ -134,7 +154,8 @@ Route::middleware('auth.api:sanctum')->group(function () {
 Route::middleware('auth.api:sanctum')->group(function () {
     Route::post('/reservations', [ReservationsController::class, 'store']);
     Route::get('/landlord/reservations', [ReservationsController::class, 'landlordIndex']);
-    Route::patch('/landlord/reservations/{reservation}/status', [ReservationsController::class, 'updateStatus']);
+    Route::get('/landlord/reservations/cancellation-rate', [ReservationsController::class, 'cancellationRate']);
+    Route::patch('/landlord/reservations/{reservation}/cancel', [ReservationsController::class, 'cancel']);
     Route::get('/storeRooms/{id}/reserved-dates', [ReservationsController::class, 'reservedDates']);
 });
 
@@ -208,4 +229,12 @@ Route::middleware('auth.api:sanctum')->delete('/account', [UserController::class
 
 Route::middleware('auth.api:sanctum')->group(function () {
     Route::get('/tenant/reservations', [ReservationsController::class, 'tenantIndex']);
+});
+
+Route::middleware(['auth.api:sanctum', 'role:admin'])->group(function () {
+    Route::get('/store-rooms/{storeRoom}/permit/download', [StorePermitController::class, 'download']);
+    Route::get('/dashboard/summary', [DashboardController::class, 'summary']);
+    Route::get('/store-rooms/pending', [StoreModerationQueueController::class, 'pending']);
+    Route::get('/store-rooms/{id}/moderation-detail', [StoreModerationQueueController::class, 'moderationDetail']);
+    Route::get('/dashboard/activity', [DashboardController::class, 'activity']);
 });

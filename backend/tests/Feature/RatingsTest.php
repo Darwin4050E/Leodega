@@ -39,7 +39,7 @@ class RatingsTest extends TestCase
     public function store_room_rating_average_is_recalculated()
     {
         // TC-B-20
-        $storeRoom = StoreRooms::factory()->create();
+        $storeRoom = StoreRooms::factory()->create(['publication_status' => 'approved']);
 
         Ratings::factory()->create([
             'store_id' => $storeRoom->id,

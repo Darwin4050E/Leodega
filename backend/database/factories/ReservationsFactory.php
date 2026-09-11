@@ -25,6 +25,7 @@ class ReservationsFactory extends Factory
             'end_date' => now()->addDays(5),
             'status' => 'confirmed',
             'total_mount' => 100,
+            'rent_subtotal' => 80,
             'cancelation_reason' => null,
             'creation_date' => now(),
         ];

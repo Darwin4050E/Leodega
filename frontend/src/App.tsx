@@ -1,5 +1,6 @@
 import { BrowserRouter as Router, Routes, Route } from 'react-router-dom'
 import { AuthProvider } from './context/AuthContext'
+import { WizardProvider } from './context/WizardContext'
 import './App.css'
 import Header from './Components/Header'
 import Hero from './Components/Hero'
@@ -23,6 +24,7 @@ import ResetPassword from './Pages/ResetPassword'
 import Decision from './Components/Decision'
 import BodegasAdmin from "./Dashboard/BodegasAdmin";
 import BodegasArrendador from "./Dashboard/BodegasArrendador";
+import EditarBodega from "./Dashboard/EditarBodega";
 import Layout from './Dashboard/Layout';
 import Mensajes from './Dashboard/Mensajes'
 import Solicitudes from './Dashboard/Solicitudes'
@@ -38,7 +40,11 @@ import Resolution from './Components/Resolution'
 import Consulta from './Components/Consulta'
 import Detalles from './Dashboard/Detalles'
 import Reportes from './Dashboard/Reportes'
-import SolicitudesL from './Dashboard/SolicitudesL'
+import UsuariosAdmin from './Dashboard/UsuariosAdmin'
+import ModeracionAdmin from './Dashboard/Moderacion/ModeracionAdmin'
+import ResumenAdmin from './Dashboard/Resumen/ResumenAdmin'
+import GestorReservas from './Dashboard/GestorReservas/GestorReservas'
+import { Outlet } from 'react-router-dom'
 import Protected from './Routes/Protected'
 import Role from './Routes/Role'
 import PagePrincipal from './Dashboard/Tendant/PagePrincipal'
@@ -52,28 +58,36 @@ function App() {
         <Route path="/register" element={<Register />} />
         <Route path="/verifyCode" element={<VerifyCode />} />
         <Route path="/login" element={<Login />} />
-        <Route path="/preguntainicio1" element={<PreguntaInicio1 />} />
-        <Route path="/preguntainicio2" element={<PreguntaInicio2 />} />
-        <Route path="/preguntainicio3" element={<PreguntaInicio3 />} />
+        {/* Wizard routes share a single WizardProvider instance so File objects
+            (photos, permit) survive step navigation without serialization. */}
+        <Route element={<WizardProvider><Outlet /></WizardProvider>}>
+          <Route path="/preguntainicio1" element={<PreguntaInicio1 />} />
+          <Route path="/preguntainicio2" element={<PreguntaInicio2 />} />
+          <Route path="/preguntainicio3" element={<PreguntaInicio3 />} />
+          <Route path="/preguntainicio4" element={<PreguntaInicio4 />} />
+          <Route path="/preguntainicio5" element={<PreguntaInicio5 />} />
+          <Route path="/preguntainicio6" element={<PreguntaInicio6 />} />
+          <Route path="/preguntainicio7" element={<PreguntaInicio7 />} />
+        </Route>
         <Route path="/decision" element={<Decision />} />
         <Route path="/resetpassword" element={<ResetPassword />} />
         <Route path="/reset-password" element={<NewPassword />} />
-        <Route path="/preguntainicio4" element={<PreguntaInicio4 />} />
-        <Route path="/preguntainicio5" element={<PreguntaInicio5 />} />
-        <Route path="/preguntainicio6" element={<PreguntaInicio6 />} />
-        <Route path="/preguntainicio7" element={<PreguntaInicio7 />} />
         <Route element={<Protected />}>
           <Route element={<Layout />}>
             {/* ROLES PROTEGIDOS */}
             <Route element={<Role allowed={["landlord"]} />}>
               <Route path="/arrendador/bodegas" element={<BodegasArrendador />} />
+              <Route path="/arrendador/bodegas/:id/editar" element={<EditarBodega />} />
               <Route path="/arrendador/leodega/:id" element={<LeodegaUI />}
               />
             </Route>
             <Route element={<Role allowed={["admin"]} />}>
+              <Route path="/admin/resumen" element={<ResumenAdmin />} />
               <Route path="/admin/bodegas" element={<BodegasAdmin />} />
               <Route path="/admin/solicitudes" element={<Solicitudes />} />
-              
+              <Route path="/admin/usuarios" element={<UsuariosAdmin />} />
+              <Route path="/admin/moderacion" element={<ModeracionAdmin />} />
+
             </Route>
 
             <Route element={<Role allowed={["admin", "landlord"]} />}>
@@ -83,7 +97,7 @@ function App() {
               <Route path="/admin/calendario" element={<Calendario />} />
               
               <Route path="/arrendador/mensajes" element={<Mensajes />} />
-              <Route path="/arrendador/solicitudes" element={<SolicitudesL />} />
+              <Route path="/arrendador/solicitudes" element={<GestorReservas />} />
               <Route path="/arrendador/settings" element={<Settings />} />
               <Route path="/arrendador/calendario" element={<Calendario />} />
             </Route>

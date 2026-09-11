@@ -9,9 +9,10 @@ use App\Models\User;
 class ReservationsPolicy
 {
     /**
-     * Formaliza el check manual que antes vivía en
-     * ReservationsController::updateStatus: solo el landlord dueño de la
-     * bodega de la reserva puede confirmarla o cancelarla.
+     * Ownership-only check for HUG-06 gestor cancellation, matching the
+     * storerooms-deletion precedent: the policy decides identity, the
+     * service (ReservationService::cancelByLandlord) decides eligibility
+     * and raises ReservationConflictException.
      *
      * Recibe $landlord ya resuelto (en vez de buscarlo aquí adentro) porque
      * el controlador necesita distinguir "no tienes perfil de landlord"
@@ -24,7 +25,7 @@ class ReservationsPolicy
      *
      * @SuppressWarnings(PHPMD.UnusedFormalParameter)
      */
-    public function updateStatus(User $user, Reservations $reservation, Landlords $landlord): bool
+    public function cancel(User $user, Reservations $reservation, Landlords $landlord): bool
     {
         return $reservation->storeRooms->landlord_id === $landlord->id;
     }
