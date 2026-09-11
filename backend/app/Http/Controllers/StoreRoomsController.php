@@ -8,11 +8,12 @@ use App\Http\Requests\EditStoreRoomListingRequest;
 use App\Http\Requests\ModerationDecisionRules;
 use App\Http\Requests\StoreStoreRoomRequest;
 use App\Http\Requests\UpdateStoreRoomRequest;
+use App\Http\Resources\StoreRoomDetailResource;
 use App\Models\Landlords;
-use App\Models\Ratings;
 use App\Models\StoreRooms;
 use App\Services\ModerationDecision;
 use App\Services\StoreModerationService;
+use App\Services\RatingsService;
 use App\Services\StoreRoomDeletionService;
 use App\Services\StoreRoomService;
 use Illuminate\Http\Request;
@@ -36,9 +37,7 @@ class StoreRoomsController extends ApiController
             ->visibleTo($viewer)
             ->get()
             ->map(function ($room) {
-                $ratings = Ratings::where('store_id', $room->id);
-                $avg = round($ratings->avg('stars'), 1);
-                $count = $ratings->count();
+                $ratingSummary = (new RatingsService)->summaryFor($room->id);
 
                 return [
                     'id' => $room->id,
@@ -56,8 +55,8 @@ class StoreRoomsController extends ApiController
                     ],
                     'user_id' => $room->landlord?->user?->id,
                     'store_prices' => $room->storePrices,
-                    'rating_avg' => $avg,
-                    'rating_count' => $count,
+                    'rating_avg' => $ratingSummary['avg'],
+                    'rating_count' => $ratingSummary['count'],
                     'active_reservations_count' => $room->active_reservations_count,
                     'image' => $room->storePhotos->first()
                         ? asset('storage/'.$room->storePhotos->first()->photo_url)
@@ -309,7 +308,7 @@ class StoreRoomsController extends ApiController
         return response()->json($storeRooms, 200);
     }
 
-    public function detail($id)
+    public function detail($id, RatingsService $ratingsService)
     {
         $room = StoreRooms::with([
             'storePrices',
@@ -321,32 +320,8 @@ class StoreRoomsController extends ApiController
             return response()->json(['message' => 'Bodega no encontrada'], 404);
         }
 
-        return response()->json([
-            'id' => $room->id,
-            'title' => $room->title,
-            'description' => $room->description,
-            'direction' => $room->direction,
-            'city' => $room->city,
-            'size' => $room->size,
-            // Raw string, NOT the SecurityFeatures-cast array: this endpoint's
-            // contract predates the cast and BodegaDetalle.tsx JSON.parse()s
-            // this field. The typed object is served only by the new
-            // /store-rooms/{id}/moderation-detail endpoint.
-            'security' => $room->getRawOriginal('security'),
-            'room_type' => $room->room_type,
-            'storage_type' => $room->storage_type,
-            'active_reservations_count' => $room->active_reservations_count,
+        $ratingSummary = $ratingsService->summaryFor($room->id);
 
-            'prices' => $room->storePrices,
-
-            'photos' => $room->storePhotos->map(fn ($p) => asset('storage/'.$p->photo_url)),
-
-            'landlord' => [
-                'id' => $room->landlord->id,
-                'user_id' => $room->landlord->user->id,
-                'name' => $room->landlord->user->name,
-                'email' => $room->landlord->user->email,
-            ],
-        ]);
+        return response()->json((new StoreRoomDetailResource($room, $ratingSummary))->resolve(), 200);
     }
 }

@@ -405,6 +405,53 @@ class StoreRoomTest extends TestCase
     }
 
     /**
+     * currentlyOccupiedReservations() answers "is this storeroom occupied
+     * RIGHT NOW?", a strictly narrower question than activeReservations()
+     * (see StoreRooms::activeReservations() docblock and Engram obs #217).
+     */
+    public function test_currently_occupied_reservations_includes_a_confirmed_reservation_covering_today()
+    {
+        $landlord = Landlords::factory()->create();
+        $room = StoreRooms::factory()->create(['landlord_id' => $landlord->id]);
+
+        \App\Models\Reservations::factory()->create([
+            'store_room_id' => $room->id,
+            'status' => 'confirmed',
+            'start_date' => now()->subDays(2),
+            'end_date' => now()->addDays(2),
+        ]);
+
+        $this->assertTrue($room->currentlyOccupiedReservations()->exists());
+    }
+
+    /**
+     * The decisive test: a storeroom whose ONLY confirmed reservation lies
+     * entirely in the future must be reported as available right now, while
+     * the deletion guard (activeReservations()) still blocks its deletion.
+     * If both hold, the two predicates are correctly separated.
+     */
+    public function test_a_future_only_confirmed_reservation_does_not_make_the_room_currently_occupied()
+    {
+        $landlord = Landlords::factory()->create();
+        $room = StoreRooms::factory()->create(['landlord_id' => $landlord->id]);
+
+        \App\Models\Reservations::factory()->create([
+            'store_room_id' => $room->id,
+            'status' => 'confirmed',
+            'start_date' => now()->addDays(10),
+            'end_date' => now()->addDays(15),
+        ]);
+
+        $this->assertFalse($room->currentlyOccupiedReservations()->exists());
+        $this->assertTrue($room->activeReservations()->exists());
+
+        $response = $this->getJson("/api/store-rooms/{$room->id}/detail");
+        $response->assertStatus(200);
+        $response->assertJsonPath('is_available_now', true);
+        $response->assertJsonPath('active_reservations_count', 1);
+    }
+
+    /**
      * HUL-03 escenario 3: el mismo gestor no puede publicar dos bodegas con
      * el mismo título; la segunda solicitud se rechaza sin registrar nada.
      */

@@ -216,6 +216,14 @@ class StoreRoomResponseShapeTest extends TestCase
         // `photos` is a full array of URLs, unlike index()'s single `image`.
         $this->assertCount(2, $response->json('photos'));
         $this->assertStringContainsString('photos/first.jpg', $response->json('photos.0'));
+
+        // Additive fields for this cycle (storeroom-detail-backend): map
+        // location, rating summary and present-tense availability.
+        $this->assertNull($response->json('latitude'));
+        $this->assertNull($response->json('longitude'));
+        $response->assertJsonPath('rating_avg', 4);
+        $response->assertJsonPath('rating_count', 1);
+        $response->assertJsonPath('is_available_now', true);
     }
 
     public function test_detail_omits_publication_status(): void
@@ -228,6 +236,40 @@ class StoreRoomResponseShapeTest extends TestCase
         // does not. Pinned, not endorsed.
         $this->assertArrayNotHasKey('publication_status', $response->json());
         $this->assertArrayNotHasKey('image', $response->json());
-        $this->assertArrayNotHasKey('rating_avg', $response->json());
+    }
+
+    public function test_detail_returns_non_null_coordinates_when_set(): void
+    {
+        [$room] = $this->seedFullRoom();
+        $room->update(['latitude' => -2.118, 'longitude' => -79.955]);
+
+        $response = $this->getJson("/api/store-rooms/{$room->id}/detail");
+
+        $response->assertStatus(200);
+        $response->assertJsonPath('latitude', -2.118);
+        $response->assertJsonPath('longitude', -79.955);
+    }
+
+    public function test_detail_returns_zero_ratings_for_a_room_with_no_ratings(): void
+    {
+        $landlord = Landlords::factory()->create();
+        $room = StoreRooms::factory()->create([
+            'landlord_id' => $landlord->id,
+            'publication_status' => 'approved',
+        ]);
+
+        $response = $this->getJson("/api/store-rooms/{$room->id}/detail");
+
+        $response->assertStatus(200);
+        $response->assertJsonPath('rating_avg', 0);
+        $response->assertJsonPath('rating_count', 0);
+    }
+
+    public function test_detail_returns_404_for_a_nonexistent_room_with_unchanged_body(): void
+    {
+        $response = $this->getJson('/api/store-rooms/999999/detail');
+
+        $response->assertStatus(404);
+        $response->assertExactJson(['message' => 'Bodega no encontrada']);
     }
 }

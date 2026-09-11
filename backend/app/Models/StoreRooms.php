@@ -86,6 +86,26 @@ class StoreRooms extends Model
     }
 
     /**
+     * Answers "is this storeroom occupied RIGHT NOW?" — confirmed
+     * reservations whose date range contains today
+     * (start_date <= today <= end_date).
+     *
+     * This is NOT the deletion guard. activeReservations() (see its
+     * docblock above) intentionally also counts FUTURE confirmed
+     * reservations, because deletion must be blocked by any upcoming
+     * booking, not only a current one. This predicate answers a strictly
+     * narrower, present-tense question and must never replace or be merged
+     * into activeReservations() (Engram obs #217).
+     */
+    public function currentlyOccupiedReservations()
+    {
+        return $this->hasMany(Reservations::class, 'store_room_id')
+            ->where('status', 'confirmed')
+            ->whereDate('start_date', '<=', today())
+            ->whereDate('end_date', '>=', today());
+    }
+
+    /**
      * Single visibility predicate for the two public listing call sites
      * (StoreRoomsController::index() and ::getByLandlord()): a storeroom is
      * visible to a viewer when the viewer is an admin, when the viewer is
