@@ -2,8 +2,6 @@
 
 namespace App\Http\Controllers;
 
-use App\Exceptions\ReservationConflictException;
-use App\Exceptions\StoreRoomResubmissionException;
 use App\Http\Requests\EditStoreRoomListingRequest;
 use App\Http\Requests\ModerationDecisionRules;
 use App\Http\Requests\StoreStoreRoomRequest;
@@ -86,7 +84,6 @@ class StoreRoomsController extends ApiController
         if (! $landlord) {
             return response()->json([
                 'message' => 'No tienes un registro de landlord asociado a tu cuenta',
-                'status' => 403,
             ], 403);
         }
 
@@ -102,8 +99,7 @@ class StoreRoomsController extends ApiController
             return response()->json([
                 'message' => 'Validation Error',
                 'errors' => $e->errors(),
-                'status' => 400,
-            ], 400);
+            ], 422);
         }
 
         return response()->json([
@@ -127,7 +123,7 @@ class StoreRoomsController extends ApiController
     {
         $storeRoom = StoreRooms::find($id);
         if (! $storeRoom) {
-            return response()->json(['message' => 'Not found', 'status' => 404], 404);
+            return response()->json(['message' => 'Not found'], 404);
         }
 
         $newStatus = $request->input('publication_status');
@@ -195,8 +191,7 @@ class StoreRoomsController extends ApiController
             return response()->json([
                 'message' => 'Validation Error',
                 'errors' => $e->errors(),
-                'status' => 400,
-            ], 400);
+            ], 422);
         }
 
         $payload = [
@@ -220,18 +215,14 @@ class StoreRoomsController extends ApiController
     {
         $room = StoreRooms::find($id);
         if (! $room) {
-            return response()->json(['message' => 'Bodega no encontrada', 'status' => 404], 404);
+            return response()->json(['message' => 'Bodega no encontrada'], 404);
         }
 
         $landlord = Landlords::where('user_id', auth()->id())->firstOrFail();
 
         Gate::authorize('delete', [$room, $landlord]);
 
-        try {
-            $deletionService->delete($room);
-        } catch (ReservationConflictException $e) {
-            return response()->json(['message' => $e->getMessage()], 409);
-        }
+        $deletionService->delete($room);
 
         return response()->json(['message' => 'Bodega eliminada correctamente', 'status' => 200], 200);
     }
@@ -251,18 +242,14 @@ class StoreRoomsController extends ApiController
     {
         $storeRoom = StoreRooms::find($id);
         if (! $storeRoom) {
-            return response()->json(['message' => 'Bodega no encontrada', 'status' => 404], 404);
+            return response()->json(['message' => 'Bodega no encontrada'], 404);
         }
 
         $landlord = Landlords::where('user_id', auth()->id())->firstOrFail();
 
         Gate::authorize('resubmit', [$storeRoom, $landlord]);
 
-        try {
-            $room = $service->resubmit($storeRoom, auth()->id());
-        } catch (StoreRoomResubmissionException $e) {
-            return response()->json(['message' => $e->getMessage()], $e->statusCode);
-        }
+        $room = $service->resubmit($storeRoom, auth()->id());
 
         return response()->json([
             'data' => $room,

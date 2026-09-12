@@ -42,8 +42,8 @@ class EditStoreRoomListingRequest extends FormRequest
     }
 
     /**
-     * Preserve the legacy {message, errors, status} envelope with a 400
-     * instead of FormRequest's default 422 (source:
+     * Preserve the legacy "Validation Error" message ({message, errors})
+     * instead of FormRequest's default message (source:
      * StoreStoreRoomRequest::failedValidation()).
      */
     protected function failedValidation(Validator $validator): void
@@ -51,7 +51,6 @@ class EditStoreRoomListingRequest extends FormRequest
         throw new HttpResponseException(response()->json([
             'message' => 'Validation Error',
             'errors' => $validator->errors(),
-            'status' => 400,
-        ], 400));
+        ], 422));
     }
 }

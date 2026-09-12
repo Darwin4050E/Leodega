@@ -130,8 +130,8 @@ class StoreRoomTest extends TestCase
         $response->assertStatus(403);
         $response->assertJson([
             'message' => 'No tienes un registro de landlord asociado a tu cuenta',
-            'status' => 403,
         ]);
+        $response->assertJsonMissingPath('status');
         $this->assertDatabaseCount('storeRooms', 0);
         $this->assertDatabaseCount('notifications', 0);
     }
@@ -180,7 +180,7 @@ class StoreRoomTest extends TestCase
             ],
         ]));
 
-        $response->assertStatus(400);
+        $response->assertStatus(422);
         $response->assertJsonValidationErrors(['storePrices.0.price']);
         $this->assertDatabaseCount('storeRooms', 0);
     }
