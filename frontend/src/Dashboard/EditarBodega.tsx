@@ -184,7 +184,7 @@ const EditarBodega = () => {
       const status = apiError.response?.status;
       const fieldErrors = apiError.response?.data?.errors;
 
-      if (status === 400 && fieldErrors) {
+      if (status === 422 && fieldErrors) {
         const mapped: FieldErrors = {};
         (Object.keys(fieldErrors) as (keyof FormState)[]).forEach((key) => {
           const messages = fieldErrors[key];
