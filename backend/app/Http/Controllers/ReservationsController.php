@@ -2,8 +2,6 @@
 
 namespace App\Http\Controllers;
 
-use App\Exceptions\ReservationConflictException;
-use App\Exceptions\ReservationPricingException;
 use App\Http\Requests\CancelReservationRequest;
 use App\Http\Requests\StoreReservationRequest;
 use App\Models\Landlords;
@@ -24,13 +22,7 @@ class ReservationsController extends Controller
         $tenant = Tenants::where('user_id', $user->id)->firstOrFail();
         $room = StoreRooms::findOrFail($data['store_room_id']);
 
-        try {
-            $reservation = $reservationService->create($tenant, $room, $data, auth()->id());
-        } catch (ReservationConflictException $e) {
-            return response()->json(['message' => $e->getMessage()], 409);
-        } catch (ReservationPricingException $e) {
-            return response()->json(['message' => $e->getMessage()], 422);
-        }
+        $reservation = $reservationService->create($tenant, $room, $data, auth()->id());
 
         return response()->json([
             'message' => 'Solicitud enviada',
@@ -113,11 +105,7 @@ class ReservationsController extends Controller
 
         Gate::authorize('cancel', [$reservation, $landlord]);
 
-        try {
-            $reservation = $reservationService->cancelByLandlord($reservation, $data['reason'], auth()->id());
-        } catch (ReservationConflictException $e) {
-            return response()->json(['message' => $e->getMessage()], 409);
-        }
+        $reservation = $reservationService->cancelByLandlord($reservation, $data['reason'], auth()->id());
 
         return response()->json([
             'message' => 'Reserva cancelada',

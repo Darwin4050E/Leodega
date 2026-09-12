@@ -31,7 +31,7 @@ class StorePhotoController extends ApiController
             return response()->json([
                 'message' => 'Validation Error',
                 'errors' => $validator->errors(),
-            ], 400);
+            ], 422);
         }
 
         $photosSaved = [];

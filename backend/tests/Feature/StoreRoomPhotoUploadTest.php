@@ -33,7 +33,7 @@ class StoreRoomPhotoUploadTest extends TestCase
             ['photos' => [UploadedFile::fake()->image('a.jpg'), UploadedFile::fake()->image('b.jpg')]],
         );
 
-        $response->assertStatus(400);
+        $response->assertStatus(422);
         $response->assertJsonPath('errors.photos.0', 'Debe adjuntar al menos 3 fotos de la bodega.');
         $this->assertSame(0, StorePhoto::count());
     }

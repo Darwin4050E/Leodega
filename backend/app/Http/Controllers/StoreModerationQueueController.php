@@ -59,7 +59,7 @@ class StoreModerationQueueController extends Controller
         $room = StoreRooms::with($this->moderationEagerLoads())->find($id);
 
         if (! $room) {
-            return response()->json(['message' => 'Bodega no encontrada', 'status' => 404], 404);
+            return response()->json(['message' => 'Bodega no encontrada'], 404);
         }
 
         return response()->json((new StoreRoomModerationDetailResource($room))->resolve(), 200);
