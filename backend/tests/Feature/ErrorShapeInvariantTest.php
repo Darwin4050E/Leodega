@@ -7,6 +7,7 @@ use App\Models\StoreRooms;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Http\UploadedFile;
+use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\Storage;
 use Tests\TestCase;
 
@@ -71,6 +72,23 @@ class ErrorShapeInvariantTest extends TestCase
 
         $response = $this->actingAs($admin, 'sanctum')
             ->patchJson("/api/user/{$admin->id}/block", ['reason' => 'Motivo válido']);
+
+        $response->assertStatus(403);
+        $response->assertJsonMissingPath('status');
+    }
+
+    public function test_account_blocked_exception_self_render_has_no_status_key()
+    {
+        User::factory()->create([
+            'email' => 'bloqueado@leodega.com',
+            'password' => Hash::make('secret123'),
+            'state' => 'blocked',
+        ]);
+
+        $response = $this->postJson('/api/login', [
+            'email' => 'bloqueado@leodega.com',
+            'password' => 'secret123',
+        ]);
 
         $response->assertStatus(403);
         $response->assertJsonMissingPath('status');

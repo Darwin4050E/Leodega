@@ -13,27 +13,27 @@ class AuthController extends Controller
 {
     public function login(Request $request, AuthService $authService)
     {
+        $request->validate([
+            'email' => 'required|email',
+            'password' => 'required',
+        ]);
+
+        // HUA-03 (D5): el veredicto de cuenta bloqueada se resuelve ANTES de
+        // Auth::attempt, a partir de una búsqueda por email. Así la respuesta
+        // es idéntica con contraseña correcta o incorrecta (AC2, no
+        // enumeración) y nunca se autentica a un usuario bloqueado.
+        // AccountBlockedException se deja burbujear fuera del try/catch de
+        // abajo (no es un error inesperado) para que se auto-renderice como
+        // 403 {message} vía el manejador central.
+        $user = User::where('email', $request->email)
+            ->with(['landlord:id,user_id,optional_company', 'tenant:id,user_id,search_preference'])
+            ->first();
+
+        if ($user) {
+            $authService->ensureUserIsNotBlocked($user);
+        }
+
         try {
-            $request->validate([
-                'email' => 'required|email',
-                'password' => 'required',
-            ]);
-
-            // HUA-03 (D5): el veredicto de cuenta bloqueada se resuelve ANTES de
-            // Auth::attempt, a partir de una búsqueda por email. Así la respuesta
-            // es idéntica con contraseña correcta o incorrecta (AC2, no
-            // enumeración) y nunca se autentica a un usuario bloqueado.
-            $user = User::where('email', $request->email)
-                ->with(['landlord:id,user_id,optional_company', 'tenant:id,user_id,search_preference'])
-                ->first();
-
-            if ($user && $user->state === 'blocked') {
-                return response()->json([
-                    'status' => 'error',
-                    'message' => AuthService::BLOCKED_ACCOUNT_MESSAGE,
-                ], 403);
-            }
-
             // Autentica si existe un usuario en la bd con esas credenciales
             if (! Auth::attempt($request->only('email', 'password'))) {
                 return response()->json([
