@@ -57,7 +57,7 @@ class LandlordsTest extends TestCase
             'user_id' => 999999,
         ]);
 
-        $response->assertStatus(400);
+        $response->assertStatus(422);
         $response->assertJsonValidationErrors(['user_id']);
     }
 

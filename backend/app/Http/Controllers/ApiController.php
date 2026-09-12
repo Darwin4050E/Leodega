@@ -43,8 +43,7 @@ class ApiController extends Controller
             return response()->json([
                 'message' => 'Validation Error',
                 'errors' => $validator->errors(),
-                'status' => 400,
-            ], 400);
+            ], 422);
         }
 
         $validated = $validator->validated();
@@ -105,8 +104,7 @@ class ApiController extends Controller
             return response()->json([
                 'message' => 'Validation Error',
                 'errors' => $validator->errors(),
-                'status' => 400,
-            ], 400);
+            ], 422);
         }
 
         $validated = $validator->validated();

@@ -83,7 +83,7 @@ class StoreRoomTest extends TestCase
             'size' => 'un-texto-invalido',
         ]));
 
-        $response->assertStatus(400);
+        $response->assertStatus(422);
         $response->assertJsonValidationErrors(['size']);
     }
 
@@ -210,7 +210,7 @@ class StoreRoomTest extends TestCase
 
         $response = $this->actingAs($user, 'sanctum')->post('/api/storeRooms', $payload);
 
-        $response->assertStatus(400);
+        $response->assertStatus(422);
         $response->assertJsonPath(
             'errors.firefighter_permit.0',
             'Debe adjuntar el permiso de bomberos vigente para continuar.'
@@ -229,7 +229,7 @@ class StoreRoomTest extends TestCase
 
         $response = $this->actingAs($user, 'sanctum')->post('/api/storeRooms', $payload);
 
-        $response->assertStatus(400);
+        $response->assertStatus(422);
         $response->assertJsonValidationErrors(['cancellation_policy_tier']);
         $this->assertDatabaseCount('storeRooms', 0);
     }
@@ -243,7 +243,7 @@ class StoreRoomTest extends TestCase
             'firefighter_permit' => UploadedFile::fake()->create('permiso.exe', 100, 'application/octet-stream'),
         ]));
 
-        $response->assertStatus(400);
+        $response->assertStatus(422);
         $response->assertJsonValidationErrors(['firefighter_permit']);
         $this->assertDatabaseCount('storeRooms', 0);
         Storage::disk('private')->assertDirectoryEmpty('firefighter_permits');
@@ -258,7 +258,7 @@ class StoreRoomTest extends TestCase
             'firefighter_permit' => UploadedFile::fake()->image('permiso.jpg'),
         ]));
 
-        $response->assertStatus(400);
+        $response->assertStatus(422);
         $response->assertJsonValidationErrors(['firefighter_permit']);
         $this->assertDatabaseCount('storeRooms', 0);
         Storage::disk('private')->assertDirectoryEmpty('firefighter_permits');
@@ -273,7 +273,7 @@ class StoreRoomTest extends TestCase
             'firefighter_permit' => UploadedFile::fake()->create('permiso.pdf', 6000, 'application/pdf'),
         ]));
 
-        $response->assertStatus(400);
+        $response->assertStatus(422);
         $response->assertJsonValidationErrors(['firefighter_permit']);
         $this->assertDatabaseCount('storeRooms', 0);
         Storage::disk('private')->assertDirectoryEmpty('firefighter_permits');
@@ -360,7 +360,7 @@ class StoreRoomTest extends TestCase
             'longitude' => -79.955,
         ]));
 
-        $response->assertStatus(400);
+        $response->assertStatus(422);
         $response->assertJsonValidationErrors(['latitude']);
         $this->assertDatabaseCount('storeRooms', 0);
     }
@@ -375,7 +375,7 @@ class StoreRoomTest extends TestCase
             'longitude' => -200,
         ]));
 
-        $response->assertStatus(400);
+        $response->assertStatus(422);
         $response->assertJsonValidationErrors(['longitude']);
         $this->assertDatabaseCount('storeRooms', 0);
     }
@@ -467,7 +467,7 @@ class StoreRoomTest extends TestCase
         $response = $this->actingAs($user, 'sanctum')
             ->post('/api/storeRooms', $this->validPayload(['title' => 'Bodega Central Norte']));
 
-        $response->assertStatus(400);
+        $response->assertStatus(422);
         $response->assertJsonPath(
             'errors.title.0',
             'Ya tienes una bodega publicada con ese nombre. Elige otro nombre para continuar.'
