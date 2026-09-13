@@ -228,6 +228,142 @@ describe('LeodegaUI location', () => {
   });
 });
 
+describe('LeodegaUI fabricated content regression guard', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mockUseAuth.mockReturnValue({ user: { role: 'tenant' } });
+    mockGetReservedDates.mockResolvedValue({ data: [] });
+  });
+
+  it('never renders the fabricated specs table or business-hours strings, with or without security', async () => {
+    mockGetStoreRoomDetail.mockResolvedValue({
+      data: { ...storeRoomDetail, security: JSON.stringify({ camara: true, ruido: true, control: true, acceso: true }) },
+    });
+
+    render(<LeodegaUI />);
+    await waitFor(() => screen.getByText('Bodega Norte'));
+
+    expect(screen.queryByText('20m x 15m')).not.toBeInTheDocument();
+    expect(screen.queryByText('Concreto industrial')).not.toBeInTheDocument();
+    expect(screen.queryByText('CCTV')).not.toBeInTheDocument();
+    expect(screen.queryByText('Lunes a Viernes: 08h00 - 17h00')).not.toBeInTheDocument();
+    expect(screen.queryByText('Especificaciones técnicas')).not.toBeInTheDocument();
+    expect(screen.queryByText('Horario de atención')).not.toBeInTheDocument();
+  });
+
+  it('never renders the fabricated content when security is absent', async () => {
+    mockGetStoreRoomDetail.mockResolvedValue({ data: storeRoomDetail });
+
+    render(<LeodegaUI />);
+    await waitFor(() => screen.getByText('Bodega Norte'));
+
+    expect(screen.queryByText('20m x 15m')).not.toBeInTheDocument();
+    expect(screen.queryByText('Concreto industrial')).not.toBeInTheDocument();
+    expect(screen.queryByText('CCTV')).not.toBeInTheDocument();
+    expect(screen.queryByText('Lunes a Viernes: 08h00 - 17h00')).not.toBeInTheDocument();
+  });
+});
+
+describe('LeodegaUI Características real data', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mockUseAuth.mockReturnValue({ user: { role: 'tenant' } });
+    mockGetReservedDates.mockResolvedValue({ data: [] });
+  });
+
+  it('renders one chip per true security key, plus the size chip, when all four are true', async () => {
+    mockGetStoreRoomDetail.mockResolvedValue({
+      data: {
+        ...storeRoomDetail,
+        security: JSON.stringify({ camara: true, ruido: true, control: true, acceso: true }),
+      },
+    });
+
+    render(<LeodegaUI />);
+    await waitFor(() => screen.getByText('Bodega Norte'));
+
+    expect(screen.getByText('20 m²')).toBeInTheDocument();
+    expect(screen.getByText('Cámara de seguridad exterior')).toBeInTheDocument();
+    expect(screen.getByText('Monitor de ruido')).toBeInTheDocument();
+    expect(screen.getByText('Control de plagas y humedad')).toBeInTheDocument();
+    expect(screen.getByText('Acceso restringido 24/7')).toBeInTheDocument();
+  });
+
+  it('renders no chip for a false security key, only chips for true ones', async () => {
+    mockGetStoreRoomDetail.mockResolvedValue({
+      data: {
+        ...storeRoomDetail,
+        security: JSON.stringify({ camara: true, ruido: false, control: false, acceso: false }),
+      },
+    });
+
+    render(<LeodegaUI />);
+    await waitFor(() => screen.getByText('Bodega Norte'));
+
+    expect(screen.getByText('Cámara de seguridad exterior')).toBeInTheDocument();
+    expect(screen.queryByText('Monitor de ruido')).not.toBeInTheDocument();
+    expect(screen.queryByText('Control de plagas y humedad')).not.toBeInTheDocument();
+    expect(screen.queryByText('Acceso restringido 24/7')).not.toBeInTheDocument();
+  });
+
+  it('renders only the size chip, no crash, when security is absent', async () => {
+    mockGetStoreRoomDetail.mockResolvedValue({ data: storeRoomDetail });
+
+    render(<LeodegaUI />);
+    await waitFor(() => screen.getByText('Bodega Norte'));
+
+    expect(screen.getByText('20 m²')).toBeInTheDocument();
+    expect(screen.queryByText('Cámara de seguridad exterior')).not.toBeInTheDocument();
+    expect(screen.queryByText('Monitor de ruido')).not.toBeInTheDocument();
+    expect(screen.queryByText('Control de plagas y humedad')).not.toBeInTheDocument();
+    expect(screen.queryByText('Acceso restringido 24/7')).not.toBeInTheDocument();
+  });
+
+  it('renders only the size chip, no crash, when security is an empty string', async () => {
+    mockGetStoreRoomDetail.mockResolvedValue({
+      data: { ...storeRoomDetail, security: '' },
+    });
+
+    render(<LeodegaUI />);
+    await waitFor(() => screen.getByText('Bodega Norte'));
+
+    expect(screen.getByText('20 m²')).toBeInTheDocument();
+    expect(screen.queryByText('Cámara de seguridad exterior')).not.toBeInTheDocument();
+  });
+
+  it('renders only the size chip, no crash, when security is malformed JSON', async () => {
+    mockGetStoreRoomDetail.mockResolvedValue({
+      data: { ...storeRoomDetail, security: '{not json' },
+    });
+
+    render(<LeodegaUI />);
+    await waitFor(() => screen.getByText('Bodega Norte'));
+
+    expect(screen.getByText('20 m²')).toBeInTheDocument();
+    expect(screen.queryByText('Cámara de seguridad exterior')).not.toBeInTheDocument();
+  });
+});
+
+describe('LeodegaUI renamed headings', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mockUseAuth.mockReturnValue({ user: { role: 'tenant' } });
+    mockGetReservedDates.mockResolvedValue({ data: [] });
+  });
+
+  it('renders "Sobre esta bodega" and "Tu gestor", not the old headings', async () => {
+    mockGetStoreRoomDetail.mockResolvedValue({ data: storeRoomDetail });
+
+    render(<LeodegaUI />);
+    await waitFor(() => screen.getByText('Bodega Norte'));
+
+    expect(screen.getByRole('heading', { name: 'Sobre esta bodega' })).toBeInTheDocument();
+    expect(screen.getByText('Tu gestor')).toBeInTheDocument();
+    expect(screen.queryByRole('heading', { name: 'Descripción' })).not.toBeInTheDocument();
+    expect(screen.queryByText('Arrendador')).not.toBeInTheDocument();
+  });
+});
+
 describe('LeodegaUI not-found and error states', () => {
   beforeEach(() => {
     vi.clearAllMocks();

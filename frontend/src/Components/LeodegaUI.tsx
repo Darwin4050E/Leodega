@@ -5,6 +5,8 @@ import { getReservedDates, createReservation } from "../services/reservations";
 import { useAuth } from "../context/useAuth";
 import { asApiError } from "../api/errors";
 import { formatUSD } from "../utils/money";
+import { toDateOnlyISO, isDateBetween } from "../utils/dates";
+import { parseSecurityFeatures, SECURITY_LABELS, type ParsedSecurityFeatures } from "../utils/security";
 import DetailStatusScreen from "./DetailStatusScreen";
 import RatingStars from "./RatingStars";
 import MiniMap from "../Dashboard/Moderacion/MiniMap";
@@ -18,18 +20,6 @@ const DETAIL_STATUS = {
   ERROR: "error",
 } as const;
 type DetailStatus = (typeof DETAIL_STATUS)[keyof typeof DETAIL_STATUS];
-
-// calendario
-function toDateOnlyISO(d: Date) {
-  const year = d.getFullYear();
-  const month = String(d.getMonth() + 1).padStart(2, "0");
-  const day = String(d.getDate()).padStart(2, "0");
-  return `${year}-${month}-${day}`;
-}
-
-function isDateBetween(target: string, start: string, end: string) {
-  return target >= start && target <= end;
-}
 
 export default function LeodegaUI() {
   const navigate = useNavigate();
@@ -272,7 +262,7 @@ export default function LeodegaUI() {
 
             {/* Description */}
             <div className="bg-white border border-gray-200 rounded-2xl shadow-sm p-6">
-              <h3 className="font-semibold text-gray-900 mb-2">Descripción</h3>
+              <h3 className="font-semibold text-gray-900 mb-2">Sobre esta bodega</h3>
               <p className="text-sm text-gray-600 leading-relaxed">
                 {data.description}
               </p>
@@ -291,7 +281,12 @@ export default function LeodegaUI() {
             <div className="bg-white border border-gray-200 rounded-2xl shadow-sm p-6">
               <h3 className="font-semibold text-gray-900 mb-4">Características</h3>
               <div className="grid grid-cols-3 gap-3 text-sm">
-                {[data.size + " m²", "Estacionamiento", "24/7", "Internet", "CCTV", "Muelle de carga"].map((item, i) => (
+                {[
+                  data.size + " m²",
+                  ...Object.entries(parseSecurityFeatures(data.security))
+                    .filter(([, value]) => value)
+                    .map(([key]) => SECURITY_LABELS[key as keyof ParsedSecurityFeatures]),
+                ].map((item, i) => (
                   <div
                     key={i}
                     className="border border-gray-200 rounded-xl p-3 text-gray-700 bg-gray-50 text-center"
@@ -316,21 +311,6 @@ export default function LeodegaUI() {
                 ))}
               </div>
             </div>
-
-            {/* Specs */}
-            <div className="bg-white border border-gray-200 rounded-2xl shadow-sm p-6">
-              <h3 className="font-semibold text-gray-900 mb-4">Especificaciones técnicas</h3>
-              <table className="w-full text-sm text-gray-700">
-                <tbody className="[&>tr>td]:py-2">
-                  <tr><td className="text-gray-500">Dimensiones</td><td>20m x 15m</td></tr>
-                  <tr><td className="text-gray-500">Altura</td><td>6 metros</td></tr>
-                  <tr><td className="text-gray-500">Tipo de suelo</td><td>Concreto industrial</td></tr>
-                  <tr><td className="text-gray-500">Piso</td><td>2 puertas industriales</td></tr>
-                  <tr><td className="text-gray-500">Iluminación</td><td>LED industrial</td></tr>
-                  <tr><td className="text-gray-500">Ventilación</td><td>Natural y forzada</td></tr>
-                </tbody>
-              </table>
-            </div>
           </div>
 
           {/* Right: contact */}
@@ -343,7 +323,7 @@ export default function LeodegaUI() {
                 <h2 className="font-semibold mt-3 text-gray-900">
                   {data.landlord.name}
                 </h2>
-                <p className="text-xs text-gray-500 mt-1">Arrendador</p>
+                <p className="text-xs text-gray-500 mt-1">Tu gestor</p>
 
                 <div className="w-full mt-4 space-y-2">
                   <button onClick={handleContactar}
@@ -357,8 +337,6 @@ export default function LeodegaUI() {
                 </div>
 
                 <div className="mt-5 text-xs text-gray-500 text-left w-full border-t border-gray-200 pt-4">
-                  <p className="font-semibold text-gray-700 mb-2">Horario de atención</p>
-                  <p>Lunes a Viernes: 08h00 - 17h00</p>
                   <p className="font-semibold text-gray-700 mt-3 mb-2">Disponibilidad</p>
                   {data.is_available_now ? (
                     <p>Disponible ahora</p>
