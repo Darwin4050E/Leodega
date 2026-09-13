@@ -216,11 +216,14 @@ class StoreRoomResponseShapeTest extends TestCase
         $response->assertJsonPath('storage_type', 'completa');
         $response->assertJsonPath('active_reservations_count', 0);
 
-        // `landlord` is FLAT here, exposes user_id, and carries no phone.
+        // `landlord` is FLAT here and exposes user_id. `phone` was added by
+        // the mobile-storeroom-detail cycle so the mobile detail screen can
+        // show the manager's contact info in one payload.
         $response->assertJsonPath('landlord.id', $landlord->id);
         $response->assertJsonPath('landlord.user_id', $user->id);
         $response->assertJsonPath('landlord.name', 'Carlos Mora');
         $response->assertJsonPath('landlord.email', 'c.mora@example.test');
+        $response->assertJsonPath('landlord.phone', $user->phone);
 
         // LeodegaUI.tsx:318 renders `landlord.lastname`, which this endpoint
         // has never returned. Pinned so the dead read stays visible instead
@@ -241,6 +244,23 @@ class StoreRoomResponseShapeTest extends TestCase
         $response->assertJsonPath('rating_avg', 4);
         $response->assertJsonPath('rating_count', 1);
         $response->assertJsonPath('is_available_now', true);
+    }
+
+    /**
+     * `User.phone` is required and unique at the DB level, so there is no
+     * true null-phone case in practice. The meaningful defensive case is an
+     * empty string: the resource must serve it as-is, not choke on a falsy
+     * value.
+     */
+    public function test_detail_includes_landlord_phone_even_when_blank(): void
+    {
+        [$room, , $user] = $this->seedFullRoom();
+        $user->update(['phone' => '']);
+
+        $response = $this->getJson("/api/store-rooms/{$room->id}/detail");
+
+        $response->assertStatus(200);
+        $response->assertJsonPath('landlord.phone', '');
     }
 
     public function test_detail_omits_publication_status(): void
