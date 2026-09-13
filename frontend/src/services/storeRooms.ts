@@ -42,10 +42,26 @@ export interface StoreRoomSummary {
   rating_count?: number;
   image?: string | null;
   active_reservations_count?: number;
+  direction?: string | null;
+  room_type?: string | null;
+  storage_type?: string | null;
+  latitude?: number | null;
+  longitude?: number | null;
+  monthly_price?: number | null;
+  distance_km?: number | null;
 }
 
-export function getStoreRooms() {
-  return api.get<StoreRoomSummary[]>("/storeRooms");
+export interface StoreRoomFilters {
+  city?: string;
+  min_size?: number;
+  min_price?: number;
+  max_price?: number;
+  lat?: number;
+  lng?: number;
+}
+
+export function getStoreRooms(filters?: StoreRoomFilters) {
+  return api.get<StoreRoomSummary[]>("/storeRooms", { params: filters });
 }
 
 export function getStoreRoomDetail(id: number | string) {
