@@ -5,8 +5,19 @@ import { getReservedDates, createReservation } from "../services/reservations";
 import { useAuth } from "../context/useAuth";
 import { asApiError } from "../api/errors";
 import { formatUSD } from "../utils/money";
+import DetailStatusScreen from "./DetailStatusScreen";
+import RatingStars from "./RatingStars";
+import MiniMap from "../Dashboard/Moderacion/MiniMap";
 
 type ReservedRange = { start_date: string; end_date: string };
+
+const DETAIL_STATUS = {
+  LOADING: "loading",
+  READY: "ready",
+  NOT_FOUND: "not-found",
+  ERROR: "error",
+} as const;
+type DetailStatus = (typeof DETAIL_STATUS)[keyof typeof DETAIL_STATUS];
 
 // calendario
 function toDateOnlyISO(d: Date) {
@@ -26,6 +37,7 @@ export default function LeodegaUI() {
   const { user } = useAuth();
 
   const [data, setData] = useState<StoreRoomDetail | null>(null);
+  const [status, setStatus] = useState<DetailStatus>(DETAIL_STATUS.LOADING);
   const [openReserve, setOpenReserve] = useState(false);
   const [startDate, setStartDate] = useState("");
   const [endDate, setEndDate] = useState("");
@@ -38,8 +50,14 @@ export default function LeodegaUI() {
 
   useEffect(() => {
     getStoreRoomDetail(id as string)
-      .then((res) => setData(res.data))
-      .catch(console.error);
+      .then((res) => {
+        setData(res.data);
+        setStatus(DETAIL_STATUS.READY);
+      })
+      .catch((e: unknown) => {
+        const err = asApiError(e);
+        setStatus(err.response?.status === 404 ? DETAIL_STATUS.NOT_FOUND : DETAIL_STATUS.ERROR);
+      });
   }, [id]);
 
   useEffect(() => {
@@ -133,13 +151,21 @@ export default function LeodegaUI() {
     }
   };
 
-  if (!data) {
+  const role = user?.role ?? null;
+
+  const handleVolver = () => {
+    if (role === "landlord") navigate("/arrendador/bodegas");
+    else if (role === "tenant") navigate("/storage");
+    //else if (role === "admin") navigate("/admin/bodegas");
+    else navigate("/login");
+  };
+
+  if (status !== DETAIL_STATUS.READY || !data) {
     return (
-      <div className="min-h-screen bg-[#f5f6fa] flex items-center justify-center">
-        <div className="bg-white border border-gray-200 rounded-xl px-6 py-4 shadow-sm text-gray-700">
-          Cargando...
-        </div>
-      </div>
+      <DetailStatusScreen
+        variant={status === DETAIL_STATUS.READY ? "loading" : status}
+        onBack={handleVolver}
+      />
     );
   }
 
@@ -153,16 +179,6 @@ export default function LeodegaUI() {
 
   };
 
-  const role = user?.role ?? null;
-
-  const handleVolver = () => {
-    if (role === "landlord") navigate("/arrendador/bodegas");
-    else if (role === "tenant") navigate("/storage");
-    //else if (role === "admin") navigate("/admin/bodegas");
-    else navigate("/login");
-  };
-
-
   return (
     <div className="w-full min-h-screen bg-[#f5f6fa] text-gray-800">
       {/* Top bar */}
@@ -173,6 +189,7 @@ export default function LeodegaUI() {
             <h1 className="text-lg font-semibold text-gray-900">
               {data.title ?? `Bodega #${id}`}
             </h1>
+            <RatingStars average={data.rating_avg} count={data.rating_count} />
           </div>
 
           <div className="flex gap-2">
@@ -261,6 +278,15 @@ export default function LeodegaUI() {
               </p>
             </div>
 
+            {/* Ubicación */}
+            <div className="bg-white border border-gray-200 rounded-2xl shadow-sm p-6">
+              <h3 className="font-semibold text-gray-900 mb-2">Ubicación</h3>
+              <p className="text-sm text-gray-600 mb-3">
+                {data.direction}{data.city ? `, ${data.city}` : ""}
+              </p>
+              <MiniMap latitude={data.latitude} longitude={data.longitude} />
+            </div>
+
             {/* Features */}
             <div className="bg-white border border-gray-200 rounded-2xl shadow-sm p-6">
               <h3 className="font-semibold text-gray-900 mb-4">Características</h3>
@@ -315,7 +341,7 @@ export default function LeodegaUI() {
                   {initials}
                 </div>
                 <h2 className="font-semibold mt-3 text-gray-900">
-                  {data.landlord.name} {data.landlord.lastname}
+                  {data.landlord.name}
                 </h2>
                 <p className="text-xs text-gray-500 mt-1">Arrendador</p>
 
@@ -334,7 +360,13 @@ export default function LeodegaUI() {
                   <p className="font-semibold text-gray-700 mb-2">Horario de atención</p>
                   <p>Lunes a Viernes: 08h00 - 17h00</p>
                   <p className="font-semibold text-gray-700 mt-3 mb-2">Disponibilidad</p>
-                  <p>Inmediata</p>
+                  {data.is_available_now ? (
+                    <p>Disponible ahora</p>
+                  ) : (
+                    <span className="badge inline-block px-2 py-1 rounded-full bg-[#FEE2E2] text-[#B91C1C] text-xs font-medium">
+                      Ocupada ahora
+                    </span>
+                  )}
                 </div>
               </div>
             </div>
