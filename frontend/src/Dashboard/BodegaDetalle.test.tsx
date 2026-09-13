@@ -34,7 +34,7 @@ const detailResponse = {
     camara: true,
     ruido: false,
     control: true,
-    objetos: false,
+    acceso: false,
   }),
 };
 
@@ -64,6 +64,34 @@ describe('BodegaDetalle security contract', () => {
       screen.getByText('Control de plagas y humedad')
     ).toBeInTheDocument();
     expect(screen.queryByText('Monitor de ruido')).not.toBeInTheDocument();
+  });
+
+  it('does not list restricted access when `acceso` is false', async () => {
+    renderDetalle();
+
+    await screen.findByText('Bodega Norte');
+
+    expect(screen.queryByText('Acceso restringido 24/7')).not.toBeInTheDocument();
+  });
+
+  it('lists restricted access when `acceso` is true', async () => {
+    mockGetStoreRoomDetail.mockResolvedValue({
+      data: {
+        ...detailResponse,
+        security: JSON.stringify({
+          camara: false,
+          ruido: false,
+          control: false,
+          acceso: true,
+        }),
+      },
+    });
+
+    renderDetalle();
+
+    expect(
+      await screen.findByText('Acceso restringido 24/7')
+    ).toBeInTheDocument();
   });
 
   it('does not crash when security is absent', async () => {

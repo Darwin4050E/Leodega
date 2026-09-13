@@ -36,8 +36,19 @@ export function getLandlordReservations() {
   return api.get<LandlordReservation[]>("/landlord/reservations");
 }
 
+/**
+ * Since commits `338f35c`..`eae68fd`, this endpoint returns the UNION of
+ * confirmed reservations and landlord date blocks in the same bare
+ * `{start_date, end_date}` shape. Consumers must treat every range as an
+ * opaque occupied interval and must not attempt to distinguish origin.
+ */
+export interface ReservedRange {
+  start_date: string;
+  end_date: string;
+}
+
 export function getReservedDates(storeRoomId: number | string) {
-  return api.get(`/storeRooms/${storeRoomId}/reserved-dates`);
+  return api.get<ReservedRange[]>(`/storeRooms/${storeRoomId}/reserved-dates`);
 }
 
 export function createReservation(data: {

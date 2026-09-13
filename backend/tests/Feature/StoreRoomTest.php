@@ -83,7 +83,7 @@ class StoreRoomTest extends TestCase
             'size' => 'un-texto-invalido',
         ]));
 
-        $response->assertStatus(400);
+        $response->assertStatus(422);
         $response->assertJsonValidationErrors(['size']);
     }
 
@@ -130,8 +130,8 @@ class StoreRoomTest extends TestCase
         $response->assertStatus(403);
         $response->assertJson([
             'message' => 'No tienes un registro de landlord asociado a tu cuenta',
-            'status' => 403,
         ]);
+        $response->assertJsonMissingPath('status');
         $this->assertDatabaseCount('storeRooms', 0);
         $this->assertDatabaseCount('notifications', 0);
     }
@@ -180,7 +180,7 @@ class StoreRoomTest extends TestCase
             ],
         ]));
 
-        $response->assertStatus(400);
+        $response->assertStatus(422);
         $response->assertJsonValidationErrors(['storePrices.0.price']);
         $this->assertDatabaseCount('storeRooms', 0);
     }
@@ -210,7 +210,7 @@ class StoreRoomTest extends TestCase
 
         $response = $this->actingAs($user, 'sanctum')->post('/api/storeRooms', $payload);
 
-        $response->assertStatus(400);
+        $response->assertStatus(422);
         $response->assertJsonPath(
             'errors.firefighter_permit.0',
             'Debe adjuntar el permiso de bomberos vigente para continuar.'
@@ -229,7 +229,7 @@ class StoreRoomTest extends TestCase
 
         $response = $this->actingAs($user, 'sanctum')->post('/api/storeRooms', $payload);
 
-        $response->assertStatus(400);
+        $response->assertStatus(422);
         $response->assertJsonValidationErrors(['cancellation_policy_tier']);
         $this->assertDatabaseCount('storeRooms', 0);
     }
@@ -243,7 +243,7 @@ class StoreRoomTest extends TestCase
             'firefighter_permit' => UploadedFile::fake()->create('permiso.exe', 100, 'application/octet-stream'),
         ]));
 
-        $response->assertStatus(400);
+        $response->assertStatus(422);
         $response->assertJsonValidationErrors(['firefighter_permit']);
         $this->assertDatabaseCount('storeRooms', 0);
         Storage::disk('private')->assertDirectoryEmpty('firefighter_permits');
@@ -258,7 +258,7 @@ class StoreRoomTest extends TestCase
             'firefighter_permit' => UploadedFile::fake()->image('permiso.jpg'),
         ]));
 
-        $response->assertStatus(400);
+        $response->assertStatus(422);
         $response->assertJsonValidationErrors(['firefighter_permit']);
         $this->assertDatabaseCount('storeRooms', 0);
         Storage::disk('private')->assertDirectoryEmpty('firefighter_permits');
@@ -273,7 +273,7 @@ class StoreRoomTest extends TestCase
             'firefighter_permit' => UploadedFile::fake()->create('permiso.pdf', 6000, 'application/pdf'),
         ]));
 
-        $response->assertStatus(400);
+        $response->assertStatus(422);
         $response->assertJsonValidationErrors(['firefighter_permit']);
         $this->assertDatabaseCount('storeRooms', 0);
         Storage::disk('private')->assertDirectoryEmpty('firefighter_permits');
@@ -360,7 +360,7 @@ class StoreRoomTest extends TestCase
             'longitude' => -79.955,
         ]));
 
-        $response->assertStatus(400);
+        $response->assertStatus(422);
         $response->assertJsonValidationErrors(['latitude']);
         $this->assertDatabaseCount('storeRooms', 0);
     }
@@ -375,7 +375,7 @@ class StoreRoomTest extends TestCase
             'longitude' => -200,
         ]));
 
-        $response->assertStatus(400);
+        $response->assertStatus(422);
         $response->assertJsonValidationErrors(['longitude']);
         $this->assertDatabaseCount('storeRooms', 0);
     }
@@ -405,6 +405,53 @@ class StoreRoomTest extends TestCase
     }
 
     /**
+     * currentlyOccupiedReservations() answers "is this storeroom occupied
+     * RIGHT NOW?", a strictly narrower question than activeReservations()
+     * (see StoreRooms::activeReservations() docblock and Engram obs #217).
+     */
+    public function test_currently_occupied_reservations_includes_a_confirmed_reservation_covering_today()
+    {
+        $landlord = Landlords::factory()->create();
+        $room = StoreRooms::factory()->create(['landlord_id' => $landlord->id]);
+
+        \App\Models\Reservations::factory()->create([
+            'store_room_id' => $room->id,
+            'status' => 'confirmed',
+            'start_date' => now()->subDays(2),
+            'end_date' => now()->addDays(2),
+        ]);
+
+        $this->assertTrue($room->currentlyOccupiedReservations()->exists());
+    }
+
+    /**
+     * The decisive test: a storeroom whose ONLY confirmed reservation lies
+     * entirely in the future must be reported as available right now, while
+     * the deletion guard (activeReservations()) still blocks its deletion.
+     * If both hold, the two predicates are correctly separated.
+     */
+    public function test_a_future_only_confirmed_reservation_does_not_make_the_room_currently_occupied()
+    {
+        $landlord = Landlords::factory()->create();
+        $room = StoreRooms::factory()->create(['landlord_id' => $landlord->id]);
+
+        \App\Models\Reservations::factory()->create([
+            'store_room_id' => $room->id,
+            'status' => 'confirmed',
+            'start_date' => now()->addDays(10),
+            'end_date' => now()->addDays(15),
+        ]);
+
+        $this->assertFalse($room->currentlyOccupiedReservations()->exists());
+        $this->assertTrue($room->activeReservations()->exists());
+
+        $response = $this->getJson("/api/store-rooms/{$room->id}/detail");
+        $response->assertStatus(200);
+        $response->assertJsonPath('is_available_now', true);
+        $response->assertJsonPath('active_reservations_count', 1);
+    }
+
+    /**
      * HUL-03 escenario 3: el mismo gestor no puede publicar dos bodegas con
      * el mismo título; la segunda solicitud se rechaza sin registrar nada.
      */
@@ -420,7 +467,7 @@ class StoreRoomTest extends TestCase
         $response = $this->actingAs($user, 'sanctum')
             ->post('/api/storeRooms', $this->validPayload(['title' => 'Bodega Central Norte']));
 
-        $response->assertStatus(400);
+        $response->assertStatus(422);
         $response->assertJsonPath(
             'errors.title.0',
             'Ya tienes una bodega publicada con ese nombre. Elige otro nombre para continuar.'

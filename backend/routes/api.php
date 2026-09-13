@@ -143,9 +143,11 @@ Route::middleware('auth.api:sanctum')->group(function () {
     Route::delete('/favorites/{id}', [FavoritesController::class, 'destroy']);
 });
 
-Route::get('/storeDisponibility', [StoreDisponibilityController::class, 'index']);
 Route::get('/storeDisponibility/{id}', [StoreDisponibilityController::class, 'show']);
 Route::middleware('auth.api:sanctum')->group(function () {
+    // index() is scoped to the authenticated landlord's own storerooms
+    // (obs #263), so it needs the same guard as the write actions below.
+    Route::get('/storeDisponibility', [StoreDisponibilityController::class, 'index']);
     Route::post('/storeDisponibility', [StoreDisponibilityController::class, 'store']);
     Route::put('/storeDisponibility/{id}', [StoreDisponibilityController::class, 'update']);
     Route::delete('/storeDisponibility/{id}', [StoreDisponibilityController::class, 'destroy']);

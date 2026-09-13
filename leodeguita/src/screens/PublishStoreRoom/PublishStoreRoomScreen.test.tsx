@@ -247,8 +247,8 @@ describe('PublishStoreRoomScreen (HUL-03)', () => {
   it('scenario 3: a duplicate title sends the gestor back to the title step with the warning', async () => {
     const user = userEvent.setup()
     createMock.mockRejectedValueOnce(
-      new AxiosError('bad request', undefined, undefined, undefined, {
-        status: 400,
+      new AxiosError('unprocessable entity', undefined, undefined, undefined, {
+        status: 422,
         data: {
           message: 'Validation Error',
           errors: {
@@ -272,6 +272,28 @@ describe('PublishStoreRoomScreen (HUL-03)', () => {
     expect(
       screen.queryByText('Tu espacio quedó pendiente de verificación'),
     ).toBeNull()
+  })
+
+  it('falls back to the backend message when the 422 has no title field error', async () => {
+    const user = userEvent.setup()
+    createMock.mockRejectedValueOnce(
+      new AxiosError('unprocessable entity', undefined, undefined, undefined, {
+        status: 422,
+        data: {
+          message: 'Validation Error',
+          errors: {
+            size: ['El tamaño debe ser un número positivo.'],
+          },
+        },
+      } as never),
+    )
+    renderScreen()
+
+    await walkToLastStep(user)
+    await user.click(screen.getByRole('button', { name: 'Enviar a verificación' }))
+
+    expect(await screen.findByRole('alert')).toHaveTextContent('Validation Error')
+    expect(uploadMock).not.toHaveBeenCalled()
   })
 
   it('shows a notice when the listing is created but photo upload fails', async () => {

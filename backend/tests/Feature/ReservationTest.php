@@ -3,6 +3,7 @@
 namespace Tests\Feature;
 
 use App\Models\Reservations;
+use App\Models\StoreDisponibility;
 use App\Models\StorePrices;
 use App\Models\StoreRooms;
 use App\Models\Tenants;
@@ -178,6 +179,52 @@ class ReservationTest extends TestCase
 
         $this->actingAs($user, 'sanctum')
             ->getJson("/api/storeRooms/{$room->id}/reserved-dates")
+            ->assertStatus(404);
+    }
+
+    /**
+     * Obs #261: reservedDates() must union confirmed reservations with
+     * StoreDisponibility blocks, sorted by start_date, keeping the bare
+     * `[{start_date,end_date}]` shape (no origin/type/source key) so the
+     * sole frontend consumer needs zero changes this cycle.
+     */
+    public function test_reserved_dates_unions_confirmed_reservations_and_blocks()
+    {
+        $user = User::factory()->create();
+        $room = StoreRooms::factory()->create();
+
+        Reservations::factory()->create([
+            'store_room_id' => $room->id,
+            'status' => 'confirmed',
+            'start_date' => '2026-10-01',
+            'end_date' => '2026-10-10',
+        ]);
+
+        StoreDisponibility::create([
+            'store_room_id' => $room->id,
+            'start_date' => '2026-11-01',
+            'end_date' => '2026-11-05',
+        ]);
+
+        $response = $this->actingAs($user, 'sanctum')
+            ->getJson("/api/storeRooms/{$room->id}/reserved-dates");
+
+        $response->assertStatus(200);
+        $response->assertJsonCount(2);
+        $response->assertJson([
+            ['start_date' => '2026-10-01', 'end_date' => '2026-10-10'],
+            ['start_date' => '2026-11-01', 'end_date' => '2026-11-05'],
+        ]);
+        $response->assertJsonMissingPath('0.origin');
+        $response->assertJsonMissingPath('0.type');
+    }
+
+    public function test_reserved_dates_still_404s_for_nonexistent_store_room()
+    {
+        $user = User::factory()->create();
+
+        $this->actingAs($user, 'sanctum')
+            ->getJson('/api/storeRooms/999999/reserved-dates')
             ->assertStatus(404);
     }
 }

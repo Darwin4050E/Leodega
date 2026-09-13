@@ -86,7 +86,7 @@ class PaymentsTest extends TestCase
             'payment_state' => 'paid',
         ]);
 
-        $response->assertStatus(400);
+        $response->assertStatus(422);
         $response->assertJsonValidationErrors(['payment_method']);
     }
 

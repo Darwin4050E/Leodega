@@ -11,8 +11,8 @@ use Illuminate\Validation\Rules\Unique;
 
 /**
  * HUG-04: convertido de bolsa de reglas a FormRequest real para poder
- * reproducir el envelope legacy de error 400 ({message, errors, status})
- * en lugar del 422 por defecto de Laravel, y para poder validar el archivo
+ * reproducir el mensaje legacy "Validation Error" ({message, errors}) en
+ * lugar del mensaje por defecto de Laravel, y para poder validar el archivo
  * de permiso de bomberos (obligatorio) junto al resto de campos.
  *
  * `landlord_id` y `publication_status` se retiran de rules() a propósito:
@@ -78,16 +78,15 @@ class StoreStoreRoomRequest extends FormRequest
     }
 
     /**
-     * Preserva el envelope legacy {message, errors, status} en lugar del
-     * 422 por defecto de FormRequest (fuente: ApiController::storeModel,
-     * líneas 43-47).
+     * Preserva el mensaje legacy "Validation Error" ({message, errors}) en
+     * lugar del mensaje por defecto de FormRequest ("The given data is
+     * invalid."), manteniendo el 422 nativo (fuente: ApiController::storeModel).
      */
     protected function failedValidation(Validator $validator): void
     {
         throw new HttpResponseException(response()->json([
             'message' => 'Validation Error',
             'errors' => $validator->errors(),
-            'status' => 400,
-        ], 400));
+        ], 422));
     }
 }

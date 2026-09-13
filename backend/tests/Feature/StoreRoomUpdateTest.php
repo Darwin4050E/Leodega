@@ -182,7 +182,7 @@ class StoreRoomUpdateTest extends TestCase
             'price' => 0,
         ]);
 
-        $response->assertStatus(400);
+        $response->assertStatus(422);
         $response->assertJsonValidationErrors(['price']);
         $this->assertDatabaseHas('storeRooms', ['id' => $room->id, 'title' => 'Intacta']);
         $this->assertDatabaseHas('store_prices', ['store_room_id' => $room->id, 'price' => 1000]);
@@ -197,10 +197,10 @@ class StoreRoomUpdateTest extends TestCase
             'price' => -5,
         ]);
 
-        $response->assertStatus(400);
+        $response->assertStatus(422);
         $response->assertJsonValidationErrors(['price']);
         $response->assertJsonPath('message', 'Validation Error');
-        $response->assertJsonPath('status', 400);
+        $response->assertJsonMissingPath('status');
     }
 
     public function test_invalid_size_values_are_rejected_and_nothing_is_saved()
@@ -213,7 +213,7 @@ class StoreRoomUpdateTest extends TestCase
                 'size' => $badSize,
             ]);
 
-            $response->assertStatus(400);
+            $response->assertStatus(422);
             $response->assertJsonValidationErrors(['size']);
         }
 
@@ -232,7 +232,7 @@ class StoreRoomUpdateTest extends TestCase
             'price' => 900,
         ]);
 
-        $response->assertStatus(400);
+        $response->assertStatus(422);
         $response->assertJsonValidationErrors(['price']);
         // atomic: the title change rolled back too
         $this->assertDatabaseHas('storeRooms', ['id' => $room->id, 'title' => 'Intacta']);

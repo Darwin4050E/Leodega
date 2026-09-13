@@ -19,7 +19,7 @@ const BodegaDetalle: React.FC<BodegaDetalleProps> = ({ bodega, onVolver }) => {
         camara: 'Cámara de seguridad exterior',
         ruido: 'Monitor de ruido',
         control: 'Control de plagas y humedad',
-        objetos: 'Restricción de objetos peligrosos',
+        acceso: 'Acceso restringido 24/7',
     };
 
     const roomTypeLabels: Record<string, string> = {

@@ -1,7 +1,8 @@
-import { Heart, Star, ArrowRight } from "lucide-react";
+import { Heart, ArrowRight } from "lucide-react";
 import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { getStoreRooms, type StoreRoomSummary } from "../services/storeRooms";
+import RatingStars from "./RatingStars";
 
 const PopularStorage = () => {
   const navigate = useNavigate();
@@ -61,19 +62,7 @@ const PopularStorage = () => {
                 ${bodega.store_prices?.[0]?.price ?? "—"} USD
               </p>
 
-              <div className="flex items-center mt-2 text-sm text-gray-600">
-                <div className="flex items-center text-[#FFA500]">
-                  {[...Array(5)].map((_, i) => (
-                    <Star
-                      key={i}
-                      className={`w-4 h-4 ${i < Math.round(bodega.rating_avg ?? 0) ? "fill-current" : ""}`}
-                    />
-                  ))}
-                </div>
-                <span className="ml-2 text-gray-500">
-                  ({bodega.rating_count ?? 0})
-                </span>
-              </div>
+              <RatingStars average={bodega.rating_avg ?? 0} count={bodega.rating_count ?? 0} />
 
               <button
                 onClick={() => navigate(`/detalles/${bodega.id}`)}

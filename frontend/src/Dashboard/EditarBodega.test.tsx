@@ -98,10 +98,10 @@ describe('EditarBodega', () => {
     ).toBeInTheDocument();
   });
 
-  it('maps server-side validation errors from a 400 onto the fields', async () => {
+  it('maps server-side validation errors from a 422 onto the fields', async () => {
     mockUpdateStoreRoom.mockRejectedValue({
       response: {
-        status: 400,
+        status: 422,
         data: { message: 'Validation Error', errors: { price: ['La tarifa es inválida.'] } },
       },
     });

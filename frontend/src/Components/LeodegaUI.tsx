@@ -1,24 +1,24 @@
 import { useParams, useNavigate } from "react-router-dom";
 import { useEffect, useMemo, useState } from "react";
 import { getStoreRoomDetail, type StoreRoomDetail } from "../services/storeRooms";
-import { getReservedDates, createReservation } from "../services/reservations";
+import { getReservedDates, createReservation, type ReservedRange } from "../services/reservations";
 import { useAuth } from "../context/useAuth";
 import { asApiError } from "../api/errors";
 import { formatUSD } from "../utils/money";
+import { toDateOnlyISO, isDateBetween } from "../utils/dates";
+import { parseSecurityFeatures, SECURITY_LABELS, type ParsedSecurityFeatures } from "../utils/security";
+import DetailStatusScreen from "./DetailStatusScreen";
+import RatingStars from "./RatingStars";
+import MiniMap from "../Dashboard/Moderacion/MiniMap";
+import AvailabilityCalendar from "./AvailabilityCalendar";
 
-type ReservedRange = { start_date: string; end_date: string };
-
-// calendario
-function toDateOnlyISO(d: Date) {
-  const year = d.getFullYear();
-  const month = String(d.getMonth() + 1).padStart(2, "0");
-  const day = String(d.getDate()).padStart(2, "0");
-  return `${year}-${month}-${day}`;
-}
-
-function isDateBetween(target: string, start: string, end: string) {
-  return target >= start && target <= end;
-}
+const DETAIL_STATUS = {
+  LOADING: "loading",
+  READY: "ready",
+  NOT_FOUND: "not-found",
+  ERROR: "error",
+} as const;
+type DetailStatus = (typeof DETAIL_STATUS)[keyof typeof DETAIL_STATUS];
 
 export default function LeodegaUI() {
   const navigate = useNavigate();
@@ -26,6 +26,7 @@ export default function LeodegaUI() {
   const { user } = useAuth();
 
   const [data, setData] = useState<StoreRoomDetail | null>(null);
+  const [status, setStatus] = useState<DetailStatus>(DETAIL_STATUS.LOADING);
   const [openReserve, setOpenReserve] = useState(false);
   const [startDate, setStartDate] = useState("");
   const [endDate, setEndDate] = useState("");
@@ -38,12 +39,18 @@ export default function LeodegaUI() {
 
   useEffect(() => {
     getStoreRoomDetail(id as string)
-      .then((res) => setData(res.data))
-      .catch(console.error);
+      .then((res) => {
+        setData(res.data);
+        setStatus(DETAIL_STATUS.READY);
+      })
+      .catch((e: unknown) => {
+        const err = asApiError(e);
+        setStatus(err.response?.status === 404 ? DETAIL_STATUS.NOT_FOUND : DETAIL_STATUS.ERROR);
+      });
   }, [id]);
 
   useEffect(() => {
-    if (!openReserve || !id) return;
+    if (!id) return;
 
     setLoadingRanges(true);
     setError("");
@@ -52,7 +59,7 @@ export default function LeodegaUI() {
       .then((res) => setReservedRanges(res.data || []))
       .catch(() => setReservedRanges([]))
       .finally(() => setLoadingRanges(false));
-  }, [openReserve, id]);
+  }, [id]);
 
   const priceMonthly = useMemo(() => {
     const p = Number(data?.prices?.[0]?.price ?? 0);
@@ -133,13 +140,21 @@ export default function LeodegaUI() {
     }
   };
 
-  if (!data) {
+  const role = user?.role ?? null;
+
+  const handleVolver = () => {
+    if (role === "landlord") navigate("/arrendador/bodegas");
+    else if (role === "tenant") navigate("/storage");
+    //else if (role === "admin") navigate("/admin/bodegas");
+    else navigate("/login");
+  };
+
+  if (status !== DETAIL_STATUS.READY || !data) {
     return (
-      <div className="min-h-screen bg-[#f5f6fa] flex items-center justify-center">
-        <div className="bg-white border border-gray-200 rounded-xl px-6 py-4 shadow-sm text-gray-700">
-          Cargando...
-        </div>
-      </div>
+      <DetailStatusScreen
+        variant={status === DETAIL_STATUS.READY ? "loading" : status}
+        onBack={handleVolver}
+      />
     );
   }
 
@@ -153,16 +168,6 @@ export default function LeodegaUI() {
 
   };
 
-  const role = user?.role ?? null;
-
-  const handleVolver = () => {
-    if (role === "landlord") navigate("/arrendador/bodegas");
-    else if (role === "tenant") navigate("/storage");
-    //else if (role === "admin") navigate("/admin/bodegas");
-    else navigate("/login");
-  };
-
-
   return (
     <div className="w-full min-h-screen bg-[#f5f6fa] text-gray-800">
       {/* Top bar */}
@@ -173,6 +178,7 @@ export default function LeodegaUI() {
             <h1 className="text-lg font-semibold text-gray-900">
               {data.title ?? `Bodega #${id}`}
             </h1>
+            <RatingStars average={data.rating_avg} count={data.rating_count} />
           </div>
 
           <div className="flex gap-2">
@@ -255,17 +261,31 @@ export default function LeodegaUI() {
 
             {/* Description */}
             <div className="bg-white border border-gray-200 rounded-2xl shadow-sm p-6">
-              <h3 className="font-semibold text-gray-900 mb-2">Descripción</h3>
+              <h3 className="font-semibold text-gray-900 mb-2">Sobre esta bodega</h3>
               <p className="text-sm text-gray-600 leading-relaxed">
                 {data.description}
               </p>
+            </div>
+
+            {/* Ubicación */}
+            <div className="bg-white border border-gray-200 rounded-2xl shadow-sm p-6">
+              <h3 className="font-semibold text-gray-900 mb-2">Ubicación</h3>
+              <p className="text-sm text-gray-600 mb-3">
+                {data.direction}{data.city ? `, ${data.city}` : ""}
+              </p>
+              <MiniMap latitude={data.latitude} longitude={data.longitude} />
             </div>
 
             {/* Features */}
             <div className="bg-white border border-gray-200 rounded-2xl shadow-sm p-6">
               <h3 className="font-semibold text-gray-900 mb-4">Características</h3>
               <div className="grid grid-cols-3 gap-3 text-sm">
-                {[data.size + " m²", "Estacionamiento", "24/7", "Internet", "CCTV", "Muelle de carga"].map((item, i) => (
+                {[
+                  data.size + " m²",
+                  ...Object.entries(parseSecurityFeatures(data.security))
+                    .filter(([, value]) => value)
+                    .map(([key]) => SECURITY_LABELS[key as keyof ParsedSecurityFeatures]),
+                ].map((item, i) => (
                   <div
                     key={i}
                     className="border border-gray-200 rounded-xl p-3 text-gray-700 bg-gray-50 text-center"
@@ -274,6 +294,12 @@ export default function LeodegaUI() {
                   </div>
                 ))}
               </div>
+            </div>
+
+            {/* Disponibilidad */}
+            <div className="bg-white border border-gray-200 rounded-2xl shadow-sm p-6">
+              <h3 className="font-semibold text-gray-900 mb-4">Disponibilidad</h3>
+              <AvailabilityCalendar reservedRanges={reservedRanges} loading={loadingRanges} />
             </div>
 
             {/* Extra images */}
@@ -290,21 +316,6 @@ export default function LeodegaUI() {
                 ))}
               </div>
             </div>
-
-            {/* Specs */}
-            <div className="bg-white border border-gray-200 rounded-2xl shadow-sm p-6">
-              <h3 className="font-semibold text-gray-900 mb-4">Especificaciones técnicas</h3>
-              <table className="w-full text-sm text-gray-700">
-                <tbody className="[&>tr>td]:py-2">
-                  <tr><td className="text-gray-500">Dimensiones</td><td>20m x 15m</td></tr>
-                  <tr><td className="text-gray-500">Altura</td><td>6 metros</td></tr>
-                  <tr><td className="text-gray-500">Tipo de suelo</td><td>Concreto industrial</td></tr>
-                  <tr><td className="text-gray-500">Piso</td><td>2 puertas industriales</td></tr>
-                  <tr><td className="text-gray-500">Iluminación</td><td>LED industrial</td></tr>
-                  <tr><td className="text-gray-500">Ventilación</td><td>Natural y forzada</td></tr>
-                </tbody>
-              </table>
-            </div>
           </div>
 
           {/* Right: contact */}
@@ -315,9 +326,9 @@ export default function LeodegaUI() {
                   {initials}
                 </div>
                 <h2 className="font-semibold mt-3 text-gray-900">
-                  {data.landlord.name} {data.landlord.lastname}
+                  {data.landlord.name}
                 </h2>
-                <p className="text-xs text-gray-500 mt-1">Arrendador</p>
+                <p className="text-xs text-gray-500 mt-1">Tu gestor</p>
 
                 <div className="w-full mt-4 space-y-2">
                   <button onClick={handleContactar}
@@ -331,10 +342,14 @@ export default function LeodegaUI() {
                 </div>
 
                 <div className="mt-5 text-xs text-gray-500 text-left w-full border-t border-gray-200 pt-4">
-                  <p className="font-semibold text-gray-700 mb-2">Horario de atención</p>
-                  <p>Lunes a Viernes: 08h00 - 17h00</p>
                   <p className="font-semibold text-gray-700 mt-3 mb-2">Disponibilidad</p>
-                  <p>Inmediata</p>
+                  {data.is_available_now ? (
+                    <p>Disponible ahora</p>
+                  ) : (
+                    <span className="badge inline-block px-2 py-1 rounded-full bg-[#FEE2E2] text-[#B91C1C] text-xs font-medium">
+                      Ocupada ahora
+                    </span>
+                  )}
                 </div>
               </div>
             </div>
