@@ -21,6 +21,7 @@ import {
   deleteStoreRoom,
   getPendingStoreRooms,
   downloadStoreRoomPermit,
+  type StoreRoomDetail,
 } from './storeRooms';
 
 describe('storeRooms service', () => {
@@ -162,5 +163,25 @@ describe('storeRooms service', () => {
     expect(mockApi.get).toHaveBeenCalledWith('/store-rooms/1/permit/download', {
       responseType: 'blob',
     });
+  });
+
+  it('StoreRoomDetail types latitude/longitude as nullable and rating/availability as always-present', () => {
+    const detailWithCoordinates: StoreRoomDetail = {
+      latitude: -2.118,
+      longitude: -79.955,
+      rating_avg: 4.2,
+      rating_count: 8,
+      is_available_now: false,
+    };
+    const detailWithoutCoordinates: StoreRoomDetail = {
+      latitude: null,
+      longitude: null,
+      rating_avg: 0,
+      rating_count: 0,
+      is_available_now: true,
+    };
+
+    expect(detailWithCoordinates.rating_avg).toBe(4.2);
+    expect(detailWithoutCoordinates.latitude).toBeNull();
   });
 });

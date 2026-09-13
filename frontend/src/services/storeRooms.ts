@@ -20,6 +20,11 @@ export interface StoreRoomDetail {
     lastname?: string;
     email?: string;
   };
+  latitude: number | null;
+  longitude: number | null;
+  rating_avg: number;
+  rating_count: number;
+  is_available_now: boolean;
 }
 
 export interface StoreRoomSummary {
