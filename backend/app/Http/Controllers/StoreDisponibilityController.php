@@ -100,10 +100,14 @@ class StoreDisponibilityController extends ApiController
     }
 
     /**
-     * Same ownership shape as store(): the storeroom is resolved through
-     * the block's own storeRooms relation instead of the request payload,
-     * so a landlord cannot retarget someone else's block by sending a
-     * different store_room_id.
+     * Authorizes the block's ORIGINAL storeroom first (a landlord may only
+     * touch blocks they already own), then — when the validated payload
+     * retargets store_room_id to a different storeroom — resolves that
+     * DESTINATION storeroom and re-authorizes and re-checks overlap against
+     * it too (obs #267: this used to authorize and overlap-check only the
+     * original storeroom, letting an owner move their own block onto a
+     * storeroom owned by someone else with no ownership or overlap check on
+     * the destination).
      */
     public function update(Request $request, $id)
     {
@@ -128,9 +132,9 @@ class StoreDisponibilityController extends ApiController
 
         $validated = $validator->validated();
 
-        $room = $block->storeRooms;
+        $sourceRoom = $block->storeRooms;
 
-        $landlord = $this->authorizeLandlordOwner($room);
+        $landlord = $this->authorizeLandlordOwner($sourceRoom);
         if ($landlord instanceof JsonResponse) {
             return $landlord;
         }
@@ -138,7 +142,20 @@ class StoreDisponibilityController extends ApiController
         $startDate = $validated['start_date'] ?? $block->start_date;
         $endDate = $validated['end_date'] ?? $block->end_date;
 
-        $overlap = $this->rejectIfOverlapping($room, $startDate, $endDate, excludeBlockId: $block->id);
+        $isRetargeting = isset($validated['store_room_id'])
+            && (int) $validated['store_room_id'] !== (int) $block->store_room_id;
+
+        $targetRoom = $sourceRoom;
+        if ($isRetargeting) {
+            $targetRoom = StoreRooms::findOrFail($validated['store_room_id']);
+
+            $landlord = $this->authorizeLandlordOwner($targetRoom);
+            if ($landlord instanceof JsonResponse) {
+                return $landlord;
+            }
+        }
+
+        $overlap = $this->rejectIfOverlapping($targetRoom, $startDate, $endDate, excludeBlockId: $block->id);
         if ($overlap) {
             return $overlap;
         }

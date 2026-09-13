@@ -267,6 +267,200 @@ class StoreDisponibilityTest extends TestCase
         $response->assertJsonValidationErrors(['store_room_id']);
     }
 
+    // --- Ownership-scoped update ----------------------------------------------
+    // Regression coverage for the retargeting bypass reported in obs #267:
+    // update() must authorize and overlap-check the DESTINATION storeroom
+    // when store_room_id changes, not just the block's original storeroom.
+
+    public function test_owner_updates_own_block_same_storeroom_successfully()
+    {
+        [$user, $landlord] = $this->makeLandlordUser();
+        $room = $this->ownedRoom($landlord);
+        $block = StoreDisponibility::create([
+            'store_room_id' => $room->id,
+            'start_date' => '2026-10-01',
+            'end_date' => '2026-10-10',
+        ]);
+
+        $response = $this->actingAs($user, 'sanctum')->putJson("/api/storeDisponibility/{$block->id}", [
+            'store_room_id' => $room->id,
+            'start_date' => '2026-10-02',
+            'end_date' => '2026-10-11',
+        ]);
+
+        $response->assertStatus(200);
+        $this->assertDatabaseHas('store_disponibility', [
+            'id' => $block->id,
+            'store_room_id' => $room->id,
+            'start_date' => '2026-10-02',
+            'end_date' => '2026-10-11',
+        ]);
+    }
+
+    public function test_non_owner_cannot_update_a_block()
+    {
+        [, $ownerLandlord] = $this->makeLandlordUser();
+        $room = $this->ownedRoom($ownerLandlord);
+        $block = StoreDisponibility::create([
+            'store_room_id' => $room->id,
+            'start_date' => '2026-10-01',
+            'end_date' => '2026-10-10',
+        ]);
+
+        [$otherUser] = $this->makeLandlordUser();
+
+        $response = $this->actingAs($otherUser, 'sanctum')->putJson("/api/storeDisponibility/{$block->id}", [
+            'store_room_id' => $room->id,
+            'start_date' => '2026-10-02',
+            'end_date' => '2026-10-11',
+        ]);
+
+        $response->assertStatus(403);
+        $this->assertDatabaseHas('store_disponibility', [
+            'id' => $block->id,
+            'start_date' => '2026-10-01',
+            'end_date' => '2026-10-10',
+        ]);
+    }
+
+    public function test_tenant_cannot_update_any_block()
+    {
+        $tenantUser = $this->makeTenantUser();
+        [, $landlord] = $this->makeLandlordUser();
+        $room = $this->ownedRoom($landlord);
+        $block = StoreDisponibility::create([
+            'store_room_id' => $room->id,
+            'start_date' => '2026-10-01',
+            'end_date' => '2026-10-10',
+        ]);
+
+        $response = $this->actingAs($tenantUser, 'sanctum')->putJson("/api/storeDisponibility/{$block->id}", [
+            'store_room_id' => $room->id,
+            'start_date' => '2026-10-02',
+            'end_date' => '2026-10-11',
+        ]);
+
+        $response->assertStatus(403);
+    }
+
+    public function test_unauthenticated_request_cannot_update()
+    {
+        [, $landlord] = $this->makeLandlordUser();
+        $room = $this->ownedRoom($landlord);
+        $block = StoreDisponibility::create([
+            'store_room_id' => $room->id,
+            'start_date' => '2026-10-01',
+            'end_date' => '2026-10-10',
+        ]);
+
+        $response = $this->putJson("/api/storeDisponibility/{$block->id}", [
+            'store_room_id' => $room->id,
+            'start_date' => '2026-10-02',
+            'end_date' => '2026-10-11',
+        ]);
+
+        $response->assertStatus(401);
+        $this->assertDatabaseHas('store_disponibility', [
+            'id' => $block->id,
+            'start_date' => '2026-10-01',
+            'end_date' => '2026-10-10',
+        ]);
+    }
+
+    public function test_updating_a_nonexistent_block_returns_404()
+    {
+        [$user, $landlord] = $this->makeLandlordUser();
+        $room = $this->ownedRoom($landlord);
+
+        $response = $this->actingAs($user, 'sanctum')->putJson('/api/storeDisponibility/999999', [
+            'store_room_id' => $room->id,
+            'start_date' => '2026-10-01',
+            'end_date' => '2026-10-10',
+        ]);
+
+        $response->assertStatus(404);
+    }
+
+    public function test_landlord_cannot_retarget_own_block_onto_another_landlords_room()
+    {
+        [$user, $landlord] = $this->makeLandlordUser();
+        $ownRoom = $this->ownedRoom($landlord);
+        $block = StoreDisponibility::create([
+            'store_room_id' => $ownRoom->id,
+            'start_date' => '2026-10-01',
+            'end_date' => '2026-10-10',
+        ]);
+
+        [, $victimLandlord] = $this->makeLandlordUser();
+        $victimRoom = $this->ownedRoom($victimLandlord);
+
+        $response = $this->actingAs($user, 'sanctum')->putJson("/api/storeDisponibility/{$block->id}", [
+            'store_room_id' => $victimRoom->id,
+            'start_date' => '2026-10-01',
+            'end_date' => '2026-10-10',
+        ]);
+
+        $response->assertStatus(403);
+        $this->assertDatabaseHas('store_disponibility', [
+            'id' => $block->id,
+            'store_room_id' => $ownRoom->id,
+        ]);
+    }
+
+    public function test_retargeting_to_an_owned_room_overlapping_a_confirmed_reservation_is_rejected()
+    {
+        [$user, $landlord] = $this->makeLandlordUser();
+        $sourceRoom = $this->ownedRoom($landlord);
+        $destinationRoom = $this->ownedRoom($landlord);
+        $block = StoreDisponibility::create([
+            'store_room_id' => $sourceRoom->id,
+            'start_date' => '2026-10-01',
+            'end_date' => '2026-10-10',
+        ]);
+        Reservations::factory()->create([
+            'store_room_id' => $destinationRoom->id,
+            'status' => 'confirmed',
+            'start_date' => '2026-10-01',
+            'end_date' => '2026-10-10',
+        ]);
+
+        $response = $this->actingAs($user, 'sanctum')->putJson("/api/storeDisponibility/{$block->id}", [
+            'store_room_id' => $destinationRoom->id,
+            'start_date' => '2026-10-03',
+            'end_date' => '2026-10-05',
+        ]);
+
+        $response->assertStatus(422);
+        $this->assertDatabaseHas('store_disponibility', [
+            'id' => $block->id,
+            'store_room_id' => $sourceRoom->id,
+        ]);
+    }
+
+    public function test_retargeting_to_an_owned_room_with_a_clean_range_moves_the_block()
+    {
+        [$user, $landlord] = $this->makeLandlordUser();
+        $sourceRoom = $this->ownedRoom($landlord);
+        $destinationRoom = $this->ownedRoom($landlord);
+        $block = StoreDisponibility::create([
+            'store_room_id' => $sourceRoom->id,
+            'start_date' => '2026-10-01',
+            'end_date' => '2026-10-10',
+        ]);
+
+        $response = $this->actingAs($user, 'sanctum')->putJson("/api/storeDisponibility/{$block->id}", [
+            'store_room_id' => $destinationRoom->id,
+            'start_date' => '2026-10-01',
+            'end_date' => '2026-10-10',
+        ]);
+
+        $response->assertStatus(200);
+        $this->assertDatabaseHas('store_disponibility', [
+            'id' => $block->id,
+            'store_room_id' => $destinationRoom->id,
+        ]);
+    }
+
     // --- Ownership-scoped deletion -------------------------------------------
 
     public function test_owner_deletes_own_block()
