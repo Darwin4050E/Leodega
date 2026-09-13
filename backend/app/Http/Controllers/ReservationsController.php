@@ -6,6 +6,7 @@ use App\Http\Requests\CancelReservationRequest;
 use App\Http\Requests\StoreReservationRequest;
 use App\Models\Landlords;
 use App\Models\Reservations;
+use App\Models\StoreDisponibility;
 use App\Models\StoreRooms;
 use App\Models\Tenants;
 use App\Services\ReservationService;
@@ -117,16 +118,31 @@ class ReservationsController extends Controller
      * Corrección: findOrFail() primero para que el SoftDeletingScope global
      * de StoreRooms produzca un 404 real cuando la bodega fue eliminada (o
      * nunca existió), en vez de un array vacío silencioso.
+     *
+     * Obs #261: unions confirmed reservations with landlord-authored
+     * StoreDisponibility blocks, sorted by start_date. The response shape
+     * stays byte-compatible -- a bare `[{start_date,end_date}]` array with
+     * no discriminator key -- because the sole consumer
+     * (services/reservations.ts::getReservedDates()) treats every range as
+     * an opaque interval and must require zero changes this cycle.
      */
     public function reservedDates($storeRoomId)
     {
         $room = StoreRooms::findOrFail($storeRoomId);
 
-        $ranges = Reservations::select('start_date', 'end_date')
+        $reservationRanges = Reservations::select('start_date', 'end_date')
             ->where('store_room_id', $room->id)
             ->where('status', 'confirmed')
-            ->orderBy('start_date')
             ->get();
+
+        $blockRanges = StoreDisponibility::select('start_date', 'end_date')
+            ->where('store_room_id', $room->id)
+            ->get();
+
+        $ranges = $reservationRanges
+            ->concat($blockRanges)
+            ->sortBy('start_date')
+            ->values();
 
         return response()->json($ranges);
     }
