@@ -21,7 +21,23 @@ use Illuminate\Validation\ValidationException;
 
 class StoreRoomsController extends ApiController
 {
-    public function index()
+    /**
+     * HUC-01: `city`, `min_size`, `min_price`, `max_price`, `lat`, `lng` are
+     * all optional and independently combinable (spec "Filtered Storage Room
+     * Search"). A param-less call MUST stay byte-identical to the pre-change
+     * response — this is the PR's backward-compatibility contract, so every
+     * filter below is additive and only narrows the `visibleTo()` base query.
+     *
+     * `min_price`/`max_price` filter on the `month`-mode row only (design
+     * decision #3/#4): indexing `store_prices[0]` is the bug this change
+     * fixes on the frontend side, and filtering must not reintroduce it here.
+     *
+     * Distance is never SQL — Haversine runs in PHP over the already-loaded
+     * page (design decision #5), and only when both `lat`/`lng` are supplied.
+     * Rooms with null coordinates keep `distance_km: null` instead of being
+     * dropped (spec "Distance Calculation and Null-Coordinate Handling").
+     */
+    public function index(Request $request)
     {
         // Resolved explicitly via the sanctum guard, never bare auth()->user():
         // this route stays unmiddlewared (the public catalog must remain
@@ -30,18 +46,57 @@ class StoreRoomsController extends ApiController
         // Bearer token and downgrade an admin to the anonymous branch.
         $viewer = auth('sanctum')->user();
 
-        return StoreRooms::with(['storePrices', 'storePhotos', 'landlord.user'])
+        $filters = $request->validate([
+            'city' => 'sometimes|string|max:255',
+            'min_size' => 'sometimes|numeric|min:0',
+            'min_price' => 'sometimes|numeric|min:0',
+            'max_price' => 'sometimes|numeric|min:0|gte:min_price',
+            'lat' => 'sometimes|numeric|between:-90,90|required_with:lng',
+            'lng' => 'sometimes|numeric|between:-180,180|required_with:lat',
+        ]);
+
+        $query = StoreRooms::with(['storePrices', 'storePhotos', 'landlord.user'])
             ->withCount('activeReservations')
-            ->visibleTo($viewer)
-            ->get()
-            ->map(function ($room) {
+            ->visibleTo($viewer);
+
+        if (array_key_exists('city', $filters)) {
+            $query->where('city', $filters['city']);
+        }
+
+        if (array_key_exists('min_size', $filters)) {
+            $query->where('size', '>=', $filters['min_size']);
+        }
+
+        if (array_key_exists('min_price', $filters) || array_key_exists('max_price', $filters)) {
+            $query->whereHas('storePrices', function ($priceQuery) use ($filters) {
+                $priceQuery->where('mode', 'month');
+
+                if (array_key_exists('min_price', $filters)) {
+                    $priceQuery->where('price', '>=', $filters['min_price']);
+                }
+
+                if (array_key_exists('max_price', $filters)) {
+                    $priceQuery->where('price', '<=', $filters['max_price']);
+                }
+            });
+        }
+
+        $lat = $filters['lat'] ?? null;
+        $lng = $filters['lng'] ?? null;
+
+        return $query->get()
+            ->map(function ($room) use ($lat, $lng) {
                 $ratingSummary = (new RatingsService)->summaryFor($room->id);
+                $monthlyPrice = $room->storePrices->firstWhere('mode', 'month');
 
                 return [
                     'id' => $room->id,
                     'title' => $room->title,
+                    'direction' => $room->direction,
                     'city' => $room->city,
                     'size' => $room->size,
+                    'room_type' => $room->room_type,
+                    'storage_type' => $room->storage_type,
                     'publication_status' => $room->publication_status,
                     'landlord' => [
                         'id' => $room->landlord?->id,
@@ -53,6 +108,12 @@ class StoreRoomsController extends ApiController
                     ],
                     'user_id' => $room->landlord?->user?->id,
                     'store_prices' => $room->storePrices,
+                    'monthly_price' => $monthlyPrice?->price !== null ? (float) $monthlyPrice->price : null,
+                    'latitude' => $room->latitude !== null ? (float) $room->latitude : null,
+                    'longitude' => $room->longitude !== null ? (float) $room->longitude : null,
+                    'distance_km' => ($lat !== null && $lng !== null && $room->latitude !== null && $room->longitude !== null)
+                        ? $this->haversineKm((float) $lat, (float) $lng, (float) $room->latitude, (float) $room->longitude)
+                        : null,
                     'rating_avg' => $ratingSummary['avg'],
                     'rating_count' => $ratingSummary['count'],
                     'active_reservations_count' => $room->active_reservations_count,
@@ -61,6 +122,25 @@ class StoreRoomsController extends ApiController
                         : null,
                 ];
             });
+    }
+
+    /**
+     * Great-circle distance between two coordinate pairs, in kilometers.
+     * Post-query, PHP-side only (design decision #5) — no DB-level geo
+     * indexing or spatial functions, per proposal's out-of-scope list.
+     */
+    private function haversineKm(float $lat1, float $lng1, float $lat2, float $lng2): float
+    {
+        $earthRadiusKm = 6371;
+
+        $dLat = deg2rad($lat2 - $lat1);
+        $dLng = deg2rad($lng2 - $lng1);
+
+        $a = sin($dLat / 2) ** 2
+            + cos(deg2rad($lat1)) * cos(deg2rad($lat2)) * sin($dLng / 2) ** 2;
+        $c = 2 * atan2(sqrt($a), sqrt(1 - $a));
+
+        return round($earthRadiusKm * $c, 2);
     }
 
     public function show($id)

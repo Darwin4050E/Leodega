@@ -1,43 +1,46 @@
-import React, { useState } from "react";
+import { useState } from "react";
 import DatePicker from "react-datepicker";
 import { es } from "date-fns/locale";
 import "react-datepicker/dist/react-datepicker.css";
-import { useNavigate } from "react-router-dom";
 
-const SearchBar = () => {
-  const navigate = useNavigate();
+export interface SearchBarFilters {
+  location: string;
+  minSize: string;
+  minPrice: string;
+  maxPrice: string;
+}
 
+interface SearchBarProps {
+  onSearch: (filters: SearchBarFilters) => void;
+}
+
+const SearchBar = ({ onSearch }: SearchBarProps) => {
   const [location, setLocation] = useState("");
+  const [minSize, setMinSize] = useState("");
+  const [minPrice, setMinPrice] = useState("");
+  const [maxPrice, setMaxPrice] = useState("");
+  // Date fields are collected but intentionally not wired into the search
+  // filters yet — availability filtering is not part of this change
+  // (design decision #7). Kept in the UI so the fields stay available for
+  // that follow-up without another layout change.
   const [startDate, setStartDate] = useState<Date | null>(null);
   const [endDate, setEndDate] = useState<Date | null>(null);
   const [error, setError] = useState<string>("");
 
   const handleSearch = () => {
-    if (!location.trim()) {
-      setError("Por favor, ingresa una ubicación.");
-      return;
-    }
-    if (!startDate || !endDate) {
-      setError("Por favor, selecciona ambas fechas.");
-      return;
-    }
-    if (endDate < startDate) {
-      setError("La fecha de fin debe ser posterior a la de inicio.");
+    if (maxPrice && minPrice && Number(maxPrice) < Number(minPrice)) {
+      setError("El precio máximo debe ser mayor o igual al precio mínimo.");
       return;
     }
 
     setError("");
-
-    // 👉 Redirigir a la pantalla de listado
-    navigate("/listado", {
-      state: { location, startDate, endDate },
-    });
+    onSearch({ location, minSize, minPrice, maxPrice });
   };
 
   return (
     <div className="relative z-20 w-full flex justify-center mt-[-2rem] lg:mt-[-3rem] px-4">
-      <div className="bg-white rounded-2xl shadow-lg flex flex-col lg:flex-row items-center justify-between px-8 py-6 gap-5 w-full max-w-6xl">
-        
+      <div className="bg-white rounded-2xl shadow-lg flex flex-col lg:flex-row items-center justify-between px-8 py-6 gap-5 w-full max-w-6xl flex-wrap">
+
         {/* Campo de ubicación */}
         <div className="flex items-center gap-3 text-gray-600 w-full lg:w-auto">
           <i className="fa-solid fa-location-dot text-xl"></i>
@@ -50,6 +53,53 @@ const SearchBar = () => {
               onChange={(e) => setLocation(e.target.value)}
               className="text-sm text-gray-500 focus:outline-none border-b border-gray-200 focus:border-blue-500 transition w-56"
             />
+          </div>
+        </div>
+
+        <div className="hidden lg:block w-px h-10 bg-gray-200" />
+
+        {/* Tamaño mínimo */}
+        <div className="flex items-center gap-3 text-gray-600 w-full lg:w-auto">
+          <i className="fa-solid fa-ruler-combined text-xl"></i>
+          <div className="flex flex-col">
+            <label className="font-semibold text-sm text-gray-700">Tamaño mínimo (m²)</label>
+            <input
+              type="number"
+              min={0}
+              placeholder="Ej. 10"
+              value={minSize}
+              onChange={(e) => setMinSize(e.target.value)}
+              className="text-sm text-gray-500 focus:outline-none border-b border-gray-200 focus:border-blue-500 transition w-32"
+            />
+          </div>
+        </div>
+
+        <div className="hidden lg:block w-px h-10 bg-gray-200" />
+
+        {/* Precio */}
+        <div className="flex items-center gap-3 text-gray-600 w-full lg:w-auto">
+          <i className="fa-solid fa-sack-dollar text-xl"></i>
+          <div className="flex flex-col">
+            <label className="font-semibold text-sm text-gray-700">Precio mensual</label>
+            <div className="flex items-center gap-2">
+              <input
+                type="number"
+                min={0}
+                placeholder="Mín."
+                value={minPrice}
+                onChange={(e) => setMinPrice(e.target.value)}
+                className="text-sm text-gray-500 focus:outline-none border-b border-gray-200 focus:border-blue-500 transition w-20"
+              />
+              <span>-</span>
+              <input
+                type="number"
+                min={0}
+                placeholder="Máx."
+                value={maxPrice}
+                onChange={(e) => setMaxPrice(e.target.value)}
+                className="text-sm text-gray-500 focus:outline-none border-b border-gray-200 focus:border-blue-500 transition w-20"
+              />
+            </div>
           </div>
         </div>
 
@@ -101,12 +151,7 @@ const SearchBar = () => {
         {/* Botón */}
         <button
           onClick={handleSearch}
-          disabled={!location || !startDate || !endDate}
-          className={`${
-            !location || !startDate || !endDate
-              ? "bg-purple-300 cursor-not-allowed"
-              : "bg-purple-600 hover:bg-purple-700"
-          } text-white font-semibold px-8 py-3 rounded-xl transition-all`}
+          className="bg-purple-600 hover:bg-purple-700 text-white font-semibold px-8 py-3 rounded-xl transition-all"
         >
           Buscar
         </button>
