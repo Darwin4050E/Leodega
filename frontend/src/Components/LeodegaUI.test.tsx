@@ -131,9 +131,14 @@ describe('LeodegaUI availability badge', () => {
     mockGetReservedDates.mockResolvedValue({ data: [] });
   });
 
-  it('shows "Ocupada ahora" while keeping the date picker and Reservar button active', async () => {
+  it('shows "Ocupada ahora" while keeping the date picker and Reservar button active, AND still renders the populated inline calendar', async () => {
     mockGetStoreRoomDetail.mockResolvedValue({
       data: { ...storeRoomDetail, is_available_now: false },
+    });
+    const today = new Date();
+    const occupiedISO = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-01`;
+    mockGetReservedDates.mockResolvedValue({
+      data: [{ start_date: occupiedISO, end_date: occupiedISO }],
     });
 
     render(<LeodegaUI />);
@@ -145,7 +150,7 @@ describe('LeodegaUI availability badge', () => {
     expect(reservarButton).not.toBeDisabled();
 
     fireEvent.click(reservarButton);
-    await waitFor(() => expect(screen.queryByText('Cargando disponibilidad...')).not.toBeInTheDocument());
+    await waitFor(() => expect(screen.queryAllByText('Cargando disponibilidad...')).toHaveLength(0));
 
     const dateInputs = screen.getAllByDisplayValue('') as HTMLInputElement[];
     expect(dateInputs[0]).not.toBeDisabled();
@@ -153,6 +158,67 @@ describe('LeodegaUI availability badge', () => {
 
     const submitButtons = screen.getAllByRole('button', { name: 'Enviar solicitud' });
     expect(submitButtons[submitButtons.length - 1]).not.toBeDisabled();
+
+    // Decisive assertion: the inline "Disponibilidad" calendar renders AND is
+    // populated from `reservedRanges` regardless of `is_available_now`.
+    expect(screen.getByRole('heading', { name: 'Disponibilidad' })).toBeInTheDocument();
+    await waitFor(() => {
+      const occupiedDay = screen.getAllByRole('button').find((btn) => btn.disabled);
+      expect(occupiedDay).toBeDefined();
+    });
+  });
+
+  it('shows no loading message in the modal when the shared fetch already resolved before opening it', async () => {
+    mockGetStoreRoomDetail.mockResolvedValue({ data: storeRoomDetail });
+    mockGetReservedDates.mockResolvedValue({ data: [] });
+
+    render(<LeodegaUI />);
+    await waitFor(() => screen.getByText('Bodega Norte'));
+    // Let the shared reserved-dates fetch settle before the modal opens.
+    await waitFor(() => expect(mockGetReservedDates).toHaveBeenCalledTimes(1));
+
+    fireEvent.click(screen.getByRole('button', { name: 'Reservar' }));
+
+    expect(screen.queryByText('Cargando disponibilidad...')).not.toBeInTheDocument();
+  });
+
+  it('still shows "Cargando disponibilidad..." in the modal when opened before the shared fetch settles', async () => {
+    mockGetStoreRoomDetail.mockResolvedValue({ data: storeRoomDetail });
+    let resolveFetch: (value: { data: never[] }) => void = () => {};
+    mockGetReservedDates.mockReturnValue(
+      new Promise((resolve) => {
+        resolveFetch = resolve;
+      })
+    );
+
+    render(<LeodegaUI />);
+    await waitFor(() => screen.getByText('Bodega Norte'));
+
+    // Before opening the modal, the inline calendar alone shows the loading copy.
+    expect(screen.getAllByText('Cargando disponibilidad...')).toHaveLength(1);
+
+    fireEvent.click(screen.getByRole('button', { name: 'Reservar' }));
+
+    // With the modal open too, both surfaces show it while the fetch is in flight.
+    expect(screen.getAllByText('Cargando disponibilidad...')).toHaveLength(2);
+
+    resolveFetch({ data: [] });
+    await waitFor(() => expect(screen.queryAllByText('Cargando disponibilidad...')).toHaveLength(0));
+  });
+
+  it('renders the inline calendar fail-open (all days available) when the reserved-dates fetch rejects', async () => {
+    mockGetStoreRoomDetail.mockResolvedValue({ data: storeRoomDetail });
+    mockGetReservedDates.mockRejectedValue(new Error('network error'));
+
+    render(<LeodegaUI />);
+    await waitFor(() => screen.getByText('Bodega Norte'));
+
+    await waitFor(() => expect(screen.queryAllByText('Cargando disponibilidad...')).toHaveLength(0));
+    expect(screen.getByRole('heading', { name: 'Disponibilidad' })).toBeInTheDocument();
+
+    const dayButtons = screen.getAllByRole('button').filter((btn) => /^\d+$/.test(btn.textContent || ''));
+    expect(dayButtons.length).toBeGreaterThan(0);
+    dayButtons.forEach((btn) => expect(btn).not.toBeDisabled());
   });
 
   it('shows "Disponible ahora" when is_available_now is true', async () => {

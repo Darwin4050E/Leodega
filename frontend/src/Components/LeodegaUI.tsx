@@ -1,7 +1,7 @@
 import { useParams, useNavigate } from "react-router-dom";
 import { useEffect, useMemo, useState } from "react";
 import { getStoreRoomDetail, type StoreRoomDetail } from "../services/storeRooms";
-import { getReservedDates, createReservation } from "../services/reservations";
+import { getReservedDates, createReservation, type ReservedRange } from "../services/reservations";
 import { useAuth } from "../context/useAuth";
 import { asApiError } from "../api/errors";
 import { formatUSD } from "../utils/money";
@@ -10,8 +10,7 @@ import { parseSecurityFeatures, SECURITY_LABELS, type ParsedSecurityFeatures } f
 import DetailStatusScreen from "./DetailStatusScreen";
 import RatingStars from "./RatingStars";
 import MiniMap from "../Dashboard/Moderacion/MiniMap";
-
-type ReservedRange = { start_date: string; end_date: string };
+import AvailabilityCalendar from "./AvailabilityCalendar";
 
 const DETAIL_STATUS = {
   LOADING: "loading",
@@ -51,7 +50,7 @@ export default function LeodegaUI() {
   }, [id]);
 
   useEffect(() => {
-    if (!openReserve || !id) return;
+    if (!id) return;
 
     setLoadingRanges(true);
     setError("");
@@ -60,7 +59,7 @@ export default function LeodegaUI() {
       .then((res) => setReservedRanges(res.data || []))
       .catch(() => setReservedRanges([]))
       .finally(() => setLoadingRanges(false));
-  }, [openReserve, id]);
+  }, [id]);
 
   const priceMonthly = useMemo(() => {
     const p = Number(data?.prices?.[0]?.price ?? 0);
@@ -295,6 +294,12 @@ export default function LeodegaUI() {
                   </div>
                 ))}
               </div>
+            </div>
+
+            {/* Disponibilidad */}
+            <div className="bg-white border border-gray-200 rounded-2xl shadow-sm p-6">
+              <h3 className="font-semibold text-gray-900 mb-4">Disponibilidad</h3>
+              <AvailabilityCalendar reservedRanges={reservedRanges} loading={loadingRanges} />
             </div>
 
             {/* Extra images */}
