@@ -227,3 +227,63 @@ describe('PreguntaInicio7 — submit gate and permit requirement', () => {
     expect(resetMock).toHaveBeenCalled();
   });
 });
+
+describe('PreguntaInicio7 — security features payload', () => {
+  beforeEach(() => {
+    localStorage.clear();
+    vi.clearAllMocks();
+  });
+
+  it('renders the fourth security feature as restricted 24/7 access', () => {
+    const wrapper = WizardWrapper({ permit: null });
+    render(<PreguntaInicio7 />, { wrapper });
+
+    expect(screen.getByText('Acceso restringido 24/7')).toBeInTheDocument();
+  });
+
+  it('writes the fourth feature under the `acceso` key, never the legacy `objetos` key', async () => {
+    const user = userEvent.setup();
+
+    const permitFile = makeFile('permit.pdf', 'application/pdf');
+    mockCreateStoreRoom.mockResolvedValue({ status: 201, data: { item: { id: 7 } } });
+    mockUploadPhotos.mockResolvedValue(undefined);
+
+    const wrapper = WizardWrapper({ photos: [], permit: permitFile, reset: vi.fn() });
+
+    localStorage.setItem('optionData', JSON.stringify({
+      step1Data: { selectedOption: 'bodega' },
+      step2Data: { selectedOption: 'completa' },
+      location: { direction: 'Av. Test', city: 'Quito' },
+      priceData: { tamano: 30, precio: 150 },
+      titleData: { titulo: 'Bodega A', descripcion: 'Desc' },
+    }));
+
+    render(<PreguntaInicio7 />, { wrapper });
+
+    // Tick the fourth security checkbox by its label.
+    await user.click(
+      screen.getByText('Acceso restringido 24/7').closest('label')!
+        .querySelector('input[type="checkbox"]')!,
+    );
+
+    const select = screen.getByRole('combobox') as HTMLSelectElement;
+    fireEvent.change(select, { target: { value: 'flexible' } });
+
+    await user.click(screen.getByTestId('submit-btn'));
+
+    await vi.waitFor(() => {
+      expect(mockCreateStoreRoom).toHaveBeenCalledTimes(1);
+    });
+
+    const [formData] = mockCreateStoreRoom.mock.calls[0];
+    const security = JSON.parse(formData.get('security') as string);
+
+    expect(security).toEqual({
+      camara: false,
+      ruido: false,
+      control: false,
+      acceso: true,
+    });
+    expect(security).not.toHaveProperty('objetos');
+  });
+});

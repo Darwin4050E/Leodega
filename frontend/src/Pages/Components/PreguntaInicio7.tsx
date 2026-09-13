@@ -24,12 +24,12 @@ const PreguntaInicio7 = () => {
     camara: boolean;
     ruido: boolean;
     control: boolean;
-    objetos: boolean;
+    acceso: boolean;
   }>({
     camara: false,
     ruido: false,
     control: false,
-    objetos: false,
+    acceso: false,
   });
   const [cancellationPolicyTier, setCancellationPolicyTier] = useState("");
   const [permitError, setPermitError] = useState<string | null>(null);
@@ -218,14 +218,11 @@ const PreguntaInicio7 = () => {
             </label>
 
             <label className="flex justify-between items-center border-b border-gray-100 py-2 text-gray-700">
-              <span>
-                Objetos prohibidos (sustancias peligrosas, inflamables, ilegales,
-                perecibles, etc.)
-              </span>
+              <span>Acceso restringido 24/7</span>
               <input
                 type="checkbox"
-                checked={seguridad.objetos}
-                onChange={() => handleCheckboxChange("objetos")}
+                checked={seguridad.acceso}
+                onChange={() => handleCheckboxChange("acceso")}
                 className="w-5 h-5 accent-purple-500 cursor-pointer"
               />
             </label>
