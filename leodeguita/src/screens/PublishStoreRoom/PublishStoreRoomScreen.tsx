@@ -134,7 +134,7 @@ export default function PublishStoreRoomScreen() {
       }
       setPhase('success')
     } catch (error) {
-      if (axios.isAxiosError(error) && error.response?.status === 400) {
+      if (axios.isAxiosError(error) && error.response?.status === 422) {
         const body = error.response.data as ApiValidationError
         const { fieldErrors, firstStep } = mapApiErrors(body.errors)
         setErrors(fieldErrors)
