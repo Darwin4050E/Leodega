@@ -28,9 +28,15 @@ describe('storeRooms service', () => {
     vi.clearAllMocks();
   });
 
-  it('getStoreRooms calls GET /storeRooms', () => {
+  it('getStoreRooms calls GET /storeRooms with no params when called without filters', () => {
     getStoreRooms();
-    expect(mockApi.get).toHaveBeenCalledWith('/storeRooms');
+    expect(mockApi.get).toHaveBeenCalledWith('/storeRooms', { params: undefined });
+  });
+
+  it('getStoreRooms passes filters as query params', () => {
+    const filters = { city: 'Guayaquil', min_size: 10, min_price: 50, max_price: 200, lat: -2.118, lng: -79.955 };
+    getStoreRooms(filters);
+    expect(mockApi.get).toHaveBeenCalledWith('/storeRooms', { params: filters });
   });
 
   it('getStoreRoomDetail calls GET /store-rooms/:id/detail', () => {
