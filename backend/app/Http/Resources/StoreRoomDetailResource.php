@@ -57,6 +57,7 @@ class StoreRoomDetailResource extends JsonResource
                 'user_id' => $this->landlord->user->id,
                 'name' => $this->landlord->user->name,
                 'email' => $this->landlord->user->email,
+                'phone' => $this->landlord->user->phone,
             ],
 
             'latitude' => $this->latitude !== null ? (float) $this->latitude : null,
