@@ -105,33 +105,16 @@ class StoreRoomResponseShapeTest extends TestCase
         $this->assertStringContainsString('photos/first.jpg', $response->json('0.image'));
     }
 
-    /**
-     * HUC-01 (backend PR, spec "storage-search"): `index()` deliberately
-     * gains `direction`, `room_type`, `storage_type`, `latitude`,
-     * `longitude`, `monthly_price` and `distance_km` to power the search/
-     * filter/map catalog — this is the one intentional divergence the class
-     * doc-comment above anticipates, not a surprise regression. `description`,
-     * `security`, `photos` and `prices` stay owned by the other endpoints.
-     */
-    public function test_index_exposes_only_the_fields_this_endpoint_now_owns(): void
+    public function test_index_does_not_expose_fields_owned_by_the_other_endpoints(): void
     {
-        [$room] = $this->seedFullRoom();
+        $this->seedFullRoom();
 
         $response = $this->getJson('/api/storeRooms');
 
-        $response->assertJsonPath('0.direction', 'Km 11.5 Via a Daule');
-        $response->assertJsonPath('0.room_type', 'bodega');
-        $response->assertJsonPath('0.storage_type', 'completa');
-        // json_encode() drops the trailing .0 for a whole-number float, so
-        // the wire value decodes back as an int here.
-        $response->assertJsonPath('0.monthly_price', 780);
-        $response->assertJsonPath('0.distance_km', null);
-        // seedFullRoom() never sets coordinates — null-safe per spec's
-        // "Distance Calculation and Null-Coordinate Handling".
-        $response->assertJsonPath('0.latitude', null);
-        $response->assertJsonPath('0.longitude', null);
-
+        $this->assertArrayNotHasKey('direction', $response->json('0'));
         $this->assertArrayNotHasKey('description', $response->json('0'));
+        $this->assertArrayNotHasKey('room_type', $response->json('0'));
+        $this->assertArrayNotHasKey('storage_type', $response->json('0'));
         $this->assertArrayNotHasKey('security', $response->json('0'));
         $this->assertArrayNotHasKey('photos', $response->json('0'));
         $this->assertArrayNotHasKey('prices', $response->json('0'));
