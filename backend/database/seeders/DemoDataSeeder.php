@@ -8,6 +8,7 @@ use App\Models\StorePrices;
 use App\Models\StoreRooms;
 use App\Models\Tenants;
 use App\Models\User;
+use App\Services\ReservationPricingService;
 use Illuminate\Database\Console\Seeds\WithoutModelEvents;
 use Illuminate\Database\Seeder;
 
@@ -128,7 +129,15 @@ class DemoDataSeeder extends Seeder
         \DateTimeInterface $start,
         \DateTimeInterface $end,
     ): void {
-        $monthly = (float) $room->storePrices()->where('mode', 'month')->value('price');
+        // Quote through the real pricing service rather than hardcoding
+        // amounts: demo reservations then always reflect the live billing
+        // model (rent + deposit, commission deducted from the rent) and can
+        // never drift away from it again.
+        $quote = (new ReservationPricingService)->quote(
+            $room,
+            $start->format('Y-m-d'),
+            $end->format('Y-m-d'),
+        );
 
         Reservations::firstOrCreate(
             ['store_room_id' => $room->id, 'tenant_id' => $tenant->id],
@@ -136,8 +145,8 @@ class DemoDataSeeder extends Seeder
                 'start_date' => $start,
                 'end_date' => $end,
                 'status' => 'confirmed',
-                'total_mount' => $monthly,
-                'rent_subtotal' => round($monthly * 0.9, 2),
+                'total_mount' => $quote['total_mount'],
+                'rent_subtotal' => $quote['rent_subtotal'],
                 'creation_date' => now(),
             ],
         );

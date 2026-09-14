@@ -24,7 +24,7 @@ class ReservationCancellationTest extends TestCase
             'start_date' => now()->addDays(5)->toDateString(),
             'end_date' => now()->addDays(35)->toDateString(),
             'rent_subtotal' => 3000,
-            'total_mount' => 4180,
+            'total_mount' => 4000,
         ]);
     }
 
@@ -47,7 +47,7 @@ class ReservationCancellationTest extends TestCase
         $this->assertDatabaseHas('reservation_cancellation_obligations', [
             'reservation_id' => $reservation->id,
             'landlord_id' => $landlord->id,
-            'refund_amount' => '4180.00',
+            'refund_amount' => '4000.00',
             'penalty_amount' => '450.00',
         ]);
         $this->assertDatabaseHas('notifications', [
@@ -66,7 +66,7 @@ class ReservationCancellationTest extends TestCase
             'start_date' => today()->toDateString(),
             'end_date' => today()->addDays(30)->toDateString(),
             'rent_subtotal' => 3000,
-            'total_mount' => 4180,
+            'total_mount' => 4000,
         ]);
 
         $response = $this->actingAs($landlordUser, 'sanctum')
@@ -89,7 +89,7 @@ class ReservationCancellationTest extends TestCase
             'start_date' => today()->subDays(2)->toDateString(),
             'end_date' => today()->addDays(30)->toDateString(),
             'rent_subtotal' => 3000,
-            'total_mount' => 4180,
+            'total_mount' => 4000,
         ]);
 
         $response = $this->actingAs($landlordUser, 'sanctum')
@@ -150,7 +150,7 @@ class ReservationCancellationTest extends TestCase
             'start_date' => now()->addDays(5)->toDateString(),
             'end_date' => now()->addDays(35)->toDateString(),
             'rent_subtotal' => 3000,
-            'total_mount' => 4180,
+            'total_mount' => 4000,
         ]);
 
         $response = $this->actingAs($user, 'sanctum')

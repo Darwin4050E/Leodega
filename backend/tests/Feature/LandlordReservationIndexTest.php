@@ -43,7 +43,7 @@ class LandlordReservationIndexTest extends TestCase
             'store_room_id' => $room->id,
             'status' => 'confirmed',
             'rent_subtotal' => 3000,
-            'total_mount' => 4180,
+            'total_mount' => 4000,
         ]);
 
         $response = $this->actingAs($user, 'sanctum')
@@ -63,7 +63,7 @@ class LandlordReservationIndexTest extends TestCase
             'store_room_id' => $room->id,
             'status' => 'pending',
             'rent_subtotal' => 3000,
-            'total_mount' => 4180,
+            'total_mount' => 4000,
         ]);
 
         $response = $this->actingAs($user, 'sanctum')
@@ -88,12 +88,12 @@ class LandlordReservationIndexTest extends TestCase
             'store_room_id' => $room->id,
             'status' => 'canceled',
             'rent_subtotal' => 3000,
-            'total_mount' => 4180,
+            'total_mount' => 4000,
         ]);
         ReservationCancellationObligation::factory()->create([
             'reservation_id' => $reservation->id,
             'landlord_id' => $landlord->id,
-            'refund_amount' => 4180,
+            'refund_amount' => 4000,
             'penalty_amount' => 450,
             'penalty_rate' => 0.15,
             'reason' => 'El almacen sufrio un incendio',
@@ -149,7 +149,7 @@ class LandlordReservationIndexTest extends TestCase
             'store_room_id' => $room->id,
             'status' => 'confirmed',
             'rent_subtotal' => 3000,
-            'total_mount' => 4180,
+            'total_mount' => 4000,
             'start_date' => today()->addDays(5)->toDateString(),
             'end_date' => today()->addDays(35)->toDateString(),
         ]);
@@ -159,7 +159,7 @@ class LandlordReservationIndexTest extends TestCase
             'store_room_id' => $room->id,
             'status' => 'confirmed',
             'rent_subtotal' => 3000,
-            'total_mount' => 4180,
+            'total_mount' => 4000,
             'start_date' => today()->toDateString(),
             'end_date' => today()->addDays(30)->toDateString(),
         ]);
@@ -169,7 +169,7 @@ class LandlordReservationIndexTest extends TestCase
             'store_room_id' => $room->id,
             'status' => 'pending',
             'rent_subtotal' => 3000,
-            'total_mount' => 4180,
+            'total_mount' => 4000,
             'start_date' => today()->addDays(5)->toDateString(),
             'end_date' => today()->addDays(35)->toDateString(),
         ]);
@@ -196,7 +196,7 @@ class LandlordReservationIndexTest extends TestCase
             'store_room_id' => $room->id,
             'status' => 'confirmed',
             'rent_subtotal' => 3000,
-            'total_mount' => 4180,
+            'total_mount' => 4000,
             'start_date' => today()->toDateString(),
             'end_date' => today()->addDays(30)->toDateString(),
         ]);
