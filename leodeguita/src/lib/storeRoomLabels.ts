@@ -3,9 +3,13 @@ import type { RoomType, StorageType } from '../services/storeRooms'
 /**
  * Shared label maps for store-room enums. Extracted from
  * `screens/PublishStoreRoom/model.ts` so more than one screen can label a
- * `room_type` / `storage_type` without importing another screen's folder.
- * `PublishStoreRoom/model.ts` re-exports these to keep its own importers
- * (`steps.tsx`, the HUL-03 test suite) unchanged.
+ * `room_type` / `storage_type` / security key without importing another
+ * screen's folder. `PublishStoreRoom/model.ts` re-exports these to keep its
+ * own importers (`steps.tsx`, the HUL-03 test suite) unchanged.
+ *
+ * `SECURITY_OPTIONS` moved here so `StoreRoomDetail` can reuse the same
+ * key→label mapping `PublishStoreRoom` already had to label the parsed
+ * `security` JSON.
  */
 
 export const ROOM_TYPES: { value: RoomType; label: string }[] = [
@@ -37,4 +41,11 @@ export const STORAGE_TYPES: {
     title: 'Un espacio compartido',
     desc: 'Área compartida con otros, dentro de un espacio supervisado.',
   },
+]
+
+export const SECURITY_OPTIONS: { key: string; label: string }[] = [
+  { key: 'camara', label: 'Cámara de seguridad exterior' },
+  { key: 'ruido', label: 'Monitor de ruido / decibeles' },
+  { key: 'control', label: 'Control de plagas y humedad' },
+  { key: 'acceso', label: 'Acceso restringido 24/7' },
 ]

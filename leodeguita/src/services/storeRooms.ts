@@ -162,3 +162,88 @@ export async function listMyStoreRooms(
     throw error
   }
 }
+
+/**
+ * Transport for the mobile catalog (`/bodegas`) and detail (`/bodegas/:id`)
+ * screens.
+ *
+ * `listStoreRooms()` reuses the same public `GET /storeRooms` catalog the
+ * web search/filter screen already consumes (HUC-01). The backend's
+ * `visibleTo()` scope narrows an anonymous/tenant viewer to
+ * `publication_status: 'approved'` rooms with no `ownerLandlordId` argument
+ * passed by `index()`, so no client-side status filter is needed here.
+ *
+ * `getStoreRoomDetail()` reuses `GET /store-rooms/{id}/detail`
+ * (`StoreRoomDetailResource`), the same endpoint the web `BodegaDetalle`
+ * screen consumes. A 404 (room no longer exists) is rethrown as
+ * `StoreRoomNotFoundError` so the screen never has to know HTTP codes —
+ * the same "HTTP status stays in transport" convention `listMyStoreRooms`
+ * already follows. Every other error rethrows unchanged.
+ */
+
+export interface CatalogStoreRoom {
+  id: number
+  title: string
+  city: string
+  size: number | string
+  room_type: RoomType
+  monthly_price: number | null
+  rating_avg: number
+  image: string | null
+}
+
+export async function listStoreRooms(): Promise<CatalogStoreRoom[]> {
+  const { data } = await client.get<CatalogStoreRoom[]>('/storeRooms')
+  return data
+}
+
+export interface StoreRoomDetailLandlord {
+  id: number
+  user_id: number
+  name: string
+  email: string
+  phone: string | null
+}
+
+export interface StoreRoomDetail {
+  id: number
+  title: string
+  description: string
+  direction: string
+  city: string
+  size: number | string
+  room_type: RoomType
+  storage_type: StorageType
+  /** Raw JSON string (backend serves `getRawOriginal('security')`). */
+  security: string | null
+  prices: StorePrice[]
+  photos: string[]
+  landlord: StoreRoomDetailLandlord
+  latitude: number | null
+  longitude: number | null
+  rating_avg: number
+  rating_count: number
+  active_reservations_count: number
+  is_available_now: boolean
+}
+
+export class StoreRoomNotFoundError extends Error {
+  constructor(id: number) {
+    super(`Store room ${id} was not found`)
+    this.name = 'StoreRoomNotFoundError'
+  }
+}
+
+export async function getStoreRoomDetail(id: number): Promise<StoreRoomDetail> {
+  try {
+    const { data } = await client.get<StoreRoomDetail>(
+      `/store-rooms/${id}/detail`,
+    )
+    return data
+  } catch (error) {
+    if (axios.isAxiosError(error) && error.response?.status === 404) {
+      throw new StoreRoomNotFoundError(id)
+    }
+    throw error
+  }
+}

@@ -5,7 +5,11 @@ import type {
 
 // Re-exported so `steps.tsx` and every existing importer keep working after
 // the label maps moved to `src/lib/`.
-export { ROOM_TYPES, STORAGE_TYPES } from '../../lib/storeRoomLabels'
+export {
+  ROOM_TYPES,
+  STORAGE_TYPES,
+  SECURITY_OPTIONS,
+} from '../../lib/storeRoomLabels'
 
 export const EMPTY_STORE_ROOM: NewStoreRoom = {
   room_type: '',
@@ -28,13 +32,6 @@ export const POLICY_TIERS: { value: CancellationPolicyTier; label: string }[] = 
   { value: 'flexible', label: 'Flexible' },
   { value: 'moderada', label: 'Moderada' },
   { value: 'estricta', label: 'Estricta' },
-]
-
-export const SECURITY_OPTIONS: { key: string; label: string }[] = [
-  { key: 'camara', label: 'Cámara de seguridad exterior' },
-  { key: 'ruido', label: 'Monitor de ruido / decibeles' },
-  { key: 'control', label: 'Control de plagas y humedad' },
-  { key: 'acceso', label: 'Acceso restringido 24/7' },
 ]
 
 export const DESCRIPTION_MAX = 500
