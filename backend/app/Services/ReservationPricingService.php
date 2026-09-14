@@ -22,6 +22,23 @@ class ReservationPricingService
     private const SERVICE_FEE_RATE = 0.06;
 
     /**
+     * BILLING MODEL — the service fee is a COMMISSION, NOT a surcharge.
+     *
+     * The 6% fee is deducted FROM the published rent; it is never added on
+     * top of it. Concretely:
+     *
+     *   the customer pays   rent_subtotal + deposit          (= total_mount)
+     *   the landlord nets   rent_subtotal - service_fee
+     *   Leodega keeps       service_fee
+     *
+     * So a room published at $500/month, rented for one month, charges the
+     * customer $1000 ($500 rent + $500 refundable deposit) — of that rent,
+     * $30 is Leodega's commission and $470 is the landlord's net.
+     *
+     * `service_fee` is therefore INTERNAL ACCOUNTING: it is still returned so
+     * a landlord-facing panel can surface the landlord's net, but it is
+     * deliberately NOT part of total_mount and must never be added back.
+     *
      * @return array{rent_subtotal: string, service_fee: string, deposit: string, total_mount: string}
      *
      * @throws ReservationPricingException when no eligible (mode='month',
@@ -47,7 +64,7 @@ class ReservationPricingService
         $rentSubtotalCents = $priceCents * $months;
         $serviceFeeCents = (int) round($rentSubtotalCents * self::SERVICE_FEE_RATE);
         $depositCents = $priceCents;
-        $totalCents = $rentSubtotalCents + $serviceFeeCents + $depositCents;
+        $totalCents = $rentSubtotalCents + $depositCents;
 
         return [
             'rent_subtotal' => $this->centsToDecimalString($rentSubtotalCents),

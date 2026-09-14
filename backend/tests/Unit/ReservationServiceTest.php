@@ -53,7 +53,7 @@ class ReservationServiceTest extends TestCase
             'tenant_id' => $tenant->id,
             'status' => 'pending',
             'rent_subtotal' => '3000.00',
-            'total_mount' => '4180.00',
+            'total_mount' => '4000.00',
         ]);
     }
 
@@ -214,7 +214,7 @@ class ReservationServiceTest extends TestCase
             'start_date' => now()->addDays(5)->toDateString(),
             'end_date' => now()->addDays(35)->toDateString(),
             'rent_subtotal' => 3000,
-            'total_mount' => 4180,
+            'total_mount' => 4000,
         ]);
 
         \App\Models\Payments::factory()->create([
@@ -232,7 +232,7 @@ class ReservationServiceTest extends TestCase
         $this->assertDatabaseHas('reservation_cancellation_obligations', [
             'reservation_id' => $reservation->id,
             'landlord_id' => $landlord->id,
-            'refund_amount' => '4180.00',
+            'refund_amount' => '4000.00',
             'penalty_amount' => '450.00',
             'penalty_rate' => '0.1500',
             'settlement_status' => 'pending_settlement',
@@ -267,7 +267,7 @@ class ReservationServiceTest extends TestCase
             'start_date' => now()->addDays(5)->toDateString(),
             'end_date' => now()->addDays(35)->toDateString(),
             'rent_subtotal' => 3000,
-            'total_mount' => 4180,
+            'total_mount' => 4000,
         ]);
 
         $this->service()->cancelByLandlord($reservation, 'El almacen sufrio un incendio', $landlordUser->id);
@@ -295,7 +295,7 @@ class ReservationServiceTest extends TestCase
             'start_date' => today()->toDateString(),
             'end_date' => today()->addDays(30)->toDateString(),
             'rent_subtotal' => 3000,
-            'total_mount' => 4180,
+            'total_mount' => 4000,
         ]);
 
         try {
@@ -318,7 +318,7 @@ class ReservationServiceTest extends TestCase
             'start_date' => today()->subDays(2)->toDateString(),
             'end_date' => today()->addDays(30)->toDateString(),
             'rent_subtotal' => 3000,
-            'total_mount' => 4180,
+            'total_mount' => 4000,
         ]);
 
         try {
@@ -341,7 +341,7 @@ class ReservationServiceTest extends TestCase
             'start_date' => now()->addDays(5)->toDateString(),
             'end_date' => now()->addDays(35)->toDateString(),
             'rent_subtotal' => 3000,
-            'total_mount' => 4180,
+            'total_mount' => 4000,
         ]);
 
         try {
@@ -364,7 +364,7 @@ class ReservationServiceTest extends TestCase
             'start_date' => now()->addDays(5)->toDateString(),
             'end_date' => now()->addDays(35)->toDateString(),
             'rent_subtotal' => 3000,
-            'total_mount' => 4180,
+            'total_mount' => 4000,
         ]);
 
         try {
@@ -387,7 +387,7 @@ class ReservationServiceTest extends TestCase
             'start_date' => now()->addDays(5)->toDateString(),
             'end_date' => now()->addDays(35)->toDateString(),
             'rent_subtotal' => null,
-            'total_mount' => 4180,
+            'total_mount' => 4000,
         ]);
 
         try {
