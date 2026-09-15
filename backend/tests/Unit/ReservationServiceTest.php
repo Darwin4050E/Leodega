@@ -53,7 +53,8 @@ class ReservationServiceTest extends TestCase
             'tenant_id' => $tenant->id,
             'status' => 'pending',
             'rent_subtotal' => '3000.00',
-            'total_mount' => '4000.00',
+            // Rent only: the deposit is zero, so the total is the rent.
+            'total_mount' => '3000.00',
         ]);
     }
 

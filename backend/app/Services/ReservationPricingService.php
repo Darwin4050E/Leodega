@@ -22,22 +22,33 @@ class ReservationPricingService
     private const SERVICE_FEE_RATE = 0.06;
 
     /**
-     * BILLING MODEL — the service fee is a COMMISSION, NOT a surcharge.
+     * BILLING MODEL — the customer pays RENT ONLY.
      *
-     * The 6% fee is deducted FROM the published rent; it is never added on
-     * top of it. Concretely:
+     * The 6% fee is a COMMISSION deducted FROM the published rent; it is
+     * never added on top of it. The deposit is ZERO. Concretely:
      *
      *   the customer pays   rent_subtotal + deposit          (= total_mount)
      *   the landlord nets   rent_subtotal - service_fee
      *   Leodega keeps       service_fee
      *
-     * So a room published at $500/month, rented for one month, charges the
-     * customer $1000 ($500 rent + $500 refundable deposit) — of that rent,
-     * $30 is Leodega's commission and $470 is the landlord's net.
+     * So a room published at $780/month, rented for one month, charges the
+     * customer $780 — of that rent, $46.80 is Leodega's commission and
+     * $733.20 is the landlord's net.
      *
      * `service_fee` is therefore INTERNAL ACCOUNTING: it is still returned so
      * a landlord-facing panel can surface the landlord's net, but it is
      * deliberately NOT part of total_mount and must never be added back.
+     *
+     * DEPOSIT — zero, and it may only be re-enabled under one precondition:
+     * a hold/release flow must exist that can actually return the money.
+     * Today no such flow exists anywhere in this codebase — there is no
+     * "deposit held" or "deposit released" state, and no payout concept at
+     * all. A deposit is refundable by definition, so charging one with no
+     * way to refund it promises something the system cannot perform: it is
+     * simply an extra month of rent collected under another name. The key
+     * stays in the returned array at zero so the response shape is stable
+     * and so reinstating it — once the return flow is built — is a one-line
+     * change rather than a schema change.
      *
      * @return array{rent_subtotal: string, service_fee: string, deposit: string, total_mount: string}
      *
@@ -63,7 +74,7 @@ class ReservationPricingService
 
         $rentSubtotalCents = $priceCents * $months;
         $serviceFeeCents = (int) round($rentSubtotalCents * self::SERVICE_FEE_RATE);
-        $depositCents = $priceCents;
+        $depositCents = 0;
         $totalCents = $rentSubtotalCents + $depositCents;
 
         return [
