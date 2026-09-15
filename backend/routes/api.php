@@ -103,6 +103,10 @@ Route::middleware('auth.api:sanctum')->group(function () {
 Route::get('/storeRooms', [StoreRoomsController::class, 'index']);
 Route::get('/storeRooms/{id}', [StoreRoomsController::class, 'show']);
 Route::get('/store-rooms/{id}/detail', [StoreRoomsController::class, 'detail']);
+// Public read-only price preview (storeroom-detail-pricing): reused verbatim
+// by ReservationPricingService::quote(), no auth required, same public
+// pattern as detail() above.
+Route::get('/store-rooms/{id}/quote', [StoreRoomsController::class, 'quote']);
 // El registro (POST) queda restringido a landlords autenticados (HUG-04);
 // PUT/DELETE se mantienen en su propio grupo solo-auth porque PUT es el
 // camino de moderación admin (StoreModerationService::moderate) y no debe

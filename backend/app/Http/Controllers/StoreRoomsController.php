@@ -12,8 +12,10 @@ use App\Models\StoreRooms;
 use App\Services\ModerationDecision;
 use App\Services\StoreModerationService;
 use App\Services\RatingsService;
+use App\Services\ReservationPricingService;
 use App\Services\StoreRoomDeletionService;
 use App\Services\StoreRoomService;
+use Carbon\Carbon;
 use Illuminate\Http\Request;
 use Illuminate\Support\Arr;
 use Illuminate\Support\Facades\Gate;
@@ -390,5 +392,43 @@ class StoreRoomsController extends ApiController
         $ratingSummary = $ratingsService->summaryFor($room->id);
 
         return response()->json((new StoreRoomDetailResource($room, $ratingSummary))->resolve(), 200);
+    }
+
+    /**
+     * Public, read-only price preview (storeroom-detail-pricing). Reuses
+     * ReservationPricingService::quote() verbatim — this controller never
+     * recomputes or approximates any figure the service already owns.
+     *
+     * `start_date`/`end_date` are optional together; when both are absent,
+     * the panel's default 3-month estimate is computed HERE, server-side
+     * (design decision), so the frontend never does date math. When the
+     * pricing service finds no eligible `mode='month'` price row it throws
+     * ReservationPricingException, deliberately left UNCAUGHT here — its own
+     * render() already returns the correct {message} 422 shape, matching the
+     * existing pattern in ReservationsController::store().
+     */
+    public function quote(Request $request, $id, ReservationPricingService $pricingService)
+    {
+        $room = StoreRooms::find($id);
+        if (! $room) {
+            return response()->json(['message' => 'Bodega no encontrada'], 404);
+        }
+
+        $dates = $request->validate([
+            'start_date' => 'sometimes|required_with:end_date|date',
+            'end_date' => 'sometimes|required_with:start_date|date|after_or_equal:start_date',
+        ]);
+
+        if (! isset($dates['start_date'], $dates['end_date'])) {
+            $start = Carbon::now();
+            $end = $start->copy()->addMonths(3);
+        } else {
+            $start = Carbon::parse($dates['start_date']);
+            $end = Carbon::parse($dates['end_date']);
+        }
+
+        $quote = $pricingService->quote($room, $start->toDateString(), $end->toDateString());
+
+        return response()->json($quote, 200);
     }
 }
