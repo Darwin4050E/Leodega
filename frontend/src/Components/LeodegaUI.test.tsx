@@ -321,6 +321,81 @@ describe('LeodegaUI location', () => {
   });
 });
 
+describe('LeodegaUI top gallery', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mockUseAuth.mockReturnValue({ user: { role: 'tenant' } });
+    mockGetReservedDates.mockResolvedValue({ data: [] });
+    mockGetStoreRoomQuote.mockResolvedValue({
+      data: { rent_subtotal: '450.00', service_fee: '27.00', deposit: '0.00', total_mount: '450.00' },
+    });
+  });
+
+  it('renders a placeholder box and no thumbnail strip when there are zero photos', async () => {
+    mockGetStoreRoomDetail.mockResolvedValue({ data: { ...storeRoomDetail, photos: [] } });
+
+    render(<LeodegaUI />);
+    await waitFor(() => screen.getByText('Bodega Norte'));
+
+    expect(screen.getByTestId('gallery-placeholder')).toBeInTheDocument();
+    expect(screen.queryAllByRole('img')).toHaveLength(0);
+  });
+
+  it('renders only the main image and no thumbnail strip when there is exactly 1 photo', async () => {
+    mockGetStoreRoomDetail.mockResolvedValue({
+      data: { ...storeRoomDetail, photos: ['photo-0.jpg'] },
+    });
+
+    render(<LeodegaUI />);
+    await waitFor(() => screen.getByText('Bodega Norte'));
+
+    const images = screen.getAllByRole('img');
+    expect(images).toHaveLength(1);
+    expect(images[0]).toHaveAttribute('src', 'photo-0.jpg');
+  });
+
+  it('renders the main image plus 2 thumbnails when there are 3 photos, all 3 visible', async () => {
+    mockGetStoreRoomDetail.mockResolvedValue({
+      data: { ...storeRoomDetail, photos: ['photo-0.jpg', 'photo-1.jpg', 'photo-2.jpg'] },
+    });
+
+    render(<LeodegaUI />);
+    await waitFor(() => screen.getByText('Bodega Norte'));
+
+    const images = screen.getAllByRole('img');
+    expect(images).toHaveLength(3);
+    expect(images.map((img) => img.getAttribute('src'))).toEqual([
+      'photo-0.jpg',
+      'photo-1.jpg',
+      'photo-2.jpg',
+    ]);
+  });
+
+  it('renders all 5 thumbnails (none dropped) when there are 6 photos', async () => {
+    const photos = Array.from({ length: 6 }, (_, i) => `photo-${i}.jpg`);
+    mockGetStoreRoomDetail.mockResolvedValue({ data: { ...storeRoomDetail, photos } });
+
+    render(<LeodegaUI />);
+    await waitFor(() => screen.getByText('Bodega Norte'));
+
+    const images = screen.getAllByRole('img');
+    expect(images).toHaveLength(6);
+    expect(images.map((img) => img.getAttribute('src'))).toEqual(photos);
+  });
+
+  it('never renders the deleted "Imágenes adicionales" section, regardless of photo count', async () => {
+    mockGetStoreRoomDetail.mockResolvedValue({
+      data: { ...storeRoomDetail, photos: ['photo-0.jpg', 'photo-1.jpg', 'photo-2.jpg', 'photo-3.jpg'] },
+    });
+
+    render(<LeodegaUI />);
+    await waitFor(() => screen.getByText('Bodega Norte'));
+
+    expect(screen.queryByText('Imágenes adicionales')).not.toBeInTheDocument();
+    expect(screen.queryByAltText(/^Extra /)).not.toBeInTheDocument();
+  });
+});
+
 describe('LeodegaUI price panel visibility (gated on ownership, not role)', () => {
   beforeEach(() => {
     vi.clearAllMocks();

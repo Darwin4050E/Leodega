@@ -212,26 +212,38 @@ export default function LeodegaUI() {
           <div className="col-span-2 space-y-6">
             {/* Images */}
             <div className="bg-white border border-gray-200 rounded-2xl shadow-sm p-4">
-              <div className="grid grid-cols-3 gap-2" style={{ height: "280px" }}>
-                <div className="col-span-2 overflow-hidden rounded-xl bg-gray-100">
-                  <img
-                    src={data.photos?.[0]}
-                    className="h-full w-full object-cover"
-                    alt="Foto principal"
-                  />
-                </div>
-                <div className="flex flex-col space-y-2">
-                  {data.photos?.slice(1, 3).map((img: string, i: number) => (
-                    <div
-                      key={i}
-                      className="overflow-hidden rounded-xl bg-gray-100"
-                      style={{ height: "calc(140px - 4px)" }}
-                    >
-                      <img src={img} className="h-full w-full object-cover" alt={`Foto ${i + 2}`} />
+              {data.photos && data.photos.length > 0 ? (
+                <>
+                  <div className="overflow-hidden rounded-xl bg-gray-100" style={{ height: "280px" }}>
+                    <img
+                      src={data.photos[0]}
+                      className="h-full w-full object-cover"
+                      alt="Foto principal"
+                    />
+                  </div>
+                  {data.photos.length > 1 && (
+                    <div className="flex gap-2 mt-2 overflow-x-auto">
+                      {data.photos.slice(1).map((img: string, i: number) => (
+                        <div
+                          key={i}
+                          className="flex-none overflow-hidden rounded-xl bg-gray-100"
+                          style={{ width: "140px", height: "100px" }}
+                        >
+                          <img src={img} className="h-full w-full object-cover" alt={`Foto ${i + 2}`} />
+                        </div>
+                      ))}
                     </div>
-                  ))}
+                  )}
+                </>
+              ) : (
+                <div
+                  data-testid="gallery-placeholder"
+                  className="flex items-center justify-center rounded-xl bg-gray-100 text-gray-400 text-sm"
+                  style={{ height: "280px" }}
+                >
+                  Sin fotos disponibles
                 </div>
-              </div>
+              )}
             </div>
 
             {/* Description */}
@@ -304,20 +316,6 @@ export default function LeodegaUI() {
               <AvailabilityCalendar reservedRanges={reservedRanges} loading={loadingRanges} />
             </div>
 
-            {/* Extra images */}
-            <div className="bg-white border border-gray-200 rounded-2xl shadow-sm p-6">
-              <h3 className="font-semibold text-gray-900 mb-4">Imágenes adicionales</h3>
-              <div className="grid grid-cols-3 gap-4">
-                {data.photos?.map((img: string, i: number) => (
-                  <img
-                    key={i}
-                    src={img}
-                    className="h-32 w-full object-cover rounded-xl bg-gray-100"
-                    alt={`Extra ${i + 1}`}
-                  />
-                ))}
-              </div>
-            </div>
           </div>
 
           {/* Right: reservation panel — hidden from the storeroom's own
