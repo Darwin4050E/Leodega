@@ -42,7 +42,8 @@ class ReservationTest extends TestCase
             'tenant_id' => $tenant->id,
             'status' => 'pending',
             'rent_subtotal' => '3000.00',
-            'total_mount' => '4000.00',
+            // Rent only: the deposit is zero, so the total is the rent.
+            'total_mount' => '3000.00',
         ]);
     }
 
@@ -76,7 +77,8 @@ class ReservationTest extends TestCase
         $this->assertDatabaseHas('reservations', [
             'store_room_id' => $room->id,
             'tenant_id' => $tenant->id,
-            'total_mount' => '4000.00',
+            // Rent only: the deposit is zero, so the total is the rent.
+            'total_mount' => '3000.00',
         ]);
     }
 
