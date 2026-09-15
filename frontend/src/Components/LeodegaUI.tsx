@@ -11,6 +11,7 @@ import DetailStatusScreen from "./DetailStatusScreen";
 import RatingStars from "./RatingStars";
 import MiniMap from "../Dashboard/Moderacion/MiniMap";
 import AvailabilityCalendar from "./AvailabilityCalendar";
+import PriceBreakdownPanel from "./PriceBreakdownPanel";
 
 const DETAIL_STATUS = {
   LOADING: "loading",
@@ -162,6 +163,11 @@ export default function LeodegaUI() {
     (data.landlord?.name?.charAt(0) || "L") +
     ((data.landlord?.name?.charAt(1) || "").toUpperCase());
 
+  // Gate the price panel on OWNERSHIP, not role: a landlord browsing a
+  // storeroom that belongs to a DIFFERENT landlord is a legitimate customer
+  // and must still see the price. Unauthenticated visitors (user is null)
+  // are the primary audience and must always see it too.
+  const isOwner = Boolean(user?.id && data.landlord?.user_id === user.id);
 
   const handleContactar = async () => {
     navigate("/arrendador/mensajes");
@@ -228,37 +234,6 @@ export default function LeodegaUI() {
               </div>
             </div>
 
-            {/* Price */}
-            <div className="bg-white border border-gray-200 rounded-2xl shadow-sm p-6">
-              <div className="flex items-start justify-between gap-4">
-                <div>
-                  <p className="text-purple-700 font-bold text-3xl leading-tight">
-                    ${data.prices?.[0]?.price}
-                    <span className="text-sm font-normal text-gray-500"> / mes</span>
-                  </p>
-                  <p className="text-gray-600 text-sm mt-2">
-                    {data.size} m² • {data.room_type}
-                  </p>
-                </div>
-
-                <div className="flex gap-2">
-                  <button
-                    onClick={() => navigate(`/reportIncident/${id}`)}
-                    className="px-4 py-2 rounded-lg bg-orange-500 text-white hover:bg-orange-600 text-sm"
-                  >
-                    Reportar
-                  </button>
-
-                  <button
-                    onClick={() => setOpenReserve(true)}
-                    className="px-4 py-2 rounded-lg bg-purple-600 text-white hover:bg-purple-700 text-sm"
-                  >
-                    Enviar solicitud
-                  </button>
-                </div>
-              </div>
-            </div>
-
             {/* Description */}
             <div className="bg-white border border-gray-200 rounded-2xl shadow-sm p-6">
               <h3 className="font-semibold text-gray-900 mb-2">Sobre esta bodega</h3>
@@ -296,6 +271,33 @@ export default function LeodegaUI() {
               </div>
             </div>
 
+            {/* Tu gestor — main column, matching the prototype's placement
+                (BookingFlow.jsx:536, right after "Características") */}
+            <div className="bg-white border border-gray-200 rounded-2xl shadow-sm p-6">
+              <div className="flex items-center gap-4">
+                <div className="w-16 h-16 bg-purple-600 text-white flex items-center justify-center rounded-full text-2xl font-bold shrink-0">
+                  {initials}
+                </div>
+                <div className="flex-1">
+                  <h2 className="font-semibold text-gray-900">
+                    {data.landlord.name}
+                  </h2>
+                  <p className="text-xs text-gray-500 mt-1">Tu gestor</p>
+                </div>
+              </div>
+
+              <div className="mt-4 space-y-2">
+                <button onClick={handleContactar}
+                  className="px-4 py-2 bg-purple-600 text-white rounded-lg w-full text-sm hover:bg-purple-700">
+                  Contactar ahora
+                </button>
+                <button onClick={handleContactar}
+                  className="px-4 py-2 border border-purple-600 text-purple-700 rounded-lg w-full text-sm hover:bg-purple-50">
+                  Enviar email a {data.landlord.email}
+                </button>
+              </div>
+            </div>
+
             {/* Disponibilidad */}
             <div className="bg-white border border-gray-200 rounded-2xl shadow-sm p-6">
               <h3 className="font-semibold text-gray-900 mb-4">Disponibilidad</h3>
@@ -318,27 +320,45 @@ export default function LeodegaUI() {
             </div>
           </div>
 
-          {/* Right: contact */}
-          <div className="col-span-1">
-            <div className="bg-white border border-gray-200 rounded-2xl shadow-sm p-6 sticky top-6">
-              <div className="flex flex-col items-center text-center">
-                <div className="w-16 h-16 bg-purple-600 text-white flex items-center justify-center rounded-full text-2xl font-bold">
-                  {initials}
-                </div>
-                <h2 className="font-semibold mt-3 text-gray-900">
-                  {data.landlord.name}
-                </h2>
-                <p className="text-xs text-gray-500 mt-1">Tu gestor</p>
+          {/* Right: reservation panel — hidden from the storeroom's own
+              landlord (gated on OWNERSHIP via data.landlord.user_id, never
+              on role: a landlord browsing someone ELSE's storeroom is a
+              customer and must still see it). Unauthenticated visitors
+              (user is null) always see it. */}
+          {!isOwner && (
+            <div className="col-span-1">
+              <div className="bg-white border border-gray-200 rounded-2xl shadow-sm p-6 sticky top-6">
+                <p className="text-purple-700 font-bold text-3xl leading-tight">
+                  ${data.prices?.[0]?.price}
+                  <span className="text-sm font-normal text-gray-500"> / mes</span>
+                </p>
+                <p className="text-gray-600 text-sm mt-2">
+                  {data.size} m² • {data.room_type}
+                </p>
 
-                <div className="w-full mt-4 space-y-2">
-                  <button onClick={handleContactar}
-                    className="px-4 py-2 bg-purple-600 text-white rounded-lg w-full text-sm hover:bg-purple-700">
-                    Contactar ahora
+                <div className="flex gap-2 mt-4">
+                  <button
+                    onClick={() => navigate(`/reportIncident/${id}`)}
+                    className="px-4 py-2 rounded-lg bg-orange-500 text-white hover:bg-orange-600 text-sm flex-1"
+                  >
+                    Reportar
                   </button>
-                  <button onClick={handleContactar}
-                    className="px-4 py-2 border border-purple-600 text-purple-700 rounded-lg w-full text-sm hover:bg-purple-50">
-                    Enviar email a {data.landlord.email}
+
+                  <button
+                    onClick={() => setOpenReserve(true)}
+                    className="px-4 py-2 rounded-lg bg-purple-600 text-white hover:bg-purple-700 text-sm flex-1"
+                  >
+                    Enviar solicitud
                   </button>
+                </div>
+
+                <div className="border-t border-gray-200 mt-4 pt-4">
+                  <PriceBreakdownPanel
+                    roomId={id as string}
+                    pricePerMonth={priceMonthly}
+                    startDate={startDate}
+                    endDate={endDate}
+                  />
                 </div>
 
                 <div className="mt-5 text-xs text-gray-500 text-left w-full border-t border-gray-200 pt-4">
@@ -353,7 +373,7 @@ export default function LeodegaUI() {
                 </div>
               </div>
             </div>
-          </div>
+          )}
         </div>
       </div>
 
