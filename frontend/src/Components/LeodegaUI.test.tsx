@@ -2,6 +2,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 
 const mockGetStoreRoomDetail = vi.hoisted(() => vi.fn());
+const mockGetStoreRoomQuote = vi.hoisted(() => vi.fn());
 const mockGetReservedDates = vi.hoisted(() => vi.fn());
 const mockCreateReservation = vi.hoisted(() => vi.fn());
 const mockUseAuth = vi.hoisted(() => vi.fn());
@@ -27,6 +28,7 @@ vi.mock('leaflet', () => ({
 
 vi.mock('../services/storeRooms', () => ({
   getStoreRoomDetail: mockGetStoreRoomDetail,
+  getStoreRoomQuote: mockGetStoreRoomQuote,
 }));
 
 vi.mock('../services/reservations', () => ({
@@ -64,6 +66,9 @@ describe('LeodegaUI booking payload and total display', () => {
     mockUseAuth.mockReturnValue({ user: { role: 'tenant' } });
     mockGetStoreRoomDetail.mockResolvedValue({ data: storeRoomDetail });
     mockGetReservedDates.mockResolvedValue({ data: [] });
+    mockGetStoreRoomQuote.mockResolvedValue({
+      data: { rent_subtotal: '450.00', service_fee: '27.00', deposit: '0.00', total_mount: '450.00' },
+    });
   });
 
   it('sends the booking payload WITHOUT total_mount and shows the server-computed total', async () => {
@@ -129,6 +134,22 @@ describe('LeodegaUI availability badge', () => {
     vi.clearAllMocks();
     mockUseAuth.mockReturnValue({ user: { role: 'tenant' } });
     mockGetReservedDates.mockResolvedValue({ data: [] });
+    mockGetStoreRoomQuote.mockResolvedValue({
+      data: { rent_subtotal: '450.00', service_fee: '27.00', deposit: '0.00', total_mount: '450.00' },
+    });
+  });
+
+  it('keeps exactly 2 empty-value inputs after the price panel renders (regression guard: a new <input> would shift the date-input indices)', async () => {
+    mockGetStoreRoomDetail.mockResolvedValue({ data: storeRoomDetail });
+
+    render(<LeodegaUI />);
+    await waitFor(() => screen.getByText('Bodega Norte'));
+    await waitFor(() => expect(screen.getByText('Total')).toBeInTheDocument());
+
+    fireEvent.click(screen.getByRole('button', { name: 'Reservar' }));
+    await waitFor(() => expect(screen.queryByText('Cargando disponibilidad...')).not.toBeInTheDocument());
+
+    expect(screen.getAllByDisplayValue('')).toHaveLength(2);
   });
 
   it('shows "Ocupada ahora" while keeping the date picker and Reservar button active, AND still renders the populated inline calendar', async () => {
@@ -239,6 +260,9 @@ describe('LeodegaUI rating display', () => {
     vi.clearAllMocks();
     mockUseAuth.mockReturnValue({ user: { role: 'tenant' } });
     mockGetReservedDates.mockResolvedValue({ data: [] });
+    mockGetStoreRoomQuote.mockResolvedValue({
+      data: { rent_subtotal: '450.00', service_fee: '27.00', deposit: '0.00', total_mount: '450.00' },
+    });
   });
 
   it('renders 4 filled stars and (8) for a 4.2 average', async () => {
@@ -269,6 +293,9 @@ describe('LeodegaUI location', () => {
     vi.clearAllMocks();
     mockUseAuth.mockReturnValue({ user: { role: 'tenant' } });
     mockGetReservedDates.mockResolvedValue({ data: [] });
+    mockGetStoreRoomQuote.mockResolvedValue({
+      data: { rent_subtotal: '450.00', service_fee: '27.00', deposit: '0.00', total_mount: '450.00' },
+    });
   });
 
   it('renders the map when coordinates are present', async () => {
@@ -294,11 +321,142 @@ describe('LeodegaUI location', () => {
   });
 });
 
+describe('LeodegaUI top gallery', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mockUseAuth.mockReturnValue({ user: { role: 'tenant' } });
+    mockGetReservedDates.mockResolvedValue({ data: [] });
+    mockGetStoreRoomQuote.mockResolvedValue({
+      data: { rent_subtotal: '450.00', service_fee: '27.00', deposit: '0.00', total_mount: '450.00' },
+    });
+  });
+
+  it('renders a placeholder box and no thumbnail strip when there are zero photos', async () => {
+    mockGetStoreRoomDetail.mockResolvedValue({ data: { ...storeRoomDetail, photos: [] } });
+
+    render(<LeodegaUI />);
+    await waitFor(() => screen.getByText('Bodega Norte'));
+
+    expect(screen.getByTestId('gallery-placeholder')).toBeInTheDocument();
+    expect(screen.queryAllByRole('img')).toHaveLength(0);
+  });
+
+  it('renders only the main image and no thumbnail strip when there is exactly 1 photo', async () => {
+    mockGetStoreRoomDetail.mockResolvedValue({
+      data: { ...storeRoomDetail, photos: ['photo-0.jpg'] },
+    });
+
+    render(<LeodegaUI />);
+    await waitFor(() => screen.getByText('Bodega Norte'));
+
+    const images = screen.getAllByRole('img');
+    expect(images).toHaveLength(1);
+    expect(images[0]).toHaveAttribute('src', 'photo-0.jpg');
+  });
+
+  it('renders the main image plus 2 thumbnails when there are 3 photos, all 3 visible', async () => {
+    mockGetStoreRoomDetail.mockResolvedValue({
+      data: { ...storeRoomDetail, photos: ['photo-0.jpg', 'photo-1.jpg', 'photo-2.jpg'] },
+    });
+
+    render(<LeodegaUI />);
+    await waitFor(() => screen.getByText('Bodega Norte'));
+
+    const images = screen.getAllByRole('img');
+    expect(images).toHaveLength(3);
+    expect(images.map((img) => img.getAttribute('src'))).toEqual([
+      'photo-0.jpg',
+      'photo-1.jpg',
+      'photo-2.jpg',
+    ]);
+  });
+
+  it('renders all 5 thumbnails (none dropped) when there are 6 photos', async () => {
+    const photos = Array.from({ length: 6 }, (_, i) => `photo-${i}.jpg`);
+    mockGetStoreRoomDetail.mockResolvedValue({ data: { ...storeRoomDetail, photos } });
+
+    render(<LeodegaUI />);
+    await waitFor(() => screen.getByText('Bodega Norte'));
+
+    const images = screen.getAllByRole('img');
+    expect(images).toHaveLength(6);
+    expect(images.map((img) => img.getAttribute('src'))).toEqual(photos);
+  });
+
+  it('never renders the deleted "Imágenes adicionales" section, regardless of photo count', async () => {
+    mockGetStoreRoomDetail.mockResolvedValue({
+      data: { ...storeRoomDetail, photos: ['photo-0.jpg', 'photo-1.jpg', 'photo-2.jpg', 'photo-3.jpg'] },
+    });
+
+    render(<LeodegaUI />);
+    await waitFor(() => screen.getByText('Bodega Norte'));
+
+    expect(screen.queryByText('Imágenes adicionales')).not.toBeInTheDocument();
+    expect(screen.queryByAltText(/^Extra /)).not.toBeInTheDocument();
+  });
+});
+
+describe('LeodegaUI price panel visibility (gated on ownership, not role)', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mockGetReservedDates.mockResolvedValue({ data: [] });
+    mockGetStoreRoomQuote.mockResolvedValue({
+      data: { rent_subtotal: '450.00', service_fee: '27.00', deposit: '0.00', total_mount: '450.00' },
+    });
+    // storeRoomDetail's landlord.user_id is 2 — the storeroom's real owner.
+    mockGetStoreRoomDetail.mockResolvedValue({ data: storeRoomDetail });
+  });
+
+  it('shows the price panel for an unauthenticated visitor', async () => {
+    mockUseAuth.mockReturnValue({ user: null });
+
+    render(<LeodegaUI />);
+    await waitFor(() => screen.getByText('Bodega Norte'));
+
+    expect(screen.getByRole('button', { name: 'Enviar solicitud' })).toBeInTheDocument();
+    await waitFor(() => expect(screen.getByText('Total')).toBeInTheDocument());
+  });
+
+  it('shows the price panel for a logged-in user who does NOT own the storeroom', async () => {
+    mockUseAuth.mockReturnValue({ user: { id: 999, role: 'tenant' } });
+
+    render(<LeodegaUI />);
+    await waitFor(() => screen.getByText('Bodega Norte'));
+
+    expect(screen.getByRole('button', { name: 'Enviar solicitud' })).toBeInTheDocument();
+    await waitFor(() => expect(screen.getByText('Total')).toBeInTheDocument());
+  });
+
+  it("hides the price panel from the storeroom's own landlord (matching landlord.user_id)", async () => {
+    mockUseAuth.mockReturnValue({ user: { id: 2, role: 'landlord' } });
+
+    render(<LeodegaUI />);
+    await waitFor(() => screen.getByText('Bodega Norte'));
+
+    expect(screen.queryByRole('button', { name: 'Enviar solicitud' })).not.toBeInTheDocument();
+    expect(screen.queryByText('Total')).not.toBeInTheDocument();
+    expect(screen.queryByText('Calculando...')).not.toBeInTheDocument();
+    expect(mockGetStoreRoomQuote).not.toHaveBeenCalled();
+  });
+
+  // A DOM-position/layout assertion is intentionally omitted here: JSDOM
+  // does not apply CSS Grid, so "right sidebar" vs. "main column" is not
+  // observable from rendered DOM order (both columns are siblings in the
+  // same source order regardless of visual placement), and asserting the
+  // Tailwind classes that drive the grid (`col-span-1`/`col-span-2`) would
+  // be an implementation-detail assertion the strict-tdd rules explicitly
+  // ban. The prototype's main-column position for "Tu gestor" was instead
+  // verified by direct source read (BookingFlow.jsx:536) before placing it.
+});
+
 describe('LeodegaUI fabricated content regression guard', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     mockUseAuth.mockReturnValue({ user: { role: 'tenant' } });
     mockGetReservedDates.mockResolvedValue({ data: [] });
+    mockGetStoreRoomQuote.mockResolvedValue({
+      data: { rent_subtotal: '450.00', service_fee: '27.00', deposit: '0.00', total_mount: '450.00' },
+    });
   });
 
   it('never renders the fabricated specs table or business-hours strings, with or without security', async () => {
@@ -335,6 +493,9 @@ describe('LeodegaUI Características real data', () => {
     vi.clearAllMocks();
     mockUseAuth.mockReturnValue({ user: { role: 'tenant' } });
     mockGetReservedDates.mockResolvedValue({ data: [] });
+    mockGetStoreRoomQuote.mockResolvedValue({
+      data: { rent_subtotal: '450.00', service_fee: '27.00', deposit: '0.00', total_mount: '450.00' },
+    });
   });
 
   it('renders one chip per true security key, plus the size chip, when all four are true', async () => {
@@ -415,6 +576,9 @@ describe('LeodegaUI renamed headings', () => {
     vi.clearAllMocks();
     mockUseAuth.mockReturnValue({ user: { role: 'tenant' } });
     mockGetReservedDates.mockResolvedValue({ data: [] });
+    mockGetStoreRoomQuote.mockResolvedValue({
+      data: { rent_subtotal: '450.00', service_fee: '27.00', deposit: '0.00', total_mount: '450.00' },
+    });
   });
 
   it('renders "Sobre esta bodega" and "Tu gestor", not the old headings', async () => {
@@ -427,6 +591,51 @@ describe('LeodegaUI renamed headings', () => {
     expect(screen.getByText('Tu gestor')).toBeInTheDocument();
     expect(screen.queryByRole('heading', { name: 'Descripción' })).not.toBeInTheDocument();
     expect(screen.queryByText('Arrendador')).not.toBeInTheDocument();
+  });
+});
+
+describe('LeodegaUI "Tu gestor" card', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mockUseAuth.mockReturnValue({ user: { role: 'tenant' } });
+    mockGetReservedDates.mockResolvedValue({ data: [] });
+    mockGetStoreRoomQuote.mockResolvedValue({
+      data: { rent_subtotal: '450.00', service_fee: '27.00', deposit: '0.00', total_mount: '450.00' },
+    });
+  });
+
+  it('renders "Miembro desde <month year>" in Spanish when start_date is present', async () => {
+    mockGetStoreRoomDetail.mockResolvedValue({
+      data: { ...storeRoomDetail, landlord: { ...storeRoomDetail.landlord, start_date: '2026-09-15' } },
+    });
+
+    render(<LeodegaUI />);
+    await waitFor(() => screen.getByText('Bodega Norte'));
+
+    expect(screen.getByText('Miembro desde septiembre 2026')).toBeInTheDocument();
+  });
+
+  it('renders no "Miembro desde" line when start_date is null/absent, and the card still renders', async () => {
+    mockGetStoreRoomDetail.mockResolvedValue({ data: storeRoomDetail });
+
+    render(<LeodegaUI />);
+    await waitFor(() => screen.getByText('Bodega Norte'));
+
+    expect(screen.queryByText(/Miembro desde/)).not.toBeInTheDocument();
+    expect(screen.getByText('Laura')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Contactar' })).toBeInTheDocument();
+  });
+
+  it('never renders "Verificado" or "Responde en", with or without start_date (no real source for either)', async () => {
+    mockGetStoreRoomDetail.mockResolvedValue({
+      data: { ...storeRoomDetail, landlord: { ...storeRoomDetail.landlord, start_date: '2026-09-15' } },
+    });
+
+    render(<LeodegaUI />);
+    await waitFor(() => screen.getByText('Bodega Norte'));
+
+    expect(screen.queryByText(/Verificado/)).not.toBeInTheDocument();
+    expect(screen.queryByText(/Responde en/)).not.toBeInTheDocument();
   });
 });
 

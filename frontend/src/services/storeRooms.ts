@@ -19,6 +19,9 @@ export interface StoreRoomDetail {
     name?: string;
     lastname?: string;
     email?: string;
+    /** `user.start_date`; not nullable at the DB level (default CURRENT_DATE), but kept
+     * optional here defensively since older cached responses may omit it. */
+    start_date?: string;
   };
   latitude: number | null;
   longitude: number | null;
@@ -71,6 +74,23 @@ export function getStoreRooms(filters?: StoreRoomFilters) {
 
 export function getStoreRoomDetail(id: number | string) {
   return api.get<StoreRoomDetail>(`/store-rooms/${id}/detail`);
+}
+
+/**
+ * `ReservationPricingService::quote()`'s response shape, returned verbatim
+ * by `GET /store-rooms/{id}/quote`. The frontend never recomputes any of
+ * these figures — see `PriceBreakdownPanel`.
+ */
+export interface StoreRoomQuote {
+  rent_subtotal: string;
+  service_fee: string;
+  deposit: string;
+  total_mount: string;
+}
+
+export function getStoreRoomQuote(id: number | string, startDate?: string, endDate?: string) {
+  const params = startDate && endDate ? { start_date: startDate, end_date: endDate } : undefined;
+  return api.get<StoreRoomQuote>(`/store-rooms/${id}/quote`, { params });
 }
 
 export function createStoreRoom(formData: FormData) {

@@ -58,6 +58,10 @@ class StoreRoomDetailResource extends JsonResource
                 'name' => $this->landlord->user->name,
                 'email' => $this->landlord->user->email,
                 'phone' => $this->landlord->user->phone,
+                // `User` has no cast for this column, so it's the raw
+                // "Y-m-d" (or null) string from the DB, never a Carbon
+                // instance.
+                'start_date' => $this->landlord->user->start_date,
             ],
 
             'latitude' => $this->latitude !== null ? (float) $this->latitude : null,
