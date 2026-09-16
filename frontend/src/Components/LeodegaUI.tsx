@@ -5,7 +5,7 @@ import { getReservedDates, createReservation, type ReservedRange } from "../serv
 import { useAuth } from "../context/useAuth";
 import { asApiError } from "../api/errors";
 import { formatUSD } from "../utils/money";
-import { toDateOnlyISO, isDateBetween } from "../utils/dates";
+import { toDateOnlyISO, isDateBetween, formatMemberSince } from "../utils/dates";
 import { parseSecurityFeatures, SECURITY_LABELS, type ParsedSecurityFeatures } from "../utils/security";
 import DetailStatusScreen from "./DetailStatusScreen";
 import RatingStars from "./RatingStars";
@@ -163,6 +163,8 @@ export default function LeodegaUI() {
     (data.landlord?.name?.charAt(0) || "L") +
     ((data.landlord?.name?.charAt(1) || "").toUpperCase());
 
+  const memberSince = formatMemberSince(data.landlord?.start_date);
+
   // Gate the price panel on OWNERSHIP, not role: a landlord browsing a
   // storeroom that belongs to a DIFFERENT landlord is a legitimate customer
   // and must still see the price. Unauthenticated visitors (user is null)
@@ -284,28 +286,32 @@ export default function LeodegaUI() {
             </div>
 
             {/* Tu gestor — main column, matching the prototype's placement
-                (BookingFlow.jsx:536, right after "Características") */}
+                (BookingFlow.jsx:536, right after "Características") and its
+                SINGLE horizontal row layout (BookingFlow.jsx:537-549):
+                avatar, name + metadata, and the contact action all in one
+                row instead of stacked. The prototype's "Verificado" badge
+                and "Responde en" metric are deliberately omitted — neither
+                has a real backing field (see StoreRoomDetailResource). The
+                prototype's separate "Enviar email" button is also dropped:
+                it called the exact same handler as "Contactar" (both just
+                navigate to /arrendador/mensajes), so it never actually sent
+                an email despite its label — collapsing to the prototype's
+                single "Contactar" action removes that mismatch. */}
             <div className="bg-white border border-gray-200 rounded-2xl shadow-sm p-6">
-              <div className="flex items-center gap-4">
-                <div className="w-16 h-16 bg-purple-600 text-white flex items-center justify-center rounded-full text-2xl font-bold shrink-0">
+              <h3 className="font-semibold text-gray-900 mb-4">Tu gestor</h3>
+              <div className="flex items-center gap-3.5">
+                <div className="w-14 h-14 bg-purple-600 text-white flex items-center justify-center rounded-full text-xl font-bold shrink-0">
                   {initials}
                 </div>
-                <div className="flex-1">
-                  <h2 className="font-semibold text-gray-900">
-                    {data.landlord.name}
-                  </h2>
-                  <p className="text-xs text-gray-500 mt-1">Tu gestor</p>
+                <div className="flex-1 min-w-0">
+                  <p className="font-semibold text-gray-900">{data.landlord.name}</p>
+                  {memberSince && (
+                    <p className="text-xs text-gray-500 mt-0.5">Miembro desde {memberSince}</p>
+                  )}
                 </div>
-              </div>
-
-              <div className="mt-4 space-y-2">
                 <button onClick={handleContactar}
-                  className="px-4 py-2 bg-purple-600 text-white rounded-lg w-full text-sm hover:bg-purple-700">
-                  Contactar ahora
-                </button>
-                <button onClick={handleContactar}
-                  className="px-4 py-2 border border-purple-600 text-purple-700 rounded-lg w-full text-sm hover:bg-purple-50">
-                  Enviar email a {data.landlord.email}
+                  className="px-4 py-2 bg-white text-purple-700 border border-purple-600 rounded-lg text-sm font-semibold hover:bg-purple-50 shrink-0">
+                  Contactar
                 </button>
               </div>
             </div>

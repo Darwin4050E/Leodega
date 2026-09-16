@@ -45,6 +45,7 @@ class StoreRoomResponseShapeTest extends TestCase
             'name' => 'Carlos Mora',
             'email' => 'c.mora@example.test',
             'phone' => '0999999999',
+            'start_date' => '2024-03-01',
         ]);
         $landlord = Landlords::factory()->create(['user_id' => $user->id]);
 
@@ -224,6 +225,12 @@ class StoreRoomResponseShapeTest extends TestCase
         $response->assertJsonPath('landlord.name', 'Carlos Mora');
         $response->assertJsonPath('landlord.email', 'c.mora@example.test');
         $response->assertJsonPath('landlord.phone', $user->phone);
+
+        // `start_date` was added by the storeroom-detail-pricing cycle to
+        // back the "Miembro desde" line on the "Tu gestor" card. `User` has
+        // no cast for the column, so it round-trips as the raw "Y-m-d"
+        // string.
+        $response->assertJsonPath('landlord.start_date', '2024-03-01');
 
         // LeodegaUI.tsx:318 renders `landlord.lastname`, which this endpoint
         // has never returned. Pinned so the dead read stays visible instead

@@ -19,6 +19,9 @@ export interface StoreRoomDetail {
     name?: string;
     lastname?: string;
     email?: string;
+    /** `user.start_date`; not nullable at the DB level (default CURRENT_DATE), but kept
+     * optional here defensively since older cached responses may omit it. */
+    start_date?: string;
   };
   latitude: number | null;
   longitude: number | null;

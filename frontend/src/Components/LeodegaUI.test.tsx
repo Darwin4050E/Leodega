@@ -594,6 +594,51 @@ describe('LeodegaUI renamed headings', () => {
   });
 });
 
+describe('LeodegaUI "Tu gestor" card', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mockUseAuth.mockReturnValue({ user: { role: 'tenant' } });
+    mockGetReservedDates.mockResolvedValue({ data: [] });
+    mockGetStoreRoomQuote.mockResolvedValue({
+      data: { rent_subtotal: '450.00', service_fee: '27.00', deposit: '0.00', total_mount: '450.00' },
+    });
+  });
+
+  it('renders "Miembro desde <month year>" in Spanish when start_date is present', async () => {
+    mockGetStoreRoomDetail.mockResolvedValue({
+      data: { ...storeRoomDetail, landlord: { ...storeRoomDetail.landlord, start_date: '2026-09-15' } },
+    });
+
+    render(<LeodegaUI />);
+    await waitFor(() => screen.getByText('Bodega Norte'));
+
+    expect(screen.getByText('Miembro desde septiembre 2026')).toBeInTheDocument();
+  });
+
+  it('renders no "Miembro desde" line when start_date is null/absent, and the card still renders', async () => {
+    mockGetStoreRoomDetail.mockResolvedValue({ data: storeRoomDetail });
+
+    render(<LeodegaUI />);
+    await waitFor(() => screen.getByText('Bodega Norte'));
+
+    expect(screen.queryByText(/Miembro desde/)).not.toBeInTheDocument();
+    expect(screen.getByText('Laura')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Contactar' })).toBeInTheDocument();
+  });
+
+  it('never renders "Verificado" or "Responde en", with or without start_date (no real source for either)', async () => {
+    mockGetStoreRoomDetail.mockResolvedValue({
+      data: { ...storeRoomDetail, landlord: { ...storeRoomDetail.landlord, start_date: '2026-09-15' } },
+    });
+
+    render(<LeodegaUI />);
+    await waitFor(() => screen.getByText('Bodega Norte'));
+
+    expect(screen.queryByText(/Verificado/)).not.toBeInTheDocument();
+    expect(screen.queryByText(/Responde en/)).not.toBeInTheDocument();
+  });
+});
+
 describe('LeodegaUI not-found and error states', () => {
   beforeEach(() => {
     vi.clearAllMocks();
