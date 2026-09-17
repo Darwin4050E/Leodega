@@ -15,6 +15,19 @@ export function isDateBetween(target: string, start: string, end: string): boole
 }
 
 /**
+ * Trivial date computation (not a pricing computation, so not forbidden by
+ * REQ-PAY-2 / REQ-REC-4): months between two date-only ISO strings, rounded
+ * from total days / 30. Shared by `BookingCheckout` and `BookingReceipt`'s
+ * "Duración" summary line — previously duplicated verbatim in both files.
+ */
+export function monthsBetween(startISO: string, endISO: string): number {
+  const start = new Date(startISO);
+  const end = new Date(endISO);
+  const totalDays = (end.getTime() - start.getTime()) / 86_400_000;
+  return Math.max(1, Math.round(totalDays / 30));
+}
+
+/**
  * Formats a date-only ISO string (e.g. "2026-09-15") as "<month> <year>" in
  * Spanish, e.g. "septiembre 2026", for the "Miembro desde" line on the
  * storeroom detail's "Tu gestor" card. Returns null for a null/absent/

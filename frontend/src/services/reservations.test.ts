@@ -16,6 +16,7 @@ import {
   createReservation,
   cancelReservation,
   getCancellationRate,
+  createPayment,
 } from './reservations';
 
 describe('reservations service', () => {
@@ -75,5 +76,42 @@ describe('reservations service', () => {
     const error = { response: { status: 500 } };
     mockApi.get.mockRejectedValue(error);
     await expect(getCancellationRate()).rejects.toEqual(error);
+  });
+
+  it('createPayment posts exactly the payment shape to /payments, no card fields', () => {
+    const payload = {
+      reservation_id: 42,
+      payment_method: 'credit card' as const,
+      payment_state: 'paid' as const,
+      payment_date: '2026-09-17',
+    };
+    createPayment(payload);
+    expect(mockApi.post).toHaveBeenCalledWith('/payments', payload);
+
+    const [, sentBody] = mockApi.post.mock.calls[0];
+    expect(Object.keys(sentBody).sort()).toEqual(
+      ['payment_date', 'payment_method', 'payment_state', 'reservation_id'].sort()
+    );
+    expect(sentBody).not.toHaveProperty('card_number');
+    expect(sentBody).not.toHaveProperty('card_holder');
+    expect(sentBody).not.toHaveProperty('expiry');
+    expect(sentBody).not.toHaveProperty('cvv');
+  });
+
+  it('createPayment resolves with the backend payment shape', async () => {
+    mockApi.post.mockResolvedValue({
+      data: { message: 'Pago registrado', payment: { id: 1, reservation_id: 42, payment_method: 'credit card', payment_state: 'paid', payment_date: '2026-09-17' } },
+    });
+
+    await expect(
+      createPayment({
+        reservation_id: 42,
+        payment_method: 'credit card',
+        payment_state: 'paid',
+        payment_date: '2026-09-17',
+      })
+    ).resolves.toEqual({
+      data: { message: 'Pago registrado', payment: { id: 1, reservation_id: 42, payment_method: 'credit card', payment_state: 'paid', payment_date: '2026-09-17' } },
+    });
   });
 });

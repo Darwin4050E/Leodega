@@ -7,7 +7,7 @@ vi.mock("../services/storeRooms", () => ({
   getStoreRoomQuote: mockGetStoreRoomQuote,
 }));
 
-import PriceBreakdownPanel from "./PriceBreakdownPanel";
+import PriceBreakdownPanel, { PriceBreakdownRows } from "./PriceBreakdownPanel";
 
 describe("PriceBreakdownPanel", () => {
   beforeEach(() => {
@@ -97,5 +97,38 @@ describe("PriceBreakdownPanel", () => {
     await waitFor(() =>
       expect(mockGetStoreRoomQuote).toHaveBeenCalledWith(7, "2030-01-10", "2030-03-10")
     );
+  });
+
+  it('renders "Garantía" (not "Depósito de garantía") when the fetched quote has a non-zero deposit', async () => {
+    mockGetStoreRoomQuote.mockResolvedValue({
+      data: { rent_subtotal: "2340.00", service_fee: "140.40", deposit: "780.00", total_mount: "3120.00" },
+    });
+
+    render(<PriceBreakdownPanel roomId={7} pricePerMonth={780} startDate="" endDate="" />);
+
+    await waitFor(() => expect(screen.getByText("Garantía")).toBeInTheDocument());
+    expect(screen.queryByText("Depósito de garantía")).not.toBeInTheDocument();
+  });
+});
+
+describe("PriceBreakdownRows (extracted, no fetch)", () => {
+  it("renders the same row markup as the container, fed directly by props", () => {
+    render(
+      <PriceBreakdownRows pricePerMonth={780} rentSubtotal={2340} deposit={0} totalMount={2340} />
+    );
+
+    expect(screen.getByText(/\$780 × 3 meses/)).toBeInTheDocument();
+    expect(screen.getByText("Total")).toBeInTheDocument();
+    expect(screen.getAllByText("$2,340")).toHaveLength(2);
+    expect(screen.queryByText("Garantía")).not.toBeInTheDocument();
+  });
+
+  it('renders the "Garantía" label when deposit is non-zero', () => {
+    render(
+      <PriceBreakdownRows pricePerMonth={780} rentSubtotal={2340} deposit={780} totalMount={3120} />
+    );
+
+    expect(screen.getByText("Garantía")).toBeInTheDocument();
+    expect(screen.queryByText("Depósito de garantía")).not.toBeInTheDocument();
   });
 });

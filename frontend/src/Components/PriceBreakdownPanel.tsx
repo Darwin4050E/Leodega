@@ -16,6 +16,54 @@ const COPY = {
   genericError: "No se pudo calcular el precio. Intenta de nuevo.",
 } as const;
 
+interface PriceBreakdownRowsProps {
+  pricePerMonth: number;
+  rentSubtotal: string | number;
+  deposit: string | number;
+  totalMount: string | number;
+}
+
+/**
+ * Pure/presentational row markup, extracted from `PriceBreakdownPanel` so
+ * `BookingCheckout` can render it directly from server-computed reservation
+ * figures already in memory (`reservation.rent_subtotal` /
+ * `reservation.total_mount`) without a redundant `GET /quote` call. No
+ * fetch, no loading/error state — the deposit label reads "Garantía" (not
+ * "Depósito de garantía").
+ */
+export function PriceBreakdownRows({
+  pricePerMonth,
+  rentSubtotal,
+  deposit,
+  totalMount,
+}: PriceBreakdownRowsProps) {
+  const months =
+    pricePerMonth > 0 ? Math.round(Number(rentSubtotal) / pricePerMonth) : null;
+
+  return (
+    <div className="space-y-1">
+      <div className="flex items-baseline justify-between text-sm text-gray-700">
+        <span>
+          {formatUSD(pricePerMonth)} × {months ?? "-"} meses
+        </span>
+        <span>{formatUSD(rentSubtotal)}</span>
+      </div>
+
+      {Number(deposit) > 0 && (
+        <div className="flex items-baseline justify-between text-sm text-gray-700">
+          <span>Garantía</span>
+          <span>{formatUSD(deposit)}</span>
+        </div>
+      )}
+
+      <div className="flex items-baseline justify-between text-base font-semibold text-gray-900">
+        <span>Total</span>
+        <span>{formatUSD(totalMount)}</span>
+      </div>
+    </div>
+  );
+}
+
 /**
  * Display-only price panel (storeroom-detail-pricing). NO interactive
  * controls — the 3-month default is computed server-side by the quote
@@ -63,29 +111,12 @@ export default function PriceBreakdownPanel({
     return null;
   }
 
-  const months =
-    pricePerMonth > 0 ? Math.round(Number(quote.rent_subtotal) / pricePerMonth) : null;
-
   return (
-    <div className="space-y-1">
-      <div className="flex items-baseline justify-between text-sm text-gray-700">
-        <span>
-          {formatUSD(pricePerMonth)} × {months ?? "-"} meses
-        </span>
-        <span>{formatUSD(quote.rent_subtotal)}</span>
-      </div>
-
-      {Number(quote.deposit) > 0 && (
-        <div className="flex items-baseline justify-between text-sm text-gray-700">
-          <span>Depósito de garantía</span>
-          <span>{formatUSD(quote.deposit)}</span>
-        </div>
-      )}
-
-      <div className="flex items-baseline justify-between text-base font-semibold text-gray-900">
-        <span>Total</span>
-        <span>{formatUSD(quote.total_mount)}</span>
-      </div>
-    </div>
+    <PriceBreakdownRows
+      pricePerMonth={pricePerMonth}
+      rentSubtotal={quote.rent_subtotal}
+      deposit={quote.deposit}
+      totalMount={quote.total_mount}
+    />
   );
 }
