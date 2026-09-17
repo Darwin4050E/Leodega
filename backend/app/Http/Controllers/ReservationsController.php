@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers;
 
+use App\Http\Requests\CancelReservationAsTenantRequest;
 use App\Http\Requests\CancelReservationRequest;
 use App\Http\Requests\StoreReservationRequest;
 use App\Models\Landlords;
@@ -145,6 +146,28 @@ class ReservationsController extends Controller
             ->values();
 
         return response()->json($ranges);
+    }
+
+    /**
+     * sdd/tenant-self-cancel: the tenant who owns a reservation cancels it
+     * themselves. Mirrors cancel()'s shape (policy check, then delegate to
+     * the service), keyed on ownership instead of landlord identity.
+     */
+    public function cancelAsTenant(
+        CancelReservationAsTenantRequest $request,
+        Reservations $reservation,
+        ReservationService $reservationService
+    ) {
+        $data = $request->validated();
+
+        Gate::authorize('cancelAsTenant', $reservation);
+
+        $reservation = $reservationService->cancelByTenant($reservation, $data['reason'] ?? null, auth()->id());
+
+        return response()->json([
+            'message' => 'Reserva cancelada',
+            'reservation' => $reservation,
+        ]);
     }
 
     public function tenantIndex(Request $request)

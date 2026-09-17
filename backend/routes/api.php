@@ -235,6 +235,9 @@ Route::middleware('auth.api:sanctum')->delete('/account', [UserController::class
 
 Route::middleware('auth.api:sanctum')->group(function () {
     Route::get('/tenant/reservations', [ReservationsController::class, 'tenantIndex']);
+    // sdd/tenant-self-cancel: the owning tenant cancels their own
+    // reservation; ownership is enforced by ReservationsPolicy::cancelAsTenant.
+    Route::patch('/tenant/reservations/{reservation}/cancel', [ReservationsController::class, 'cancelAsTenant']);
 });
 
 Route::middleware(['auth.api:sanctum', 'role:admin'])->group(function () {
