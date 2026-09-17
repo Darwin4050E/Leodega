@@ -23,6 +23,8 @@ class Reservations extends Model
         'rent_subtotal',
         'cancelation_reason',
         'creation_date',
+        'cancellation_policy_tier',
+        'refund_amount',
     ];
 
     public function storeRooms()
@@ -62,6 +64,20 @@ class Reservations extends Model
     {
         return $this->status === 'confirmed'
             && $this->rent_subtotal !== null
+            && Carbon::parse($this->start_date)->startOfDay()->gt(today());
+    }
+
+    /**
+     * sdd/tenant-self-cancel reconciliation #2: mirrors
+     * isCancellableByLandlord()'s date gate EXACTLY (`start_date > today()`,
+     * server-side date-only `today()`) so a reservation whose start date is
+     * reached or passed is never cancellable via this path either, even
+     * though the tenant path also allows `pending` (unpaid) reservations,
+     * which the landlord path does not.
+     */
+    public function isCancellableByTenant(): bool
+    {
+        return in_array($this->status, ['pending', 'confirmed'], true)
             && Carbon::parse($this->start_date)->startOfDay()->gt(today());
     }
 }

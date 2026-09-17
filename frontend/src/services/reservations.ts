@@ -71,3 +71,28 @@ export function getCancellationRate() {
     "/landlord/reservations/cancellation-rate"
   );
 }
+
+export interface Payment {
+  id: number;
+  reservation_id: number;
+  payment_method: "credit card" | "debit card";
+  payment_state: "paid" | "pending" | "failed";
+  payment_date: string;
+}
+
+/**
+ * Matches `StorePaymentRequest::rules()` on the backend (read-only
+ * reference — backend unchanged). No card number/holder/expiry/CVV field
+ * ever belongs here: those stay in local component state and are discarded
+ * after submit (REQ-PAY-6).
+ */
+export interface CreatePaymentInput {
+  reservation_id: number;
+  payment_method: "credit card" | "debit card";
+  payment_state: "paid" | "pending" | "failed";
+  payment_date: string;
+}
+
+export function createPayment(data: CreatePaymentInput) {
+  return api.post<{ message: string; payment: Payment }>("/payments", data);
+}

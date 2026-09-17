@@ -1,10 +1,14 @@
 import { useParams, useNavigate } from "react-router-dom";
 import { useEffect, useMemo, useState } from "react";
 import { getStoreRoomDetail, type StoreRoomDetail } from "../services/storeRooms";
-import { getReservedDates, createReservation, type ReservedRange } from "../services/reservations";
+import {
+  getReservedDates,
+  createReservation,
+  type ReservedRange,
+  type LandlordReservation,
+} from "../services/reservations";
 import { useAuth } from "../context/useAuth";
 import { asApiError } from "../api/errors";
-import { formatUSD } from "../utils/money";
 import { toDateOnlyISO, isDateBetween, formatMemberSince } from "../utils/dates";
 import { parseSecurityFeatures, SECURITY_LABELS, type ParsedSecurityFeatures } from "../utils/security";
 import DetailStatusScreen from "./DetailStatusScreen";
@@ -12,6 +16,9 @@ import RatingStars from "./RatingStars";
 import MiniMap from "../Dashboard/Moderacion/MiniMap";
 import AvailabilityCalendar from "./AvailabilityCalendar";
 import PriceBreakdownPanel from "./PriceBreakdownPanel";
+import BookingStepHeader, { type BookingStep } from "./BookingStepHeader";
+import BookingCheckout from "./BookingCheckout";
+import BookingReceipt from "./BookingReceipt";
 
 const DETAIL_STATUS = {
   LOADING: "loading",
@@ -37,6 +44,13 @@ export default function LeodegaUI() {
 
   const [sending, setSending] = useState(false);
   const [error, setError] = useState<string>("");
+
+  // Local step machine (design decision: `useState`, no new routes — the
+  // prototype's own `BookingFlow` orchestrator is itself state-driven, not
+  // routed). `reservation` carries the server response forward so the
+  // payment and receipt steps never re-fetch it.
+  const [step, setStep] = useState<BookingStep>("detail");
+  const [reservation, setReservation] = useState<LandlordReservation | null>(null);
 
   useEffect(() => {
     getStoreRoomDetail(id as string)
@@ -122,12 +136,8 @@ export default function LeodegaUI() {
       setStartDate("");
       setEndDate("");
 
-      const serverTotal = response.data?.reservation?.total_mount;
-      alert(
-        serverTotal != null
-          ? `Solicitud enviada. Total: ${formatUSD(serverTotal, { suffix: true })}`
-          : "Solicitud enviada"
-      );
+      setReservation(response.data.reservation);
+      setStep("pago");
     } catch (e: unknown) {
       const err = asApiError(e);
       const status = err.response?.status;
@@ -175,6 +185,54 @@ export default function LeodegaUI() {
     navigate("/arrendador/mensajes");
 
   };
+
+  const handleExitBooking = () => setStep("detail");
+
+  // 'pago' / 'comprobante' replace the detail page content entirely (fidelity:
+  // `BookingFlow.jsx`'s own orchestrator renders a full-screen overlay for
+  // these steps, not the detail screen underneath it). No second fetch —
+  // `reservation` already carries `id`, `start_date`, `end_date`,
+  // `total_mount`, `rent_subtotal` from `POST /reservations`.
+  if (step !== "detail" && reservation) {
+    return (
+      <div className="w-full min-h-screen bg-[#f5f6fa] text-gray-800">
+        <BookingStepHeader step={step} onClose={handleExitBooking} />
+        {step === "pago" && (
+          <div className="max-w-5xl mx-auto px-6 py-8">
+            <BookingCheckout
+              storeRoom={{
+                image: data.photos?.[0] ?? null,
+                title: data.title,
+                direction: data.direction,
+                city: data.city,
+                ratingAvg: data.rating_avg,
+                ratingCount: data.rating_count,
+              }}
+              reservation={reservation}
+              pricePerMonth={priceMonthly}
+              onPaid={() => setStep("comprobante")}
+              onBack={handleExitBooking}
+            />
+          </div>
+        )}
+        {step === "comprobante" && (
+          <BookingReceipt
+            storeRoom={{
+              image: data.photos?.[0] ?? null,
+              title: data.title,
+              direction: data.direction,
+              city: data.city,
+              size: data.size,
+              gestorName: data.landlord?.name,
+            }}
+            reservation={reservation}
+            onViewReservations={() => navigate("/arrendatario/calendario")}
+            onBackToCatalog={handleExitBooking}
+          />
+        )}
+      </div>
+    );
+  }
 
   return (
     <div className="w-full min-h-screen bg-[#f5f6fa] text-gray-800">
@@ -364,6 +422,12 @@ export default function LeodegaUI() {
                     endDate={endDate}
                   />
                 </div>
+
+                {data.is_available_now && (
+                  <p className="text-center text-xs text-gray-400 mt-3 leading-relaxed">
+                    Reserva instantánea — el pago confirma el alquiler sin aprobación del gestor.
+                  </p>
+                )}
 
                 <div className="mt-5 text-xs text-gray-500 text-left w-full border-t border-gray-200 pt-4">
                   <p className="font-semibold text-gray-700 mt-3 mb-2">Disponibilidad</p>
