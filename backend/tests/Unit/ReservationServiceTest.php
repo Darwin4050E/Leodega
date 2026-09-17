@@ -78,6 +78,29 @@ class ReservationServiceTest extends TestCase
         $this->assertDatabaseCount('notifications', 0);
     }
 
+    /**
+     * sdd/tenant-self-cancel decision #339: the tier is snapshotted at
+     * booking time so a later change to the storeroom's tier never affects
+     * an already-paying tenant's refund. Persisted here, read only by
+     * CancellationRefundCalculator later.
+     */
+    public function test_create_snapshots_the_room_current_cancellation_policy_tier()
+    {
+        $room = StoreRooms::factory()->create(['cancellation_policy_tier' => 'moderada']);
+        $this->monthPriceFor($room);
+        $tenant = Tenants::factory()->create();
+
+        $reservation = $this->service()->create($tenant, $room, [
+            'start_date' => '2026-02-01',
+            'end_date' => '2026-05-01',
+        ], $tenant->user_id);
+
+        $this->assertDatabaseHas('reservations', [
+            'id' => $reservation->id,
+            'cancellation_policy_tier' => 'moderada',
+        ]);
+    }
+
     public function test_create_throws_when_dates_overlap_a_confirmed_reservation()
     {
         $room = StoreRooms::factory()->create();

@@ -49,6 +49,11 @@ class ReservationService
             'total_mount' => $quote['total_mount'],
             'rent_subtotal' => $quote['rent_subtotal'],
             'cancelation_reason' => null,
+            // sdd/tenant-self-cancel decision #339: snapshot the room's
+            // CURRENT tier now, forever, so a later landlord edit to the
+            // storeroom's tier cannot change what an already-paying tenant
+            // gets back on cancellation.
+            'cancellation_policy_tier' => $room->cancellation_policy_tier,
             'creation_date' => now(),
         ]);
 
