@@ -5,6 +5,7 @@ const mockGetStoreRoomDetail = vi.hoisted(() => vi.fn());
 const mockGetStoreRoomQuote = vi.hoisted(() => vi.fn());
 const mockGetReservedDates = vi.hoisted(() => vi.fn());
 const mockCreateReservation = vi.hoisted(() => vi.fn());
+const mockCreatePayment = vi.hoisted(() => vi.fn());
 const mockUseAuth = vi.hoisted(() => vi.fn());
 const mockAlert = vi.hoisted(() => vi.fn());
 const mockNavigate = vi.hoisted(() => vi.fn());
@@ -34,6 +35,7 @@ vi.mock('../services/storeRooms', () => ({
 vi.mock('../services/reservations', () => ({
   getReservedDates: mockGetReservedDates,
   createReservation: mockCreateReservation,
+  createPayment: mockCreatePayment,
 }));
 
 vi.mock('../context/useAuth', () => ({
@@ -59,7 +61,30 @@ const storeRoomDetail = {
   is_available_now: true,
 };
 
-describe('LeodegaUI booking payload and total display', () => {
+describe('LeodegaUI checkout step flow (replaces the dead-end alert())', () => {
+  const createdReservation = {
+    id: 42,
+    start_date: '2030-01-10',
+    end_date: '2030-04-10',
+    total_mount: '4180.00',
+    rent_subtotal: '3800.00',
+  };
+
+  async function openReserveAndSubmit() {
+    render(<LeodegaUI />);
+    await waitFor(() => screen.getByText('Bodega Norte'));
+
+    fireEvent.click(screen.getByRole('button', { name: 'Reservar' }));
+    await waitFor(() => expect(screen.queryByText('Cargando disponibilidad...')).not.toBeInTheDocument());
+
+    const dateInputs = screen.getAllByDisplayValue('');
+    fireEvent.change(dateInputs[0], { target: { value: '2030-01-10' } });
+    fireEvent.change(dateInputs[1], { target: { value: '2030-02-10' } });
+
+    const submitButtons = screen.getAllByRole('button', { name: 'Enviar solicitud' });
+    fireEvent.click(submitButtons[submitButtons.length - 1]);
+  }
+
   beforeEach(() => {
     vi.clearAllMocks();
     vi.stubGlobal('alert', mockAlert);
@@ -71,17 +96,15 @@ describe('LeodegaUI booking payload and total display', () => {
     });
   });
 
-  it('sends the booking payload WITHOUT total_mount and shows the server-computed total', async () => {
-    mockCreateReservation.mockResolvedValue({
-      data: { message: 'Solicitud enviada', reservation: { id: 1, total_mount: '4180.00' } },
-    });
+  it('on successful createReservation(), never calls alert() and transitions to the pago step carrying the reservation', async () => {
+    mockCreateReservation.mockResolvedValue({ data: { message: 'ok', reservation: createdReservation } });
 
+    // Step header must not render at 'detail'.
     render(<LeodegaUI />);
-
     await waitFor(() => screen.getByText('Bodega Norte'));
+    expect(screen.queryByText('Comprobante')).not.toBeInTheDocument();
 
     fireEvent.click(screen.getByRole('button', { name: 'Reservar' }));
-
     await waitFor(() => expect(screen.queryByText('Cargando disponibilidad...')).not.toBeInTheDocument());
 
     const dateInputs = screen.getAllByDisplayValue('');
@@ -93,39 +116,93 @@ describe('LeodegaUI booking payload and total display', () => {
 
     await waitFor(() => expect(mockCreateReservation).toHaveBeenCalledTimes(1));
 
-    const [payload] = mockCreateReservation.mock.calls[0];
-    expect(payload).toEqual({
-      store_room_id: 7,
-      start_date: '2030-01-10',
-      end_date: '2030-02-10',
-    });
-    expect(payload.total_mount).toBeUndefined();
+    expect(mockAlert).not.toHaveBeenCalled();
 
+    // BookingStepHeader now renders (step === 'pago') with "Pago" current.
+    await waitFor(() => expect(screen.getByText('Comprobante')).toBeInTheDocument());
+    // BookingCheckout renders too — its CTA is a decisive signal.
+    expect(screen.getByRole('button', { name: /Confirmar y pagar/ })).toBeInTheDocument();
+  });
+
+  it('on successful createPayment() from BookingCheckout, advances to comprobante with the same reservation', async () => {
+    mockCreateReservation.mockResolvedValue({ data: { message: 'ok', reservation: createdReservation } });
+    mockCreatePayment.mockResolvedValue({ data: { message: 'ok', payment: { id: 1 } } });
+
+    await openReserveAndSubmit();
+    await waitFor(() => expect(screen.getByRole('button', { name: /Confirmar y pagar/ })).toBeInTheDocument());
+
+    fireEvent.change(screen.getByLabelText('Número de tarjeta'), { target: { value: '4242 4242 4242 4242' } });
+    fireEvent.change(screen.getByLabelText('Titular de la tarjeta'), { target: { value: 'María López' } });
+    fireEvent.change(screen.getByLabelText('Vencimiento'), { target: { value: '1225' } });
+    fireEvent.change(screen.getByLabelText('CVV'), { target: { value: '123' } });
+
+    fireEvent.click(screen.getByRole('button', { name: /Confirmar y pagar/ }));
+
+    await waitFor(() => expect(mockCreatePayment).toHaveBeenCalledTimes(1));
+    expect(mockCreatePayment.mock.calls[0][0]).toMatchObject({ reservation_id: 42 });
+
+    // Payment step machine state moved past 'pago': the checkout CTA is gone.
     await waitFor(() =>
-      expect(mockAlert).toHaveBeenCalledWith('Solicitud enviada. Total: $4,180 USD')
+      expect(screen.queryByRole('button', { name: /Confirmar y pagar/ })).not.toBeInTheDocument()
     );
   });
 
-  it('falls back to a plain success message when the server omits the total', async () => {
-    mockCreateReservation.mockResolvedValue({
-      data: { message: 'Solicitud enviada', reservation: { id: 1 } },
-    });
+  it('calls createReservation exactly once across a payment-failure-then-retry cycle (no duplicate reservation)', async () => {
+    mockCreateReservation.mockResolvedValue({ data: { message: 'ok', reservation: createdReservation } });
+    mockCreatePayment.mockRejectedValueOnce({ response: { status: 500 } });
+    mockCreatePayment.mockResolvedValueOnce({ data: { message: 'ok', payment: { id: 1 } } });
 
-    render(<LeodegaUI />);
-    await waitFor(() => screen.getByText('Bodega Norte'));
+    await openReserveAndSubmit();
+    await waitFor(() => expect(screen.getByRole('button', { name: /Confirmar y pagar/ })).toBeInTheDocument());
 
-    fireEvent.click(screen.getByRole('button', { name: 'Reservar' }));
+    fireEvent.change(screen.getByLabelText('Número de tarjeta'), { target: { value: '4242 4242 4242 4242' } });
+    fireEvent.change(screen.getByLabelText('Titular de la tarjeta'), { target: { value: 'María López' } });
+    fireEvent.change(screen.getByLabelText('Vencimiento'), { target: { value: '1225' } });
+    fireEvent.change(screen.getByLabelText('CVV'), { target: { value: '123' } });
 
-    await waitFor(() => expect(screen.queryByText('Cargando disponibilidad...')).not.toBeInTheDocument());
+    const payButton = () => screen.getByRole('button', { name: /Confirmar y pagar/ });
+    fireEvent.click(payButton());
 
-    const dateInputs = screen.getAllByDisplayValue('');
-    fireEvent.change(dateInputs[0], { target: { value: '2030-01-10' } });
-    fireEvent.change(dateInputs[1], { target: { value: '2030-02-10' } });
+    await waitFor(() => expect(mockCreatePayment).toHaveBeenCalledTimes(1));
+    await waitFor(() => expect(payButton()).not.toBeDisabled());
 
-    const submitButtons = screen.getAllByRole('button', { name: 'Enviar solicitud' });
-    fireEvent.click(submitButtons[submitButtons.length - 1]);
+    fireEvent.click(payButton());
 
-    await waitFor(() => expect(mockAlert).toHaveBeenCalledWith('Solicitud enviada'));
+    await waitFor(() => expect(mockCreatePayment).toHaveBeenCalledTimes(2));
+    expect(mockCreateReservation).toHaveBeenCalledTimes(1);
+  });
+
+  it('renders BookingReceipt at comprobante with the correct storeRoom/reservation and completed step header', async () => {
+    mockCreateReservation.mockResolvedValue({ data: { message: 'ok', reservation: createdReservation } });
+    mockCreatePayment.mockResolvedValue({ data: { message: 'ok', payment: { id: 1 } } });
+
+    await openReserveAndSubmit();
+    await waitFor(() => expect(screen.getByRole('button', { name: /Confirmar y pagar/ })).toBeInTheDocument());
+
+    fireEvent.change(screen.getByLabelText('Número de tarjeta'), { target: { value: '4242 4242 4242 4242' } });
+    fireEvent.change(screen.getByLabelText('Titular de la tarjeta'), { target: { value: 'María López' } });
+    fireEvent.change(screen.getByLabelText('Vencimiento'), { target: { value: '1225' } });
+    fireEvent.change(screen.getByLabelText('CVV'), { target: { value: '123' } });
+
+    fireEvent.click(screen.getByRole('button', { name: /Confirmar y pagar/ }));
+
+    await waitFor(() => expect(screen.getByText('LEO-000042')).toBeInTheDocument());
+    // Step header still renders at comprobante, with "Detalle" and "Pago" completed.
+    expect(screen.getAllByText('✓')).toHaveLength(2);
+  });
+
+  it('clicking "Salir" from BookingStepHeader while at pago returns to detail', async () => {
+    mockCreateReservation.mockResolvedValue({ data: { message: 'ok', reservation: createdReservation } });
+
+    await openReserveAndSubmit();
+    await waitFor(() => expect(screen.getByRole('button', { name: /Confirmar y pagar/ })).toBeInTheDocument());
+
+    fireEvent.click(screen.getByRole('button', { name: 'Salir' }));
+
+    await waitFor(() =>
+      expect(screen.queryByRole('button', { name: /Confirmar y pagar/ })).not.toBeInTheDocument()
+    );
+    expect(screen.getByRole('button', { name: 'Reservar' })).toBeInTheDocument();
   });
 });
 
@@ -252,6 +329,34 @@ describe('LeodegaUI availability badge', () => {
 
     expect(screen.getByText('Disponible ahora')).toBeInTheDocument();
     expect(screen.queryByText('Ocupada ahora')).not.toBeInTheDocument();
+  });
+
+  it('shows the instant-reservation disclosure line in the reservation panel when available (fidelity: BookingFlow.jsx:229)', async () => {
+    mockGetStoreRoomDetail.mockResolvedValue({
+      data: { ...storeRoomDetail, is_available_now: true },
+    });
+
+    render(<LeodegaUI />);
+    await waitFor(() => screen.getByText('Bodega Norte'));
+    await waitFor(() => expect(screen.getByText('Total')).toBeInTheDocument());
+
+    expect(
+      screen.getByText('Reserva instantánea — el pago confirma el alquiler sin aprobación del gestor.')
+    ).toBeInTheDocument();
+  });
+
+  it('hides the instant-reservation disclosure line when the storeroom is NOT available now', async () => {
+    mockGetStoreRoomDetail.mockResolvedValue({
+      data: { ...storeRoomDetail, is_available_now: false },
+    });
+
+    render(<LeodegaUI />);
+    await waitFor(() => screen.getByText('Bodega Norte'));
+    await waitFor(() => expect(screen.getByText('Total')).toBeInTheDocument());
+
+    expect(
+      screen.queryByText('Reserva instantánea — el pago confirma el alquiler sin aprobación del gestor.')
+    ).not.toBeInTheDocument();
   });
 });
 
