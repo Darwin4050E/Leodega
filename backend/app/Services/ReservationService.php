@@ -8,6 +8,7 @@ use App\Models\Reservations;
 use App\Models\ReservationCancellationObligation;
 use App\Models\StoreRooms;
 use App\Models\Tenants;
+use App\Support\CancellationRefundCalculator;
 use Illuminate\Support\Facades\DB;
 
 class ReservationService
@@ -217,6 +218,71 @@ class ReservationService
             );
 
             return $reservation->load(['storeRooms', 'tenants.user']);
+        });
+    }
+
+    /**
+     * sdd/tenant-self-cancel: the tenant who owns a reservation cancels it
+     * themselves. Unlike cancelByLandlord(), this path re-fetches the row
+     * WITH lockForUpdate() INSIDE the transaction and re-validates
+     * eligibility against that locked row (decision #339/#4 in design #342)
+     * -- the $reservation instance the caller passed in is never trusted for
+     * the eligibility decision, closing the TOCTOU gap the landlord path
+     * deliberately leaves open. The refund is computed from the
+     * reservation's SNAPSHOTTED `cancellation_policy_tier`, never the
+     * storeroom's current tier.
+     *
+     * A `pending` (never paid) reservation is always eligible with a 0%
+     * refund -- nothing was paid. A `confirmed` reservation's refund is
+     * computed by CancellationRefundCalculator from the snapshot and the
+     * reservation's `total_mount`.
+     *
+     * @throws ReservationConflictException if the locked row is no longer
+     *                                       cancellable (already canceled,
+     *                                       started, or start date reached).
+     */
+    public function cancelByTenant(Reservations $reservation, ?string $reason, ?int $actingUserId): Reservations
+    {
+        return DB::transaction(function () use ($reservation, $reason, $actingUserId) {
+            $locked = Reservations::where('id', $reservation->id)->lockForUpdate()->firstOrFail();
+
+            if (! $locked->isCancellableByTenant()) {
+                throw new ReservationConflictException(
+                    'Esta reserva no puede cancelarse: ya fue cancelada, ya inició, o no existe.'
+                );
+            }
+
+            $refundAmount = $locked->status === 'confirmed'
+                ? CancellationRefundCalculator::compute(
+                    (string) $locked->cancellation_policy_tier,
+                    (string) $locked->start_date,
+                    (string) $locked->total_mount
+                )
+                : '0.00';
+
+            $locked->update([
+                'status' => 'canceled',
+                'cancelation_reason' => $reason,
+                'refund_amount' => $refundAmount,
+            ]);
+
+            $locked->load('storeRooms.landlord.user');
+            $room = $locked->storeRooms;
+            if ($room && $room->landlord && $room->landlord->user) {
+                NotificationService::send(
+                    $actingUserId,
+                    $room->landlord->user->id,
+                    NotificationType::RESERVATION_CANCELED,
+                    'Reserva cancelada por el cliente',
+                    'El cliente canceló su reserva. Revisa el reembolso correspondiente.',
+                    [
+                        'reservation_id' => $locked->id,
+                        'store_room_id' => $locked->store_room_id,
+                    ]
+                );
+            }
+
+            return $locked->load(['storeRooms', 'tenants.user']);
         });
     }
 }

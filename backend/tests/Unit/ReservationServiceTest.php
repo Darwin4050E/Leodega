@@ -399,6 +399,193 @@ class ReservationServiceTest extends TestCase
         }
     }
 
+    // -- sdd/tenant-self-cancel: cancelByTenant() -------------------------
+
+    public function test_cancel_by_tenant_computes_refund_from_snapshotted_tier_and_cancels_confirmed_reservation()
+    {
+        $tenantUser = User::factory()->create();
+        $tenant = Tenants::factory()->create(['user_id' => $tenantUser->id]);
+        $landlordUser = User::factory()->create(['role' => 'landlord']);
+        $landlord = Landlords::factory()->create(['user_id' => $landlordUser->id]);
+        $room = StoreRooms::factory()->create([
+            'landlord_id' => $landlord->id,
+            // Room's LIVE tier differs from the reservation's snapshot on
+            // purpose: the refund MUST be computed from the snapshot below,
+            // never from this current value (decision #339).
+            'cancellation_policy_tier' => 'estricta',
+        ]);
+
+        $reservation = Reservations::factory()->create([
+            'store_room_id' => $room->id,
+            'tenant_id' => $tenant->id,
+            'status' => 'confirmed',
+            'start_date' => now()->addDays(10)->toDateString(),
+            'end_date' => now()->addDays(20)->toDateString(),
+            'total_mount' => 100,
+            'rent_subtotal' => 80,
+            'cancellation_policy_tier' => 'flexible',
+        ]);
+
+        $result = $this->service()->cancelByTenant($reservation, null, $tenantUser->id);
+
+        $this->assertSame('canceled', $result->status);
+        $this->assertDatabaseHas('reservations', [
+            'id' => $reservation->id,
+            'status' => 'canceled',
+            'refund_amount' => '100.00',
+        ]);
+    }
+
+    public function test_cancel_by_tenant_records_zero_refund_for_a_pending_reservation()
+    {
+        $tenantUser = User::factory()->create();
+        $tenant = Tenants::factory()->create(['user_id' => $tenantUser->id]);
+        $room = StoreRooms::factory()->create(['cancellation_policy_tier' => 'flexible']);
+
+        $reservation = Reservations::factory()->create([
+            'store_room_id' => $room->id,
+            'tenant_id' => $tenant->id,
+            'status' => 'pending',
+            'start_date' => now()->addDays(10)->toDateString(),
+            'end_date' => now()->addDays(20)->toDateString(),
+            'total_mount' => 100,
+            'rent_subtotal' => 80,
+            'cancellation_policy_tier' => 'flexible',
+        ]);
+
+        $result = $this->service()->cancelByTenant($reservation, null, $tenantUser->id);
+
+        $this->assertSame('canceled', $result->status);
+        $this->assertDatabaseHas('reservations', [
+            'id' => $reservation->id,
+            'status' => 'canceled',
+            'refund_amount' => '0.00',
+        ]);
+    }
+
+    public function test_cancel_by_tenant_rejects_a_reservation_whose_start_date_has_passed()
+    {
+        $tenant = Tenants::factory()->create();
+        $room = StoreRooms::factory()->create();
+
+        $reservation = Reservations::factory()->create([
+            'store_room_id' => $room->id,
+            'tenant_id' => $tenant->id,
+            'status' => 'confirmed',
+            'start_date' => today()->toDateString(),
+            'end_date' => today()->addDays(10)->toDateString(),
+            'cancellation_policy_tier' => 'flexible',
+        ]);
+
+        try {
+            $this->service()->cancelByTenant($reservation, null, $tenant->user_id);
+            $this->fail('Expected ReservationConflictException');
+        } catch (ReservationConflictException $e) {
+            $this->assertDatabaseHas('reservations', ['id' => $reservation->id, 'status' => 'confirmed']);
+        }
+    }
+
+    /**
+     * Proves cancelByTenant() re-validates against the row it locks INSIDE
+     * the transaction, never trusting the $reservation instance the caller
+     * passed in. Simulates a competing status mutation that landed between
+     * the caller's read and this call (e.g. the landlord canceling first)
+     * by mutating the DB row directly while the in-memory $reservation
+     * still reflects the pre-mutation, eligible state.
+     */
+    public function test_cancel_by_tenant_re_validates_against_the_locked_row_not_the_stale_instance()
+    {
+        $tenant = Tenants::factory()->create();
+        $room = StoreRooms::factory()->create();
+
+        $reservation = Reservations::factory()->create([
+            'store_room_id' => $room->id,
+            'tenant_id' => $tenant->id,
+            'status' => 'confirmed',
+            'start_date' => now()->addDays(10)->toDateString(),
+            'end_date' => now()->addDays(20)->toDateString(),
+            'total_mount' => 100,
+            'rent_subtotal' => 80,
+            'cancellation_policy_tier' => 'flexible',
+        ]);
+
+        // A concurrent operation wins the race and cancels the row first.
+        Reservations::where('id', $reservation->id)->update(['status' => 'canceled']);
+
+        try {
+            $this->service()->cancelByTenant($reservation, null, $tenant->user_id);
+            $this->fail('Expected ReservationConflictException');
+        } catch (ReservationConflictException $e) {
+            $this->assertDatabaseCount('notifications', 0);
+        }
+    }
+
+    public function test_cancel_by_tenant_is_idempotent_on_a_second_call()
+    {
+        $tenantUser = User::factory()->create();
+        $tenant = Tenants::factory()->create(['user_id' => $tenantUser->id]);
+        $room = StoreRooms::factory()->create(['cancellation_policy_tier' => 'flexible']);
+
+        $reservation = Reservations::factory()->create([
+            'store_room_id' => $room->id,
+            'tenant_id' => $tenant->id,
+            'status' => 'confirmed',
+            'start_date' => now()->addDays(10)->toDateString(),
+            'end_date' => now()->addDays(20)->toDateString(),
+            'total_mount' => 100,
+            'rent_subtotal' => 80,
+            'cancellation_policy_tier' => 'flexible',
+        ]);
+
+        $this->service()->cancelByTenant($reservation, null, $tenantUser->id);
+        $this->assertDatabaseCount('notifications', 1);
+
+        try {
+            $this->service()->cancelByTenant($reservation->fresh(), null, $tenantUser->id);
+            $this->fail('Expected ReservationConflictException on the second cancel');
+        } catch (ReservationConflictException $e) {
+            $this->assertDatabaseHas('reservations', [
+                'id' => $reservation->id,
+                'refund_amount' => '100.00',
+            ]);
+            $this->assertDatabaseCount('notifications', 1);
+        }
+    }
+
+    /**
+     * [SPANISH COPY] The landlord notification is user-facing product text
+     * (spec #341): neutral, professional Spanish, no voseo/slang.
+     */
+    public function test_cancel_by_tenant_notifies_the_landlord_with_the_exact_spanish_copy()
+    {
+        $tenantUser = User::factory()->create();
+        $tenant = Tenants::factory()->create(['user_id' => $tenantUser->id]);
+        $landlordUser = User::factory()->create(['role' => 'landlord']);
+        $landlord = Landlords::factory()->create(['user_id' => $landlordUser->id]);
+        $room = StoreRooms::factory()->create([
+            'landlord_id' => $landlord->id,
+            'cancellation_policy_tier' => 'flexible',
+        ]);
+
+        $reservation = Reservations::factory()->create([
+            'store_room_id' => $room->id,
+            'tenant_id' => $tenant->id,
+            'status' => 'confirmed',
+            'start_date' => now()->addDays(10)->toDateString(),
+            'end_date' => now()->addDays(20)->toDateString(),
+            'cancellation_policy_tier' => 'flexible',
+        ]);
+
+        $this->service()->cancelByTenant($reservation, null, $tenantUser->id);
+
+        $this->assertDatabaseHas('notifications', [
+            'receiver_id' => $landlordUser->id,
+            'type' => 'reservation_canceled',
+            'title' => 'Reserva cancelada por el cliente',
+            'body' => 'El cliente canceló su reserva. Revisa el reembolso correspondiente.',
+        ]);
+    }
+
     public function test_cancel_by_landlord_rejects_reservation_with_no_rent_subtotal_snapshot()
     {
         $room = StoreRooms::factory()->create();
