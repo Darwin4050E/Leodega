@@ -61,6 +61,16 @@ class ReservationService
      * bodega, y cancela en cascada cualquier otra reserva "pending" que se
      * solape en fechas con la misma bodega.
      *
+     * El envío del correo de recibo (ReservationReceiptNotification) NO
+     * vive aquí: se despacha desde PaymentService::process(), después de
+     * que su propia llamada a DB::transaction() retorna, precisamente para
+     * no extender el lockForUpdate() de StoreRooms tomado más abajo sobre
+     * un round-trip SMTP. confirm() sigue teniendo un único punto de
+     * llamada en producción (PaymentService::process(), rama pagada).
+     *
+     * Este comentario documenta la ubicación del efecto secundario, no
+     * introduce ni modifica lógica en este método.
+     *
      * Envuelto en una transacción que bloquea la fila de StoreRooms
      * (lockForUpdate) antes del chequeo de solapamiento contra otras
      * reservas confirmadas, para serializar confirmaciones concurrentes
