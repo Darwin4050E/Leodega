@@ -252,13 +252,7 @@ class ReservationService
                 );
             }
 
-            $refundAmount = $locked->status === 'confirmed'
-                ? CancellationRefundCalculator::compute(
-                    (string) $locked->cancellation_policy_tier,
-                    (string) $locked->start_date,
-                    (string) $locked->total_mount
-                )
-                : '0.00';
+            $refundAmount = $this->computeRefund($locked);
 
             $locked->update([
                 'status' => 'canceled',
@@ -284,5 +278,42 @@ class ReservationService
 
             return $locked->load(['storeRooms', 'tenants.user']);
         });
+    }
+
+    /**
+     * sdd/tenant-reservations-screen: single source of truth for the tenant
+     * refund figure, extracted verbatim from cancelByTenant()'s previously
+     * inline expression (no behavior change). Called from exactly two
+     * sites -- cancelByTenant() (above) and previewRefund() (below) -- so
+     * the preview shown before confirmation and the amount actually
+     * recorded can never drift apart (design decision #339/#1).
+     */
+    private function computeRefund(Reservations $reservation): string
+    {
+        return $reservation->status === 'confirmed'
+            ? CancellationRefundCalculator::compute(
+                (string) $reservation->cancellation_policy_tier,
+                (string) $reservation->start_date,
+                (string) $reservation->total_mount
+            )
+            : '0.00';
+    }
+
+    /**
+     * sdd/tenant-reservations-screen: read-only preview of the refund the
+     * tenant would receive if they cancelled right now. Checks the same
+     * eligibility rule as cancelByTenant() and throws the identical 409 so
+     * staleness surfaces at modal-open time, before the tenant commits to
+     * anything (design decision #1). Never mutates the reservation.
+     */
+    public function previewRefund(Reservations $reservation): string
+    {
+        if (! $reservation->isCancellableByTenant()) {
+            throw new ReservationConflictException(
+                'Esta reserva no puede cancelarse: ya fue cancelada, ya inició, o no existe.'
+            );
+        }
+
+        return $this->computeRefund($reservation);
     }
 }
