@@ -1,4 +1,4 @@
-import { MapPin, X } from "lucide-react";
+import { ImageOff, MapPin, X } from "lucide-react";
 
 import { formatReservationCode } from "../../utils/reservationCode";
 import { formatUSD } from "../../utils/money";
@@ -37,12 +37,19 @@ const ReservationCard = ({ reservation, onCancelClick }: ReservationCardProps) =
   return (
     <div className="bg-white border border-gray-200 rounded-2xl shadow-sm overflow-hidden">
       <div className="flex gap-4 p-4 flex-wrap">
-        {reservation.photo_url && (
+        {reservation.photo_url ? (
           <img
             src={reservation.photo_url}
             alt={title}
             className="w-32 h-26 rounded-xl object-cover flex-shrink-0"
           />
+        ) : (
+          <div
+            className="w-32 h-26 rounded-xl bg-gray-100 flex items-center justify-center flex-shrink-0"
+            aria-label={`${title} sin foto disponible`}
+          >
+            <ImageOff size={28} color="#9CA3AF" />
+          </div>
         )}
         <div className="flex-1 min-w-[200px]">
           <div className="flex justify-between items-start gap-2.5 mb-1">

@@ -116,4 +116,26 @@ describe('ReservationCard', () => {
     const button = screen.getByRole('button', { name: 'Cancelar reserva' });
     expect(button.querySelector('svg.lucide-x')).not.toBeNull();
   });
+
+  // Every storeroom in production currently has zero photos (no `photos`
+  // validation rule on publish), so this is the common path, not an edge
+  // case: the card must keep its thumbnail slot occupied to avoid layout
+  // shift when `photo_url` is absent.
+  it('renders a placeholder thumbnail when photo_url is absent', () => {
+    const { container } = render(
+      <ReservationCard reservation={reservation({ photo_url: undefined })} onCancelClick={vi.fn()} />
+    );
+
+    expect(screen.queryByRole('img')).not.toBeInTheDocument();
+    expect(container.querySelector('svg.lucide-image-off')).not.toBeNull();
+  });
+
+  it('renders the real thumbnail and no placeholder when photo_url is present', () => {
+    const { container } = render(
+      <ReservationCard reservation={reservation()} onCancelClick={vi.fn()} />
+    );
+
+    expect(screen.getByRole('img', { name: 'Galpón Logístico Centro' })).toBeInTheDocument();
+    expect(container.querySelector('svg.lucide-image-off')).toBeNull();
+  });
 });
