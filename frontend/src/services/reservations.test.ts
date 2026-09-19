@@ -17,6 +17,9 @@ import {
   cancelReservation,
   getCancellationRate,
   createPayment,
+  getTenantReservations,
+  getCancellationPreview,
+  cancelReservationAsTenant,
 } from './reservations';
 
 describe('reservations service', () => {
@@ -113,5 +116,70 @@ describe('reservations service', () => {
     ).resolves.toEqual({
       data: { message: 'Pago registrado', payment: { id: 1, reservation_id: 42, payment_method: 'credit card', payment_state: 'paid', payment_date: '2026-09-17' } },
     });
+  });
+
+  // -- sdd/tenant-reservations-screen ------------------------------------
+
+  it('getTenantReservations calls GET /tenant/reservations', () => {
+    getTenantReservations();
+    expect(mockApi.get).toHaveBeenCalledWith('/tenant/reservations');
+  });
+
+  it('getTenantReservations resolves with the tenant reservation shape', async () => {
+    const reservation = {
+      id: 5,
+      status: 'confirmed',
+      start_date: '2026-09-01',
+      end_date: '2026-09-10',
+      store_room_id: 3,
+      total_mount: '100.00',
+      can_be_cancelled: true,
+      photo_url: 'https://example.test/storage/store_photos/a.jpg',
+      store_rooms: { id: 3, title: 'Bodega Centro', direction: 'Av. Siempre Viva', city: 'Quito', size: 20 },
+    };
+    mockApi.get.mockResolvedValue({ data: [reservation] });
+
+    await expect(getTenantReservations()).resolves.toEqual({ data: [reservation] });
+  });
+
+  it('getCancellationPreview calls GET /tenant/reservations/:id/cancellation-preview', () => {
+    getCancellationPreview(11);
+    expect(mockApi.get).toHaveBeenCalledWith('/tenant/reservations/11/cancellation-preview');
+  });
+
+  it('getCancellationPreview resolves with can_be_cancelled and refund_amount', async () => {
+    mockApi.get.mockResolvedValue({ data: { can_be_cancelled: true, refund_amount: '50.00' } });
+
+    await expect(getCancellationPreview(11)).resolves.toEqual({
+      data: { can_be_cancelled: true, refund_amount: '50.00' },
+    });
+  });
+
+  it('getCancellationPreview rejects with a 409 when the reservation is no longer cancellable', async () => {
+    const error = { response: { status: 409, data: { message: 'Esta reserva ya no puede cancelarse.' } } };
+    mockApi.get.mockRejectedValue(error);
+
+    await expect(getCancellationPreview(11)).rejects.toEqual(error);
+  });
+
+  it('cancelReservationAsTenant patches /tenant/reservations/:id/cancel with no body', () => {
+    mockApi.patch.mockResolvedValue({ data: { message: 'Reserva cancelada' } });
+    cancelReservationAsTenant(9);
+    expect(mockApi.patch).toHaveBeenCalledWith('/tenant/reservations/9/cancel', {});
+  });
+
+  it('cancelReservationAsTenant resolves on success (200)', async () => {
+    mockApi.patch.mockResolvedValue({ data: { message: 'Reserva cancelada' } });
+
+    await expect(cancelReservationAsTenant(9)).resolves.toEqual({
+      data: { message: 'Reserva cancelada' },
+    });
+  });
+
+  it('cancelReservationAsTenant rejects on 409/403/404 the same way axios does', async () => {
+    const error = { response: { status: 409, data: { message: 'Ya no es cancelable' } } };
+    mockApi.patch.mockRejectedValue(error);
+
+    await expect(cancelReservationAsTenant(9)).rejects.toEqual(error);
   });
 });
