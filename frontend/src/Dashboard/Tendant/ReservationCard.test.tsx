@@ -75,4 +75,24 @@ describe('ReservationCard', () => {
     );
     expect(screen.getByText('Cancelada')).toBeInTheDocument();
   });
+
+  // Spec "Post-cancel outcome": the card MUST display the refund amount
+  // actually recorded, never a re-derived one.
+  it('shows the recorded refund amount for a canceled reservation', () => {
+    render(
+      <ReservationCard
+        reservation={reservation({ status: 'canceled', total_mount: '1850.00', refund_amount: '925.00' })}
+        onCancelClick={vi.fn()}
+      />
+    );
+
+    expect(screen.getByText('Reembolso')).toBeInTheDocument();
+    expect(screen.getByText('$925')).toBeInTheDocument();
+  });
+
+  it('does not show a refund row for a non-canceled reservation', () => {
+    render(<ReservationCard reservation={reservation({ status: 'confirmed' })} onCancelClick={vi.fn()} />);
+
+    expect(screen.queryByText('Reembolso')).not.toBeInTheDocument();
+  });
 });

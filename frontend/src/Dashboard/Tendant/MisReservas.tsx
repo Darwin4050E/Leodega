@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
+import { Calendar } from "lucide-react";
 
 import HeaderTendant from "../../Components/HeaderTendant";
 import { getTenantReservations, type TenantReservation } from "../../services/reservations";
@@ -129,6 +130,9 @@ const MisReservas = () => {
           </div>
         ) : list.length === 0 ? (
           <div className="bg-white rounded-2xl border border-dashed border-gray-300 px-6 py-14 text-center max-w-lg mx-auto">
+            <div className="w-16 h-16 rounded-full bg-[#F5F3FF] flex items-center justify-center mx-auto mb-4.5">
+              <Calendar size={28} color="#7551E9" />
+            </div>
             <h3 className="text-lg font-semibold text-gray-900 m-0 mb-2">
               Aún no tienes reservas {tab !== "activa" ? activeTabLabel : ""}
             </h3>

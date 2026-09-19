@@ -114,6 +114,12 @@ export interface TenantReservation {
   total_mount: string | number | null;
   can_be_cancelled: boolean;
   photo_url: string | null;
+  /**
+   * Set only once the reservation is canceled (ReservationService::
+   * cancelByTenant()'s recorded amount). Spec "Post-cancel outcome": the
+   * card MUST display this exact figure, never a re-derived one.
+   */
+  refund_amount?: string | number | null;
   store_rooms?: {
     id?: number;
     title?: string;

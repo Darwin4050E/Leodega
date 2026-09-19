@@ -76,6 +76,14 @@ const ReservationCard = ({ reservation, onCancelClick }: ReservationCardProps) =
                 {formatReservationCode(reservation.id)}
               </p>
             </div>
+            {tab === "cancelada" && reservation.refund_amount != null && (
+              <div>
+                <p className="text-[11px] text-gray-400 mb-0.5">Reembolso</p>
+                <p className="text-sm font-semibold text-gray-900 m-0">
+                  {formatUSD(reservation.refund_amount)}
+                </p>
+              </div>
+            )}
           </div>
         </div>
       </div>
