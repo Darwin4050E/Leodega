@@ -1,3 +1,5 @@
+import { MapPin, X } from "lucide-react";
+
 import { formatReservationCode } from "../../utils/reservationCode";
 import { formatUSD } from "../../utils/money";
 import { deriveTenantTab } from "../../utils/reservationVigencia";
@@ -53,7 +55,8 @@ const ReservationCard = ({ reservation, onCancelClick }: ReservationCardProps) =
               {badge.label}
             </span>
           </div>
-          <p className="text-xs text-gray-500 mb-2.5">
+          <p className="text-xs text-gray-500 mb-2.5 flex items-center gap-1.5">
+            <MapPin size={13} color="#9CA3AF" />
             {direction}, {city} · {size} m²
           </p>
           <div className="flex gap-6 flex-wrap">
@@ -94,6 +97,7 @@ const ReservationCard = ({ reservation, onCancelClick }: ReservationCardProps) =
               onClick={() => onCancelClick(reservation)}
               className="inline-flex items-center gap-1.5 px-4 py-2 bg-white text-red-600 border border-red-300 rounded-lg text-sm font-semibold"
             >
+              <X size={14} color="#DC2626" />
               Cancelar reserva
             </button>
           </div>
