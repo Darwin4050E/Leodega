@@ -72,6 +72,17 @@ const MisReservas = () => {
     load();
   };
 
+  /**
+   * Design decision #4: 409 (stale eligibility) or a 404 at confirm both
+   * mean "nothing was cancelled, the list is out of date" -- close the
+   * modal and refetch so `can_be_cancelled`/tab placement come from fresh
+   * server data. No automatic retry of the mutating call itself.
+   */
+  const handleNeedsRefresh = () => {
+    setCancelingReservation(null);
+    load();
+  };
+
   return (
     <>
       <HeaderTendant />
@@ -146,6 +157,7 @@ const MisReservas = () => {
           reservation={cancelingReservation}
           onClose={() => setCancelingReservation(null)}
           onCancelled={handleCancelled}
+          onNeedsRefresh={handleNeedsRefresh}
         />
       )}
     </>
