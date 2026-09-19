@@ -238,6 +238,10 @@ Route::middleware('auth.api:sanctum')->group(function () {
     // sdd/tenant-self-cancel: the owning tenant cancels their own
     // reservation; ownership is enforced by ReservationsPolicy::cancelAsTenant.
     Route::patch('/tenant/reservations/{reservation}/cancel', [ReservationsController::class, 'cancelAsTenant']);
+    // sdd/tenant-reservations-screen: read-only refund preview fetched by
+    // the cancel modal on open, same ownership gate as the cancel action
+    // above.
+    Route::get('/tenant/reservations/{reservation}/cancellation-preview', [ReservationsController::class, 'cancellationPreview']);
 });
 
 Route::middleware(['auth.api:sanctum', 'role:admin'])->group(function () {

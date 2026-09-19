@@ -96,3 +96,60 @@ export interface CreatePaymentInput {
 export function createPayment(data: CreatePaymentInput) {
   return api.post<{ message: string; payment: Payment }>("/payments", data);
 }
+
+// -- sdd/tenant-reservations-screen ---------------------------------------
+
+/**
+ * Shape of a row from GET /tenant/reservations (tenantIndex()). Mirrors
+ * LandlordReservation's `can_be_cancelled` idiom: server-computed, never
+ * re-derived client-side (design decision #2). `photo_url` is already a
+ * directly-usable asset() URL, never a bare storage-relative path.
+ */
+export interface TenantReservation {
+  id: number;
+  status: string;
+  start_date: string;
+  end_date: string;
+  store_room_id: number;
+  total_mount: string | number | null;
+  can_be_cancelled: boolean;
+  photo_url: string | null;
+  /**
+   * Set only once the reservation is canceled (ReservationService::
+   * cancelByTenant()'s recorded amount). Spec "Post-cancel outcome": the
+   * card MUST display this exact figure, never a re-derived one.
+   */
+  refund_amount?: string | number | null;
+  store_rooms?: {
+    id?: number;
+    title?: string;
+    direction?: string;
+    city?: string;
+    size?: number;
+  };
+}
+
+export function getTenantReservations() {
+  return api.get<TenantReservation[]>("/tenant/reservations");
+}
+
+/**
+ * Response shape of GET /tenant/reservations/:id/cancellation-preview.
+ * Fetched by the cancel modal on open (design decision #1) — the amount it
+ * carries MUST equal what the confirm action actually records.
+ */
+export interface CancellationPreview {
+  can_be_cancelled: boolean;
+  refund_amount: string;
+}
+
+export function getCancellationPreview(id: number | string) {
+  return api.get<CancellationPreview>(`/tenant/reservations/${id}/cancellation-preview`);
+}
+
+export function cancelReservationAsTenant(id: number | string) {
+  return api.patch<{ message: string; reservation: TenantReservation }>(
+    `/tenant/reservations/${id}/cancel`,
+    {}
+  );
+}

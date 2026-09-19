@@ -49,6 +49,7 @@ import Protected from './Routes/Protected'
 import Role from './Routes/Role'
 import PagePrincipal from './Dashboard/Tendant/PagePrincipal'
 import CalendarioTendant from './Dashboard/Tendant/CalendarioTendant'
+import MisReservas from './Dashboard/Tendant/MisReservas'
 
 function App() {
   return (
@@ -126,9 +127,17 @@ function App() {
             <Footer />
           </>
         } />
-        <Route path="/arrendatario/dashboard" element={<PagePrincipal />} />
-        <Route path="/arrendatario/mensajes" element={<Mensajes />} />
-        <Route path="/arrendatario/calendario" element={<CalendarioTendant />} />
+        {/* sdd/tenant-reservations-screen: all four /arrendatario/* routes
+            require a session (spec "Modified -- tenant route auth guard").
+            Not nested under <Layout/> -- tenant screens render their own
+            <HeaderTendant/> -- and no <Role> gate (its type has no
+            "tenant" case). */}
+        <Route element={<Protected />}>
+          <Route path="/arrendatario/dashboard" element={<PagePrincipal />} />
+          <Route path="/arrendatario/mensajes" element={<Mensajes />} />
+          <Route path="/arrendatario/calendario" element={<CalendarioTendant />} />
+          <Route path="/arrendatario/mis-reservas" element={<MisReservas />} />
+        </Route>
       </Routes>
     </Router>
     </AuthProvider>

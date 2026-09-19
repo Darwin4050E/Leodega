@@ -170,14 +170,57 @@ class ReservationsController extends Controller
         ]);
     }
 
+    /**
+     * sdd/tenant-reservations-screen: mirrors landlordIndex()'s ->each()
+     * idiom (ReservationsController.php:57-74). can_be_cancelled is
+     * server-computed for the same reason as the landlord flag -- the
+     * client cannot know what "today" is on the server. photo_url applies
+     * the same asset() transform as StoreRoomDetailResource::toArray()
+     * (StoreRoomDetailResource.php:53) so the card never receives a bare
+     * storage-relative path.
+     */
+    /**
+     * sdd/tenant-reservations-screen: read-only refund preview, fetched by
+     * the cancel modal on open. Reuses cancelAsTenant()'s exact
+     * authorization gate (ReservationsPolicy::cancelAsTenant, ownership
+     * only) and delegates the eligibility check and money math to
+     * ReservationService::previewRefund(), which shares its private
+     * computeRefund() with cancelByTenant() -- the two call sites can
+     * never disagree (design decision #1).
+     */
+    public function cancellationPreview(Reservations $reservation, ReservationService $reservationService)
+    {
+        Gate::authorize('cancelAsTenant', $reservation);
+
+        $refundAmount = $reservationService->previewRefund($reservation);
+
+        return response()->json([
+            'can_be_cancelled' => true,
+            'refund_amount' => $refundAmount,
+        ]);
+    }
+
     public function tenantIndex(Request $request)
     {
         $user = $request->user();
         $tenant = Tenants::where('user_id', $user->id)->firstOrFail();
 
-        return Reservations::with('storeRooms')
+        $items = Reservations::with([
+            'storeRooms:id,title,direction,city,size,room_type,landlord_id',
+            'storeRooms.storePhotos',
+        ])
             ->where('tenant_id', $tenant->id)
             ->orderBy('start_date')
             ->get();
+
+        $items->each(function (Reservations $item) {
+            $item->can_be_cancelled = $item->isCancellableByTenant();
+
+            $firstPhoto = $item->storeRooms?->storePhotos->first();
+            $item->photo_url = $firstPhoto ? asset('storage/'.$firstPhoto->photo_url) : null;
+            $item->storeRooms?->makeHidden('storePhotos');
+        });
+
+        return response()->json($items);
     }
 }
