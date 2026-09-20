@@ -3,6 +3,7 @@
 namespace Tests\Feature;
 
 use App\Models\Landlords;
+use App\Models\Payments;
 use App\Models\ReservationCancellationObligation;
 use App\Models\Reservations;
 use App\Models\StoreRooms;
@@ -131,6 +132,68 @@ class LandlordReservationIndexTest extends TestCase
         $item = collect($response->json())->firstWhere('id', $reservation->id);
         $this->assertSame('pending', $item['payment_status']);
         $this->assertFalse($item['has_refund_obligation']);
+    }
+
+    /**
+     * HUG-05 escenario 3 (comprobante de pago): the latest 'paid' Payments
+     * row is surfaced as payment_id/payment_method/payment_date. A 'pending'
+     * attempt on the same reservation must be ignored in favor of the 'paid'
+     * one, regardless of insertion order.
+     */
+    public function test_paid_reservation_exposes_the_latest_paid_payment()
+    {
+        [$user, $landlord] = $this->landlord();
+        $room = StoreRooms::factory()->create(['landlord_id' => $landlord->id]);
+        $reservation = Reservations::factory()->create([
+            'store_room_id' => $room->id,
+            'status' => 'confirmed',
+            'rent_subtotal' => 3000,
+            'total_mount' => 4000,
+        ]);
+        Payments::factory()->create([
+            'reservation_id' => $reservation->id,
+            'payment_method' => 'debit card',
+            'payment_state' => 'pending',
+            'payment_date' => '2026-01-01',
+        ]);
+        $paidPayment = Payments::factory()->create([
+            'reservation_id' => $reservation->id,
+            'payment_method' => 'credit card',
+            'payment_state' => 'paid',
+            'payment_date' => '2026-01-02',
+        ]);
+
+        $response = $this->actingAs($user, 'sanctum')
+            ->getJson('/api/landlord/reservations');
+
+        $item = collect($response->json())->firstWhere('id', $reservation->id);
+        $this->assertSame($paidPayment->id, $item['payment_id']);
+        $this->assertSame('credit card', $item['payment_method']);
+        $this->assertSame('2026-01-02', $item['payment_date']);
+    }
+
+    /**
+     * A reservation that was never actually paid (pending, or auto-blocked
+     * before payment) must not fabricate a receipt.
+     */
+    public function test_unpaid_reservation_exposes_no_payment()
+    {
+        [$user, $landlord] = $this->landlord();
+        $room = StoreRooms::factory()->create(['landlord_id' => $landlord->id]);
+        $reservation = Reservations::factory()->create([
+            'store_room_id' => $room->id,
+            'status' => 'pending',
+            'rent_subtotal' => 3000,
+            'total_mount' => 4000,
+        ]);
+
+        $response = $this->actingAs($user, 'sanctum')
+            ->getJson('/api/landlord/reservations');
+
+        $item = collect($response->json())->firstWhere('id', $reservation->id);
+        $this->assertNull($item['payment_id']);
+        $this->assertNull($item['payment_method']);
+        $this->assertNull($item['payment_date']);
     }
 
     /**

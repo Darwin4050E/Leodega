@@ -26,6 +26,9 @@ const reservations = [
     payment_status: 'paid',
     can_be_cancelled: true,
     has_refund_obligation: false,
+    payment_id: 101,
+    payment_method: 'credit card',
+    payment_date: '2030-01-05',
     store_rooms: { title: 'Bodega Norte' },
     tenants: { user: { name: 'Ana', lastname: 'Torres', email: 'ana@example.com' } },
   },
@@ -41,6 +44,9 @@ const reservations = [
     payment_status: 'pending',
     can_be_cancelled: false,
     has_refund_obligation: false,
+    payment_id: null,
+    payment_method: null,
+    payment_date: null,
     store_rooms: { title: 'Bodega Sur' },
     tenants: { user: { name: 'Luis', lastname: 'Perez', email: 'luis@example.com' } },
   },
@@ -56,6 +62,9 @@ const reservations = [
     payment_status: 'paid',
     can_be_cancelled: false,
     has_refund_obligation: true,
+    payment_id: 103,
+    payment_method: 'debit card',
+    payment_date: '2020-01-08',
     store_rooms: { title: 'Bodega Norte' },
     tenants: { user: { name: 'Marta', lastname: 'Ruiz', email: 'marta@example.com' } },
   },
@@ -71,6 +80,9 @@ const reservations = [
     payment_status: 'pending',
     can_be_cancelled: false,
     has_refund_obligation: false,
+    payment_id: null,
+    payment_method: null,
+    payment_date: null,
     store_rooms: { title: 'Bodega Sur' },
     tenants: { user: { name: 'Carlos', lastname: 'Diaz', email: 'carlos@example.com' } },
   },
@@ -142,21 +154,52 @@ describe('GestorReservas', () => {
     expect(screen.queryByText('Reserva #1')).not.toBeInTheDocument();
   });
 
-  it('decorative buttons (Mensaje al cliente / Descargar comprobante) produce no side effects', async () => {
+  it('"Mensaje al cliente" is decorative and produces no side effects', async () => {
     render(<GestorReservas />);
     await waitFor(() => screen.getAllByText('Bodega Norte'));
 
     fireEvent.click(screen.getByText('Ana Torres'));
-
-    const mensajeBtn = screen.getByText('Mensaje al cliente');
-    const comprobanteBtn = screen.getByText('Descargar comprobante');
-
-    fireEvent.click(mensajeBtn);
-    fireEvent.click(comprobanteBtn);
+    fireEvent.click(screen.getByText('Mensaje al cliente'));
 
     // No navigation, no additional API calls beyond the initial list load.
     expect(mockGetLandlordReservations).toHaveBeenCalledTimes(1);
     expect(mockCancelReservation).not.toHaveBeenCalled();
+  });
+
+  /**
+   * HUG-05 escenario 3: a receipt only makes sense for a reservation that
+   * was actually paid. `payment_id` (not `payment_status`, which is also
+   * 'paid' for REEMBOLSADO) is the signal -- id 1 and 3 were paid, id 2 and
+   * 4 never were.
+   */
+  it('shows "Descargar comprobante" only for reservations that were actually paid', async () => {
+    render(<GestorReservas />);
+    await waitFor(() => screen.getAllByText('Bodega Norte'));
+
+    fireEvent.click(screen.getByText('Ana Torres'));
+    expect(screen.getByText('Descargar comprobante')).toBeInTheDocument();
+    fireEvent.click(screen.getByText('← Volver a Reservas'));
+
+    fireEvent.click(screen.getByText('Luis Perez'));
+    expect(screen.queryByText('Descargar comprobante')).not.toBeInTheDocument();
+  });
+
+  it('opens the payment receipt with the reservation and client data', async () => {
+    render(<GestorReservas />);
+    await waitFor(() => screen.getAllByText('Bodega Norte'));
+
+    fireEvent.click(screen.getByText('Ana Torres'));
+    fireEvent.click(screen.getByText('Descargar comprobante'));
+
+    const dialog = await screen.findByRole('dialog', { name: /comprobante de pago/i });
+    expect(within(dialog).getByText('LEO-000001')).toBeInTheDocument();
+    expect(within(dialog).getByText('ana@example.com')).toBeInTheDocument();
+    expect(within(dialog).getByText('Tarjeta de crédito')).toBeInTheDocument();
+    expect(within(dialog).getByText('2030-01-05')).toBeInTheDocument();
+    expect(within(dialog).getByText('$4,180 USD')).toBeInTheDocument();
+
+    fireEvent.click(within(dialog).getByText('Cerrar'));
+    expect(screen.queryByRole('dialog', { name: /comprobante de pago/i })).not.toBeInTheDocument();
   });
 
   it('shows the cancel button only for the eligible reservation (confirmed, paid, strictly future)', async () => {
