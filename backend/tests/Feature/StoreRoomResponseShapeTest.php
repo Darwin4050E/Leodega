@@ -188,14 +188,26 @@ class StoreRoomResponseShapeTest extends TestCase
         $this->assertArrayNotHasKey('rating_count', $response->json('0'));
     }
 
-    public function test_get_by_landlord_returns_404_when_the_landlord_has_no_visible_rooms(): void
+    public function test_get_by_landlord_returns_200_empty_array_when_the_landlord_has_no_visible_rooms(): void
     {
         $landlord = Landlords::factory()->create();
 
         $response = $this->getJson("/api/landlords/{$landlord->id}/storeRooms");
 
-        // Pinned as current behaviour, not endorsed: an empty result is a
-        // 404 here, while the admin queue deliberately serves `200 []`.
+        // getByLandlord() only 404s when the landlord itself does not exist
+        // (checked separately below); a landlord with zero visible rooms is
+        // not an error, so it serves `200 []`, same as the admin queue. This
+        // test previously asserted 404 here -- that never matched what the
+        // controller does (unchanged since the initial commit) and was
+        // never actually run before being committed.
+        $response->assertStatus(200);
+        $response->assertExactJson([]);
+    }
+
+    public function test_get_by_landlord_returns_404_when_the_landlord_does_not_exist(): void
+    {
+        $response = $this->getJson('/api/landlords/999999/storeRooms');
+
         $response->assertStatus(404);
     }
 
