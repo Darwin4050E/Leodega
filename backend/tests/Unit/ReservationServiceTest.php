@@ -223,6 +223,86 @@ class ReservationServiceTest extends TestCase
         $this->service()->confirm($pending, $tenant->user_id);
     }
 
+    /**
+     * sdd/payment-integrity (Slice C1): confirm() must reject a
+     * confirmed -> confirmed self-transition. This guard is pure
+     * defense-in-depth -- confirm() has exactly ONE production caller
+     * (PaymentService::process()'s paid branch), which already filters
+     * out non-pending reservations before ever calling confirm(). It
+     * never fires on the live path today; it protects any future caller.
+     */
+    public function test_confirm_rejects_transition_from_confirmed_status()
+    {
+        $tenant = Tenants::factory()->create();
+        $room = StoreRooms::factory()->create();
+
+        $reservation = Reservations::factory()->create([
+            'store_room_id' => $room->id,
+            'tenant_id' => $tenant->id,
+            'status' => 'confirmed',
+        ]);
+        $reservation->load('storeRooms');
+
+        $this->expectException(ReservationConflictException::class);
+
+        $this->service()->confirm($reservation, $tenant->user_id);
+    }
+
+    /**
+     * sdd/payment-integrity (Slice C1): confirm() must reject a
+     * canceled -> confirmed transition. This is the guard that closes
+     * the resurrection bug from discovery #361 -- a canceled (and
+     * possibly refunded) reservation must never be re-confirmed.
+     */
+    public function test_confirm_rejects_transition_from_canceled_status()
+    {
+        $tenant = Tenants::factory()->create();
+        $room = StoreRooms::factory()->create();
+
+        $reservation = Reservations::factory()->create([
+            'store_room_id' => $room->id,
+            'tenant_id' => $tenant->id,
+            'status' => 'canceled',
+        ]);
+        $reservation->load('storeRooms');
+
+        $this->expectException(ReservationConflictException::class);
+
+        $this->service()->confirm($reservation, $tenant->user_id);
+    }
+
+    /**
+     * Mirrors test_cancel_by_tenant_re_validates_against_the_locked_row_not_the_stale_instance:
+     * confirm() must re-validate against the LOCKED row it re-fetches
+     * inside its own transaction, never trust the $reservation instance
+     * the caller passed in. Simulates a competing status mutation that
+     * landed between the caller's read and this call by mutating the DB
+     * row directly while the in-memory $reservation still reflects the
+     * pre-mutation, eligible ("pending") state.
+     */
+    public function test_confirm_re_validates_against_the_locked_row_not_the_stale_instance()
+    {
+        $tenant = Tenants::factory()->create();
+        $room = StoreRooms::factory()->create();
+
+        $reservation = Reservations::factory()->create([
+            'store_room_id' => $room->id,
+            'tenant_id' => $tenant->id,
+            'status' => 'pending',
+        ]);
+        $reservation->load('storeRooms');
+
+        // A concurrent operation wins the race and cancels the row first.
+        Reservations::where('id', $reservation->id)->update(['status' => 'canceled']);
+
+        try {
+            $this->service()->confirm($reservation, $tenant->user_id);
+            $this->fail('Expected ReservationConflictException');
+        } catch (ReservationConflictException $e) {
+            $this->assertDatabaseCount('notifications', 0);
+        }
+    }
+
     public function test_cancel_by_landlord_creates_obligation_and_notifies_tenant_leaving_payment_untouched()
     {
         $tenantUser = User::factory()->create();
