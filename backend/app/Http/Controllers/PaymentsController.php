@@ -49,13 +49,13 @@ class PaymentsController extends ApiController
 
         Gate::authorize('create', [Payments::class, $reservation]);
 
-        $payment = $paymentService->process($reservation, $validated, auth()->id());
+        $result = $paymentService->process($reservation, $validated, auth()->id());
 
         return response()->json([
-            'item' => $payment,
+            'item' => $result['payment'],
             'message' => 'Item created successfully',
-            'status' => 201,
-        ], 201);
+            'status' => $result['status'],
+        ], $result['status']);
     }
 
     public function update(Request $request, $id)

@@ -2,6 +2,7 @@
 
 namespace Tests\Feature;
 
+use App\Models\Notifications;
 use App\Models\Payments;
 use App\Models\Reservations;
 use App\Models\StoreRooms;
@@ -238,6 +239,244 @@ class PaymentsTest extends TestCase
             'reservation_id' => $reservation->id,
             'payment_state' => 'paid',
         ]);
+    }
+
+    // -- sdd/payment-integrity (Slice C1): resurrection guard + idempotent no-op --
+
+    /**
+     * Discovery #361, resurrection via cancelByTenant() origin: cancels a
+     * confirmed reservation via cancelByTenant() (recording refund_amount
+     * directly on the reservation row), then attempts to re-pay it. Must be
+     * rejected with 409 and leave refund_amount untouched -- distinct
+     * persistence location from the cancelByLandlord() test below.
+     */
+    public function test_payment_on_canceled_reservation_via_cancel_by_tenant_returns_409()
+    {
+        [$reservation, $tenantUser] = $this->reservationWithOwner([
+            'status' => 'confirmed',
+            'start_date' => now()->addDays(10)->toDateString(),
+            'end_date' => now()->addDays(20)->toDateString(),
+            'total_mount' => 100,
+            'rent_subtotal' => 80,
+            'cancellation_policy_tier' => 'flexible',
+        ]);
+
+        app(\App\Services\ReservationService::class)->cancelByTenant($reservation, null, $tenantUser->id);
+        $reservation->refresh();
+        $refundBeforeRepay = $reservation->refund_amount;
+
+        $response = $this->actingAs($tenantUser, 'sanctum')->postJson('/api/payments', [
+            'reservation_id' => $reservation->id,
+            'payment_method' => 'credit card',
+            'payment_state' => 'paid',
+        ]);
+
+        $response->assertStatus(409);
+        $this->assertDatabaseHas('reservations', [
+            'id' => $reservation->id,
+            'status' => 'canceled',
+            'refund_amount' => $refundBeforeRepay,
+        ]);
+    }
+
+    /**
+     * Discovery #361, resurrection via cancelByLandlord() origin: cancels a
+     * confirmed reservation via cancelByLandlord() (recording a SEPARATE
+     * ReservationCancellationObligation row, not refund_amount on the
+     * reservation), then attempts to re-pay it. Must be rejected with 409
+     * and leave the obligation row unchanged -- a different table than the
+     * cancelByTenant() test above, both origins must be proven independently.
+     */
+    public function test_payment_on_canceled_reservation_via_cancel_by_landlord_returns_409()
+    {
+        [$reservation, $tenantUser] = $this->reservationWithOwner([
+            'status' => 'confirmed',
+            'start_date' => now()->addDays(5)->toDateString(),
+            'end_date' => now()->addDays(35)->toDateString(),
+            'rent_subtotal' => 3000,
+            'total_mount' => 4000,
+        ]);
+        $landlordUser = User::factory()->create(['role' => 'landlord']);
+
+        app(\App\Services\ReservationService::class)->cancelByLandlord($reservation, 'Motivo de prueba', $landlordUser->id);
+        $obligationBeforeRepay = \App\Models\ReservationCancellationObligation::where('reservation_id', $reservation->id)->firstOrFail();
+
+        $response = $this->actingAs($tenantUser, 'sanctum')->postJson('/api/payments', [
+            'reservation_id' => $reservation->id,
+            'payment_method' => 'credit card',
+            'payment_state' => 'paid',
+        ]);
+
+        $response->assertStatus(409);
+        $this->assertDatabaseHas('reservations', ['id' => $reservation->id, 'status' => 'canceled']);
+        $this->assertDatabaseCount('reservation_cancellation_obligations', 1);
+        $this->assertDatabaseHas('reservation_cancellation_obligations', [
+            'id' => $obligationBeforeRepay->id,
+            'reservation_id' => $reservation->id,
+            'refund_amount' => $obligationBeforeRepay->refund_amount,
+            'penalty_amount' => $obligationBeforeRepay->penalty_amount,
+        ]);
+    }
+
+    /**
+     * Decision #363: confirmed -> confirmed is a provably side-effect-free
+     * idempotent no-op, not a 409. A 200 alone is explicitly NOT sufficient
+     * evidence -- this test arms Notification::fake() across BOTH requests
+     * and asserts the payments row count is unchanged and the receipt mail
+     * was dispatched exactly ONCE total across both calls.
+     */
+    public function test_second_payment_on_confirmed_reservation_is_a_provable_noop()
+    {
+        Notification::fake();
+
+        [$reservation, $tenantUser] = $this->reservationWithOwner(['status' => 'pending']);
+
+        $first = $this->actingAs($tenantUser, 'sanctum')->postJson('/api/payments', [
+            'reservation_id' => $reservation->id,
+            'payment_method' => 'credit card',
+            'payment_state' => 'paid',
+        ]);
+        $first->assertStatus(201);
+
+        $paymentsAfterFirst = Payments::where('reservation_id', $reservation->id)->count();
+        $notificationsAfterFirst = Notifications::where('receiver_id', $tenantUser->id)->count();
+
+        $second = $this->actingAs($tenantUser, 'sanctum')->postJson('/api/payments', [
+            'reservation_id' => $reservation->id,
+            'payment_method' => 'credit card',
+            'payment_state' => 'paid',
+        ]);
+
+        $second->assertSuccessful();
+        $this->assertSame(
+            $paymentsAfterFirst,
+            Payments::where('reservation_id', $reservation->id)->count(),
+            'The no-op branch must not create a second Payments row.'
+        );
+        Notification::assertSentTo($tenantUser, ReservationReceiptNotification::class, 1);
+        $this->assertSame(
+            $notificationsAfterFirst,
+            Notifications::where('receiver_id', $tenantUser->id)->count(),
+            'The no-op branch must not create a second in-app Notifications row.'
+        );
+    }
+
+    /**
+     * Spec requirement "duplicate payment attempts on a pending reservation
+     * are serialized": process() must re-read and re-validate the
+     * reservation's status inside the locked transaction, not rely on the
+     * in-memory, unlocked $reservation->status. Proves what CAN be proven in
+     * a single-process PHPUnit suite (locked re-read), not a real
+     * multi-connection race.
+     */
+    public function test_process_re_reads_locked_reservation_status_not_the_stale_instance()
+    {
+        [$reservation, $tenantUser] = $this->reservationWithOwner(['status' => 'pending']);
+
+        // A concurrent operation wins the race and confirms the row first,
+        // bypassing the in-memory $reservation instance.
+        Reservations::where('id', $reservation->id)->update(['status' => 'confirmed']);
+
+        $paymentsBefore = Payments::where('reservation_id', $reservation->id)->count();
+
+        $response = $this->actingAs($tenantUser, 'sanctum')->postJson('/api/payments', [
+            'reservation_id' => $reservation->id,
+            'payment_method' => 'credit card',
+            'payment_state' => 'paid',
+        ]);
+
+        // The locked re-read observes 'confirmed', not the stale 'pending'
+        // instance -- so this must follow the no-op path, not create a
+        // second Payments row.
+        $response->assertSuccessful();
+        $this->assertSame(
+            $paymentsBefore,
+            Payments::where('reservation_id', $reservation->id)->count(),
+            'The locked re-read must see the real (confirmed) status, not the stale pending instance.'
+        );
+    }
+
+    /**
+     * Sequential double-submit against a pending reservation (two full HTTP
+     * POSTs, no real concurrency): the first confirms; the second must
+     * follow the confirmed -> confirmed no-op path, not duplicate the write.
+     */
+    public function test_sequential_double_submit_on_pending_reservation_confirms_once()
+    {
+        Notification::fake();
+
+        [$reservation, $tenantUser] = $this->reservationWithOwner(['status' => 'pending']);
+
+        $first = $this->actingAs($tenantUser, 'sanctum')->postJson('/api/payments', [
+            'reservation_id' => $reservation->id,
+            'payment_method' => 'credit card',
+            'payment_state' => 'paid',
+        ]);
+        $first->assertStatus(201);
+
+        $second = $this->actingAs($tenantUser, 'sanctum')->postJson('/api/payments', [
+            'reservation_id' => $reservation->id,
+            'payment_method' => 'credit card',
+            'payment_state' => 'paid',
+        ]);
+        $second->assertSuccessful();
+
+        $this->assertSame(1, Payments::where('reservation_id', $reservation->id)->count());
+        $this->assertDatabaseHas('reservations', ['id' => $reservation->id, 'status' => 'confirmed']);
+        Notification::assertSentTo($tenantUser, ReservationReceiptNotification::class, 1);
+    }
+
+    /**
+     * Proves the change does not over-restrict legitimate multi-row payment
+     * history: Reservations::payments() stays an unconstrained hasMany. A
+     * retry after a genuinely FAILED payment attempt (reservation stays
+     * pending) must still create a new Payments row and confirm on the
+     * paid retry.
+     */
+    public function test_retry_after_failed_payment_still_creates_a_new_row()
+    {
+        [$reservation, $tenantUser] = $this->reservationWithOwner(['status' => 'pending']);
+
+        $failed = $this->actingAs($tenantUser, 'sanctum')->postJson('/api/payments', [
+            'reservation_id' => $reservation->id,
+            'payment_method' => 'credit card',
+            'payment_state' => 'failed',
+        ]);
+        $failed->assertStatus(201);
+        $this->assertDatabaseHas('reservations', ['id' => $reservation->id, 'status' => 'pending']);
+
+        $retry = $this->actingAs($tenantUser, 'sanctum')->postJson('/api/payments', [
+            'reservation_id' => $reservation->id,
+            'payment_method' => 'credit card',
+            'payment_state' => 'paid',
+        ]);
+
+        $retry->assertStatus(201);
+        $this->assertSame(2, Payments::where('reservation_id', $reservation->id)->count());
+        $this->assertDatabaseHas('reservations', ['id' => $reservation->id, 'status' => 'confirmed']);
+    }
+
+    /**
+     * Spec requirement "ownership enforcement is unaffected by the new
+     * guard": PaymentsPolicy::create() (ownership check) must run BEFORE
+     * the status-transition branch on every path -- no 409/200 leaking
+     * through for a non-owner on any reservation status.
+     */
+    public function test_payment_on_non_owner_reservation_returns_403_regardless_of_status()
+    {
+        foreach (['pending', 'confirmed', 'canceled'] as $status) {
+            [$reservation] = $this->reservationWithOwner(['status' => $status]);
+            $stranger = User::factory()->create(['role' => 'tenant']);
+
+            $response = $this->actingAs($stranger, 'sanctum')->postJson('/api/payments', [
+                'reservation_id' => $reservation->id,
+                'payment_method' => 'credit card',
+                'payment_state' => 'paid',
+            ]);
+
+            $response->assertStatus(403);
+            $this->assertDatabaseMissing('payments', ['reservation_id' => $reservation->id]);
+        }
     }
 
     public function test_destroy_requires_authentication()

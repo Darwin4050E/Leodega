@@ -89,19 +89,40 @@ class ReservationService
      * así que ese aspecto queda como brecha de test aceptada y documentada,
      * no una omisión.
      *
-     * @throws ReservationConflictException si ya hay OTRA reserva confirmada
-     *                                      que se solapa con estas fechas.
+     * sdd/payment-integrity (Slice C1, discovery #361): confirm() re-fetches
+     * its OWN row with lockForUpdate() and re-validates that the LOCKED row's
+     * status is 'pending' before writing status = 'confirmed', never trusting
+     * the $reservation instance the caller passed in. Before this change,
+     * confirm() had no guard on its own current status: a canceled (and
+     * possibly refunded) reservation could be re-paid and resurrected. This
+     * guard is pure defense-in-depth today -- confirm() has exactly ONE
+     * production caller (PaymentService::process()'s paid branch), which
+     * already filters out non-pending reservations via its own locked
+     * three-way branch before ever calling confirm(). It does not fire on
+     * the live path today; it protects any future caller.
+     *
+     * @throws ReservationConflictException si la fila bloqueada ya no está
+     *                                      en estado 'pending' (ya
+     *                                      confirmada o cancelada), o si ya
+     *                                      hay OTRA reserva confirmada que
+     *                                      se solapa con estas fechas.
      */
     public function confirm(Reservations $reservation, ?int $actingUserId): Reservations
     {
         return DB::transaction(function () use ($reservation, $actingUserId) {
-            StoreRooms::where('id', $reservation->store_room_id)->lockForUpdate()->first();
+            $locked = Reservations::where('id', $reservation->id)->lockForUpdate()->firstOrFail();
 
-            $hasConfirmedConflict = Reservations::where('store_room_id', $reservation->store_room_id)
+            if ($locked->status !== 'pending') {
+                throw new ReservationConflictException('Esta reserva ya no está pendiente de confirmación.');
+            }
+
+            StoreRooms::where('id', $locked->store_room_id)->lockForUpdate()->first();
+
+            $hasConfirmedConflict = Reservations::where('store_room_id', $locked->store_room_id)
                 ->where('status', 'confirmed')
-                ->where('id', '!=', $reservation->id)
-                ->whereDate('start_date', '<=', $reservation->end_date)
-                ->whereDate('end_date', '>=', $reservation->start_date)
+                ->where('id', '!=', $locked->id)
+                ->whereDate('start_date', '<=', $locked->end_date)
+                ->whereDate('end_date', '>=', $locked->start_date)
                 ->lockForUpdate()
                 ->exists();
 
@@ -109,25 +130,25 @@ class ReservationService
                 throw new ReservationConflictException('Ya existe una reserva confirmada en esas fechas.');
             }
 
-            $reservation->update([
+            $locked->update([
                 'status' => 'confirmed',
                 'cancelation_reason' => null,
             ]);
 
             NotificationService::send(
                 $actingUserId,
-                $reservation->tenants->user->id,
+                $locked->tenants->user->id,
                 NotificationType::RESERVATION_CONFIRMED,
                 'Reserva confirmada',
                 'Tu reserva ha sido confirmada',
                 [
-                    'reservation_id' => $reservation->id,
-                    'store_room_id' => $reservation->store_room_id,
+                    'reservation_id' => $locked->id,
+                    'store_room_id' => $locked->store_room_id,
                 ]
             );
 
-            $reservation->load('storeRooms.landlord.user');
-            $room = $reservation->storeRooms;
+            $locked->load('storeRooms.landlord.user');
+            $room = $locked->storeRooms;
             if ($room && $room->landlord && $room->landlord->user) {
                 NotificationService::send(
                     $actingUserId,
@@ -136,23 +157,23 @@ class ReservationService
                     'Bodega reservada y pagada',
                     'Tu bodega fue reservada y el pago quedó confirmado',
                     [
-                        'reservation_id' => $reservation->id,
-                        'store_room_id' => $reservation->store_room_id,
+                        'reservation_id' => $locked->id,
+                        'store_room_id' => $locked->store_room_id,
                     ]
                 );
             }
 
-            Reservations::where('store_room_id', $reservation->store_room_id)
+            Reservations::where('store_room_id', $locked->store_room_id)
                 ->where('status', 'pending')
-                ->where('id', '!=', $reservation->id)
-                ->whereDate('start_date', '<=', $reservation->end_date)
-                ->whereDate('end_date', '>=', $reservation->start_date)
+                ->where('id', '!=', $locked->id)
+                ->whereDate('start_date', '<=', $locked->end_date)
+                ->whereDate('end_date', '>=', $locked->start_date)
                 ->update([
                     'status' => 'canceled',
                     'cancelation_reason' => 'Blocked by confirmed reservation',
                 ]);
 
-            return $reservation->load(['storeRooms', 'tenants.user']);
+            return $locked->load(['storeRooms', 'tenants.user']);
         });
     }
 
