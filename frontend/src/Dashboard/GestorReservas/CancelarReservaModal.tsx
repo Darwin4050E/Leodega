@@ -31,7 +31,9 @@ const CancelarReservaModal = ({
   const [rateError, setRateError] = useState(false);
 
   const [reason, setReason] = useState("");
+  const [reasonTouched, setReasonTouched] = useState(false);
   const [accepted, setAccepted] = useState(false);
+  const [acceptedTouched, setAcceptedTouched] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [serverError, setServerError] = useState<string>("");
 
@@ -62,9 +64,18 @@ const CancelarReservaModal = ({
   const total = penalty !== null ? penalty + refund : null;
 
   const reasonValid = reason.trim().length >= 10;
-  const canConfirm = accepted && reasonValid && rate !== null && !rateLoading && !submitting;
+  // Whether the button can even attempt a request at all -- independent of
+  // reason/accepted, which are validated on click instead so an invalid
+  // attempt highlights the reason field and/or the acceptance checkbox
+  // (HUG-06 escenario 3) rather than silently doing nothing behind a
+  // disabled button.
+  const submissionReady = rate !== null && !rateLoading && !submitting;
+  const canConfirm = accepted && reasonValid && submissionReady;
 
   const handleConfirm = async () => {
+    setReasonTouched(true);
+    setAcceptedTouched(true);
+
     if (!canConfirm) return;
 
     setSubmitting(true);
@@ -174,10 +185,22 @@ const CancelarReservaModal = ({
             value={reason}
             onChange={(e) => setReason(e.target.value)}
             placeholder="Explica al cliente por qué cancelas (mín. 10 caracteres)…"
-            className="w-full min-h-[70px] px-3 py-2.5 border border-gray-300 rounded-lg text-sm outline-none resize-y"
+            aria-invalid={reasonTouched && !reasonValid}
+            className={`w-full min-h-[70px] px-3 py-2.5 border rounded-lg text-sm outline-none resize-y ${
+              reasonTouched && !reasonValid
+                ? "border-red-500 focus:border-red-500"
+                : "border-gray-300"
+            }`}
           />
-          <p className="text-[11px] text-gray-400 mt-1.5">
-            Se enviará al cliente y quedará registrado para auditoría.
+          <p
+            role={reasonTouched && !reasonValid ? "alert" : undefined}
+            className={`text-[11px] mt-1.5 ${
+              reasonTouched && !reasonValid ? "text-red-600" : "text-gray-400"
+            }`}
+          >
+            {reasonTouched && !reasonValid
+              ? "El motivo es obligatorio (mínimo 10 caracteres)."
+              : "Se enviará al cliente y quedará registrado para auditoría."}
           </p>
         </div>
 
@@ -190,21 +213,33 @@ const CancelarReservaModal = ({
         )}
 
         <div className="mt-4 px-6 pt-4 pb-5 border-t border-gray-100 bg-[#FAFAFB]">
-          <label className="flex gap-2.5 items-start mb-4 cursor-pointer">
-            <input
-              type="checkbox"
-              checked={accepted}
-              onChange={(e) => setAccepted(e.target.checked)}
-              className="w-[17px] h-[17px] mt-0.5 accent-red-600 cursor-pointer flex-shrink-0"
-            />
-            <span className="text-xs text-gray-700 leading-relaxed">
-              Entiendo que se aplicará una penalización
-              {penalty !== null ? ` de ${formatUSD(penalty, { suffix: true })}` : ""} y que Leodega
-              me reclamará
-              {penalty !== null ? ` los ${formatUSD(refund, { suffix: true })}` : ""} que el
-              cliente ya pagó.
-            </span>
-          </label>
+          <div className="mb-4">
+            <label
+              className={`flex gap-2.5 items-start cursor-pointer rounded-lg p-1.5 -m-1.5 ${
+                acceptedTouched && !accepted ? "ring-1 ring-red-500" : ""
+              }`}
+            >
+              <input
+                type="checkbox"
+                checked={accepted}
+                onChange={(e) => setAccepted(e.target.checked)}
+                aria-invalid={acceptedTouched && !accepted}
+                className="w-[17px] h-[17px] mt-0.5 accent-red-600 cursor-pointer flex-shrink-0"
+              />
+              <span className="text-xs text-gray-700 leading-relaxed">
+                Entiendo que se aplicará una penalización
+                {penalty !== null ? ` de ${formatUSD(penalty, { suffix: true })}` : ""} y que Leodega
+                me reclamará
+                {penalty !== null ? ` los ${formatUSD(refund, { suffix: true })}` : ""} que el
+                cliente ya pagó.
+              </span>
+            </label>
+            {acceptedTouched && !accepted && (
+              <p className="text-[11px] text-red-600 mt-1.5" role="alert">
+                Marca la casilla para confirmar que entiendes la penalización.
+              </p>
+            )}
+          </div>
 
           <div className="flex gap-2.5">
             <button
@@ -215,12 +250,14 @@ const CancelarReservaModal = ({
             </button>
             <button
               onClick={handleConfirm}
-              disabled={!canConfirm}
+              disabled={!submissionReady}
               title={canConfirm ? "" : "Completa el motivo y marca la casilla de confirmación"}
               className={`flex-1 px-5 py-3 rounded-lg text-sm font-semibold ${
                 canConfirm
                   ? "bg-[#DC2626] text-white hover:bg-red-700"
-                  : "bg-gray-100 text-gray-400 cursor-not-allowed"
+                  : submissionReady
+                    ? "bg-[#DC2626]/60 text-white hover:bg-[#DC2626]/70"
+                    : "bg-gray-100 text-gray-400 cursor-not-allowed"
               }`}
             >
               {submitting ? "Cancelando..." : "Confirmar cancelación"}
