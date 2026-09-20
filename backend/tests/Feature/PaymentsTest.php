@@ -2,6 +2,7 @@
 
 namespace Tests\Feature;
 
+use App\Models\Notifications;
 use App\Models\Payments;
 use App\Models\Reservations;
 use App\Models\StoreRooms;
@@ -338,6 +339,7 @@ class PaymentsTest extends TestCase
         $first->assertStatus(201);
 
         $paymentsAfterFirst = Payments::where('reservation_id', $reservation->id)->count();
+        $notificationsAfterFirst = Notifications::where('receiver_id', $tenantUser->id)->count();
 
         $second = $this->actingAs($tenantUser, 'sanctum')->postJson('/api/payments', [
             'reservation_id' => $reservation->id,
@@ -352,6 +354,11 @@ class PaymentsTest extends TestCase
             'The no-op branch must not create a second Payments row.'
         );
         Notification::assertSentTo($tenantUser, ReservationReceiptNotification::class, 1);
+        $this->assertSame(
+            $notificationsAfterFirst,
+            Notifications::where('receiver_id', $tenantUser->id)->count(),
+            'The no-op branch must not create a second in-app Notifications row.'
+        );
     }
 
     /**
