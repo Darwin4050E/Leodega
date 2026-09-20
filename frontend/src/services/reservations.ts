@@ -17,6 +17,16 @@ export interface LandlordReservation {
    * and the endpoint will disagree across a timezone boundary.
    */
   can_be_cancelled: boolean;
+  /**
+   * HUG-05 escenario 3 (comprobante de pago): the most recent 'paid'
+   * Payments row for this reservation, from landlordIndex(). All three are
+   * null together for a reservation that was never actually paid --
+   * `payment_id` is the field to check for "does a receipt exist", not
+   * `payment_status`, since REEMBOLSADO is also `payment_status: 'paid'`.
+   */
+  payment_id: number | null;
+  payment_method: "credit card" | "debit card" | null;
+  payment_date: string | null;
   // Laravel serializes the `storeRooms()` relation snake_cased.
   store_rooms?: {
     id?: number;

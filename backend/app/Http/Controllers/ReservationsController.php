@@ -41,6 +41,7 @@ class ReservationsController extends Controller
             'storeRooms:id,title,direction,city,size,room_type,landlord_id',
             'tenants.user:id,name,lastname,email,phone',
             'cancellationObligation',
+            'payments',
         ])
             ->whereHas('storeRooms', fn ($q) => $q->where('landlord_id', $landlord->id))
             ->orderByDesc('created_at')
@@ -70,7 +71,22 @@ class ReservationsController extends Controller
              */
             $item->can_be_cancelled = $item->isCancellableByLandlord();
 
-            $item->makeHidden('cancellationObligation');
+            /**
+             * HUG-05 escenario 3 (comprobante de pago): the most recent
+             * 'paid' Payments row for this reservation, if any. Sorted by
+             * id (insertion order) rather than payment_date, which is
+             * client-suppliable and not guaranteed monotonic. Null for a
+             * reservation that was never actually paid (pending, or
+             * auto-blocked before payment) -- the frontend uses payment_id
+             * being non-null, not payment_status, to decide whether a
+             * receipt exists.
+             */
+            $latestPaidPayment = $item->payments->sortByDesc('id')->firstWhere('payment_state', 'paid');
+            $item->payment_id = $latestPaidPayment->id ?? null;
+            $item->payment_method = $latestPaidPayment->payment_method ?? null;
+            $item->payment_date = $latestPaidPayment->payment_date ?? null;
+
+            $item->makeHidden(['cancellationObligation', 'payments']);
         });
 
         return response()->json($items);

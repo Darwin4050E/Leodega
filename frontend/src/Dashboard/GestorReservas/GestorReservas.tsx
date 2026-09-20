@@ -10,6 +10,7 @@ import {
   type PagoEstado,
 } from "../../utils/reservationEligibility";
 import CancelarReservaModal from "./CancelarReservaModal";
+import ComprobantePagoModal from "./ComprobantePagoModal";
 
 const VIGENCIA_LABEL: Record<string, { label: string; color: string }> = {
   activa: { label: "Activa", color: "#16A34A" },
@@ -76,6 +77,7 @@ const GestorReservas = () => {
 
   const [selectedId, setSelectedId] = useState<number | null>(null);
   const [cancelingId, setCancelingId] = useState<number | null>(null);
+  const [comprobanteId, setComprobanteId] = useState<number | null>(null);
 
   useEffect(() => {
     getLandlordReservations()
@@ -211,9 +213,14 @@ const GestorReservas = () => {
             <button className="flex items-center gap-1.5 px-4 py-2.5 bg-[#7551E9] text-white rounded-lg text-sm font-semibold">
               Mensaje al cliente
             </button>
-            <button className="px-4 py-2.5 bg-gray-100 text-gray-700 rounded-lg text-sm font-semibold">
-              Descargar comprobante
-            </button>
+            {selected.payment_id !== null && (
+              <button
+                onClick={() => setComprobanteId(selected.id)}
+                className="px-4 py-2.5 bg-gray-100 text-gray-700 rounded-lg text-sm font-semibold"
+              >
+                Descargar comprobante
+              </button>
+            )}
             {cancellable && (
               <button
                 onClick={() => setCancelingId(selected.id)}
@@ -224,6 +231,16 @@ const GestorReservas = () => {
             )}
           </div>
         </div>
+
+        {comprobanteId === selected.id && (
+          <ComprobantePagoModal
+            reservation={selected}
+            clienteNombre={nombre}
+            clienteEmail={selected.tenants?.user?.email ?? ""}
+            bodegaTitulo={bodega}
+            onClose={() => setComprobanteId(null)}
+          />
+        )}
 
         {cancelingId === selected.id && (
           <CancelarReservaModal
