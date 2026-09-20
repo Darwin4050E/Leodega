@@ -4,12 +4,14 @@ namespace App\Services;
 
 use App\Enums\NotificationType;
 use App\Exceptions\ReservationConflictException;
-use App\Models\Reservations;
 use App\Models\ReservationCancellationObligation;
+use App\Models\Reservations;
 use App\Models\StoreRooms;
 use App\Models\Tenants;
+use App\Notifications\ReservationCancellationNotification;
 use App\Support\CancellationRefundCalculator;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Log;
 
 class ReservationService
 {
@@ -25,7 +27,7 @@ class ReservationService
      * @throws ReservationConflictException si ya hay una reserva confirmada
      *                                      que se solapa con el rango solicitado.
      * @throws \App\Exceptions\ReservationPricingException si la bodega no
-     *                                                      tiene un precio mensual disponible.
+     *                                                     tiene un precio mensual disponible.
      */
     public function create(Tenants $tenant, StoreRooms $room, array $data, ?int $actingUserId): Reservations
     {
@@ -192,6 +194,13 @@ class ReservationService
      * a esta migración no tienen snapshot de renta y no pueden liquidarse
      * correctamente).
      *
+     * El correo al cliente (ReservationCancellationNotification) se despacha
+     * DESPUÉS de que DB::transaction() retorna, nunca adentro -- mismo
+     * criterio que PaymentService::process() con ReservationReceiptNotification:
+     * para el momento en que se envía, la cancelación y la obligación ya
+     * quedaron confirmadas en la base, así que una falla de SMTP no puede
+     * revertir nada, solo se registra en el log.
+     *
      * @throws ReservationConflictException si la reserva no es elegible.
      */
     public function cancelByLandlord(Reservations $reservation, string $reason, ?int $actingUserId): Reservations
@@ -202,7 +211,7 @@ class ReservationService
             );
         }
 
-        return DB::transaction(function () use ($reservation, $reason, $actingUserId) {
+        $reservation = DB::transaction(function () use ($reservation, $reason, $actingUserId) {
             $reservation->load('storeRooms');
             $landlordId = $reservation->storeRooms->landlord_id;
 
@@ -240,6 +249,17 @@ class ReservationService
 
             return $reservation->load(['storeRooms', 'tenants.user']);
         });
+
+        try {
+            $reservation->tenants->user->notify(new ReservationCancellationNotification($reservation));
+        } catch (\Throwable $e) {
+            Log::error('Failed to send reservation cancellation email', [
+                'reservation_id' => $reservation->id,
+                'error' => $e->getMessage(),
+            ]);
+        }
+
+        return $reservation;
     }
 
     /**
@@ -259,8 +279,8 @@ class ReservationService
      * reservation's `total_mount`.
      *
      * @throws ReservationConflictException if the locked row is no longer
-     *                                       cancellable (already canceled,
-     *                                       started, or start date reached).
+     *                                      cancellable (already canceled,
+     *                                      started, or start date reached).
      */
     public function cancelByTenant(Reservations $reservation, ?string $reason, ?int $actingUserId): Reservations
     {

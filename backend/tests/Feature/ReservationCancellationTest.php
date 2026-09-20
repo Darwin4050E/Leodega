@@ -5,9 +5,10 @@ namespace Tests\Feature;
 use App\Models\Landlords;
 use App\Models\Reservations;
 use App\Models\StoreRooms;
-use App\Models\Tenants;
 use App\Models\User;
+use App\Notifications\ReservationCancellationNotification;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\Notification;
 use Tests\TestCase;
 
 class ReservationCancellationTest extends TestCase
@@ -30,9 +31,12 @@ class ReservationCancellationTest extends TestCase
 
     public function test_owning_landlord_can_cancel_an_eligible_reservation()
     {
+        Notification::fake();
+
         $landlordUser = User::factory()->create(['role' => 'landlord']);
         $landlord = Landlords::factory()->create(['user_id' => $landlordUser->id]);
         $reservation = $this->eligibleReservation($landlord);
+        $tenantUser = $reservation->tenants->user;
 
         $response = $this->actingAs($landlordUser, 'sanctum')
             ->patchJson("/api/landlord/reservations/{$reservation->id}/cancel", [
@@ -53,6 +57,7 @@ class ReservationCancellationTest extends TestCase
         $this->assertDatabaseHas('notifications', [
             'type' => 'reservation_canceled',
         ]);
+        Notification::assertSentTo($tenantUser, ReservationCancellationNotification::class);
     }
 
     public function test_cannot_cancel_a_reservation_starting_today()
