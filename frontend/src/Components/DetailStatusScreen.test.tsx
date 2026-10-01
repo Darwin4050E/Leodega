@@ -21,6 +21,19 @@ describe('DetailStatusScreen', () => {
     ).toBeInTheDocument();
   });
 
+  it('labels the not-found back button "← Volver al catálogo" (HUC-02 S3)', () => {
+    render(<DetailStatusScreen variant="not-found" onBack={vi.fn()} />);
+
+    expect(screen.getByRole('button', { name: '← Volver al catálogo' })).toBeInTheDocument();
+  });
+
+  it('keeps the generic "← Volver" label for the error variant', () => {
+    render(<DetailStatusScreen variant="error" onBack={vi.fn()} />);
+
+    expect(screen.getByRole('button', { name: '← Volver' })).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: '← Volver al catálogo' })).not.toBeInTheDocument();
+  });
+
   it('renders a loading indicator for the loading variant', () => {
     render(<DetailStatusScreen variant="loading" onBack={vi.fn()} />);
 

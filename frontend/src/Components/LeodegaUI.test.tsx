@@ -13,6 +13,7 @@ const mockNavigate = vi.hoisted(() => vi.fn());
 vi.mock('react-router-dom', () => ({
   useParams: () => ({ id: '7' }),
   useNavigate: () => mockNavigate,
+  useLocation: () => ({ pathname: '/leodega/7' }),
 }));
 
 vi.mock('react-leaflet', () => ({
@@ -43,6 +44,7 @@ vi.mock('../context/useAuth', () => ({
 }));
 
 import LeodegaUI from './LeodegaUI';
+import { RESERVATION_OVERLAP_MESSAGE } from '../utils/reservationFlow';
 
 const storeRoomDetail = {
   title: 'Bodega Norte',
@@ -81,8 +83,7 @@ describe('LeodegaUI checkout step flow (replaces the dead-end alert())', () => {
     fireEvent.change(dateInputs[0], { target: { value: '2030-01-10' } });
     fireEvent.change(dateInputs[1], { target: { value: '2030-02-10' } });
 
-    const submitButtons = screen.getAllByRole('button', { name: 'Enviar solicitud' });
-    fireEvent.click(submitButtons[submitButtons.length - 1]);
+    fireEvent.click(screen.getByRole('button', { name: 'Confirmar reserva' }));
   }
 
   beforeEach(() => {
@@ -111,8 +112,7 @@ describe('LeodegaUI checkout step flow (replaces the dead-end alert())', () => {
     fireEvent.change(dateInputs[0], { target: { value: '2030-01-10' } });
     fireEvent.change(dateInputs[1], { target: { value: '2030-02-10' } });
 
-    const submitButtons = screen.getAllByRole('button', { name: 'Enviar solicitud' });
-    fireEvent.click(submitButtons[submitButtons.length - 1]);
+    fireEvent.click(screen.getByRole('button', { name: 'Confirmar reserva' }));
 
     await waitFor(() => expect(mockCreateReservation).toHaveBeenCalledTimes(1));
 
@@ -229,7 +229,7 @@ describe('LeodegaUI availability badge', () => {
     expect(screen.getAllByDisplayValue('')).toHaveLength(2);
   });
 
-  it('shows "Ocupada ahora" while keeping the date picker and Reservar button active, AND still renders the populated inline calendar', async () => {
+  it('shows "Actualmente no disponible" while keeping the date picker and Reservar button active, AND still renders the populated inline calendar', async () => {
     mockGetStoreRoomDetail.mockResolvedValue({
       data: { ...storeRoomDetail, is_available_now: false },
     });
@@ -242,7 +242,7 @@ describe('LeodegaUI availability badge', () => {
     render(<LeodegaUI />);
     await waitFor(() => screen.getByText('Bodega Norte'));
 
-    expect(screen.getByText('Ocupada ahora')).toBeInTheDocument();
+    expect(screen.getByText('Actualmente no disponible')).toBeInTheDocument();
 
     const reservarButton = screen.getByRole('button', { name: 'Reservar' });
     expect(reservarButton).not.toBeDisabled();
@@ -254,8 +254,7 @@ describe('LeodegaUI availability badge', () => {
     expect(dateInputs[0]).not.toBeDisabled();
     expect(dateInputs[1]).not.toBeDisabled();
 
-    const submitButtons = screen.getAllByRole('button', { name: 'Enviar solicitud' });
-    expect(submitButtons[submitButtons.length - 1]).not.toBeDisabled();
+    expect(screen.getByRole('button', { name: 'Confirmar reserva' })).not.toBeDisabled();
 
     // Decisive assertion: the inline "Disponibilidad" calendar renders AND is
     // populated from `reservedRanges` regardless of `is_available_now`.
@@ -328,6 +327,7 @@ describe('LeodegaUI availability badge', () => {
     await waitFor(() => screen.getByText('Bodega Norte'));
 
     expect(screen.getByText('Disponible ahora')).toBeInTheDocument();
+    expect(screen.queryByText('Actualmente no disponible')).not.toBeInTheDocument();
     expect(screen.queryByText('Ocupada ahora')).not.toBeInTheDocument();
   });
 
@@ -518,7 +518,7 @@ describe('LeodegaUI price panel visibility (gated on ownership, not role)', () =
     render(<LeodegaUI />);
     await waitFor(() => screen.getByText('Bodega Norte'));
 
-    expect(screen.getByRole('button', { name: 'Enviar solicitud' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Reservar' })).toBeInTheDocument();
     await waitFor(() => expect(screen.getByText('Total')).toBeInTheDocument());
   });
 
@@ -528,7 +528,7 @@ describe('LeodegaUI price panel visibility (gated on ownership, not role)', () =
     render(<LeodegaUI />);
     await waitFor(() => screen.getByText('Bodega Norte'));
 
-    expect(screen.getByRole('button', { name: 'Enviar solicitud' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Reservar' })).toBeInTheDocument();
     await waitFor(() => expect(screen.getByText('Total')).toBeInTheDocument());
   });
 
@@ -538,7 +538,7 @@ describe('LeodegaUI price panel visibility (gated on ownership, not role)', () =
     render(<LeodegaUI />);
     await waitFor(() => screen.getByText('Bodega Norte'));
 
-    expect(screen.queryByRole('button', { name: 'Enviar solicitud' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Reservar' })).not.toBeInTheDocument();
     expect(screen.queryByText('Total')).not.toBeInTheDocument();
     expect(screen.queryByText('Calculando...')).not.toBeInTheDocument();
     expect(mockGetStoreRoomQuote).not.toHaveBeenCalled();
@@ -781,39 +781,356 @@ describe('LeodegaUI not-found and error states', () => {
     ).not.toBeInTheDocument();
   });
 
-  it('sends a landlord back to /arrendador/bodegas from the error state', async () => {
+  it('sends a landlord to the catalog (/storage) from the not-found screen', async () => {
     mockUseAuth.mockReturnValue({ user: { role: 'landlord' } });
     mockGetStoreRoomDetail.mockRejectedValue({ response: { status: 404 } });
 
     render(<LeodegaUI />);
-    await waitFor(() => screen.getByRole('button', { name: /volver/i }));
-
-    fireEvent.click(screen.getByRole('button', { name: /volver/i }));
-
-    expect(mockNavigate).toHaveBeenCalledWith('/arrendador/bodegas');
-  });
-
-  it('sends a tenant back to /storage from the error state', async () => {
-    mockUseAuth.mockReturnValue({ user: { role: 'tenant' } });
-    mockGetStoreRoomDetail.mockRejectedValue({ response: { status: 404 } });
-
-    render(<LeodegaUI />);
-    await waitFor(() => screen.getByRole('button', { name: /volver/i }));
-
-    fireEvent.click(screen.getByRole('button', { name: /volver/i }));
+    fireEvent.click(await screen.findByRole('button', { name: '← Volver al catálogo' }));
 
     expect(mockNavigate).toHaveBeenCalledWith('/storage');
   });
 
-  it('sends an unauthenticated user back to /login from the error state', async () => {
+  it('sends a tenant to the catalog (/storage) from the not-found screen', async () => {
+    mockUseAuth.mockReturnValue({ user: { role: 'tenant' } });
+    mockGetStoreRoomDetail.mockRejectedValue({ response: { status: 404 } });
+
+    render(<LeodegaUI />);
+    fireEvent.click(await screen.findByRole('button', { name: '← Volver al catálogo' }));
+
+    expect(mockNavigate).toHaveBeenCalledWith('/storage');
+  });
+
+  it('sends a visitor to the catalog (/storage), never to /login, from the not-found screen', async () => {
     mockUseAuth.mockReturnValue({ user: null });
     mockGetStoreRoomDetail.mockRejectedValue({ response: { status: 404 } });
 
     render(<LeodegaUI />);
-    await waitFor(() => screen.getByRole('button', { name: /volver/i }));
+    fireEvent.click(await screen.findByRole('button', { name: '← Volver al catálogo' }));
 
-    fireEvent.click(screen.getByRole('button', { name: /volver/i }));
+    expect(mockNavigate).toHaveBeenCalledWith('/storage');
+    expect(mockNavigate).not.toHaveBeenCalledWith('/login');
+  });
 
-    expect(mockNavigate).toHaveBeenCalledWith('/login');
+  it('sends a landlord back to /arrendador/bodegas from the generic error screen', async () => {
+    mockUseAuth.mockReturnValue({ user: { role: 'landlord' } });
+    mockGetStoreRoomDetail.mockRejectedValue({ response: { status: 500 } });
+
+    render(<LeodegaUI />);
+    fireEvent.click(await screen.findByRole('button', { name: '← Volver' }));
+
+    expect(mockNavigate).toHaveBeenCalledWith('/arrendador/bodegas');
+  });
+
+  it('sends a visitor to /storage, never to /login, from the generic error screen', async () => {
+    mockUseAuth.mockReturnValue({ user: null });
+    mockGetStoreRoomDetail.mockRejectedValue({ response: { status: 500 } });
+
+    render(<LeodegaUI />);
+    fireEvent.click(await screen.findByRole('button', { name: '← Volver' }));
+
+    expect(mockNavigate).toHaveBeenCalledWith('/storage');
+    expect(mockNavigate).not.toHaveBeenCalledWith('/login');
+  });
+});
+
+describe('LeodegaUI reserve button for visitors (RB-5)', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mockGetStoreRoomDetail.mockResolvedValue({ data: storeRoomDetail });
+    mockGetReservedDates.mockResolvedValue({ data: [] });
+    mockGetStoreRoomQuote.mockResolvedValue({
+      data: { rent_subtotal: '450.00', service_fee: '27.00', deposit: '0.00', total_mount: '450.00' },
+    });
+  });
+
+  it('sends a visitor to /login with the room path and reserve reason, without opening the modal', async () => {
+    mockUseAuth.mockReturnValue({ user: null });
+
+    render(<LeodegaUI />);
+    await waitFor(() => screen.getByText('Bodega Norte'));
+    fireEvent.click(screen.getByRole('button', { name: 'Reservar' }));
+
+    expect(mockNavigate).toHaveBeenCalledWith('/login', {
+      state: { from: '/leodega/7', reason: 'reserve' },
+    });
+    expect(screen.queryByRole('button', { name: 'Confirmar reserva' })).not.toBeInTheDocument();
+  });
+
+  it('opens the booking modal for a logged-in tenant instead of navigating to /login', async () => {
+    mockUseAuth.mockReturnValue({ user: { id: 9, role: 'tenant' } });
+
+    render(<LeodegaUI />);
+    await waitFor(() => screen.getByText('Bodega Norte'));
+    fireEvent.click(screen.getByRole('button', { name: 'Reservar' }));
+
+    expect(screen.getByRole('button', { name: 'Confirmar reserva' })).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: 'Reservar bodega' })).toBeInTheDocument();
+    expect(mockNavigate).not.toHaveBeenCalled();
+  });
+
+  it('sends the user to /login with the same state when the submit comes back 401', async () => {
+    mockUseAuth.mockReturnValue({ user: { id: 9, role: 'tenant' } });
+    mockCreateReservation.mockRejectedValue({ response: { status: 401 } });
+
+    render(<LeodegaUI />);
+    await waitFor(() => screen.getByText('Bodega Norte'));
+    fireEvent.click(screen.getByRole('button', { name: 'Reservar' }));
+    const dateInputs = screen.getAllByDisplayValue('');
+    fireEvent.change(dateInputs[0], { target: { value: '2030-01-10' } });
+    fireEvent.change(dateInputs[1], { target: { value: '2030-02-10' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Confirmar reserva' }));
+
+    await waitFor(() =>
+      expect(mockNavigate).toHaveBeenCalledWith('/login', {
+        state: { from: '/leodega/7', reason: 'reserve' },
+      })
+    );
+  });
+});
+
+describe('LeodegaUI overlap message and server errors (RB-4)', () => {
+  const occupied = [{ start_date: '2030-03-10', end_date: '2030-03-15' }];
+
+  async function openModalWithDates(start: string, end: string) {
+    render(<LeodegaUI />);
+    await waitFor(() => screen.getByText('Bodega Norte'));
+    await waitFor(() => expect(mockGetReservedDates).toHaveBeenCalled());
+    fireEvent.click(screen.getByRole('button', { name: 'Reservar' }));
+    await waitFor(() => expect(screen.queryByText('Cargando disponibilidad...')).not.toBeInTheDocument());
+
+    const dateInputs = screen.getAllByDisplayValue('');
+    fireEvent.change(dateInputs[0], { target: { value: start } });
+    fireEvent.change(dateInputs[1], { target: { value: end } });
+  }
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mockUseAuth.mockReturnValue({ user: { id: 9, role: 'tenant' } });
+    mockGetStoreRoomDetail.mockResolvedValue({ data: storeRoomDetail });
+    mockGetReservedDates.mockResolvedValue({ data: occupied });
+    mockGetStoreRoomQuote.mockResolvedValue({
+      data: { rent_subtotal: '450.00', service_fee: '27.00', deposit: '0.00', total_mount: '450.00' },
+    });
+  });
+
+  it('shows the ERS overlap message once, in the modal, as soon as the range crosses an occupied period', async () => {
+    await openModalWithDates('2030-03-12', '2030-03-20');
+
+    expect(screen.getAllByText(RESERVATION_OVERLAP_MESSAGE)).toHaveLength(1);
+  });
+
+  it('shows the same ERS message when only the start date falls inside an occupied period', async () => {
+    await openModalWithDates('2030-03-12', '2030-03-12');
+
+    expect(screen.getAllByText(RESERVATION_OVERLAP_MESSAGE)).toHaveLength(1);
+  });
+
+  it('on confirm with an overlapping range, creates nothing and keeps the form open with the ERS message', async () => {
+    await openModalWithDates('2030-03-12', '2030-03-20');
+    fireEvent.click(screen.getByRole('button', { name: 'Confirmar reserva' }));
+
+    expect(mockCreateReservation).not.toHaveBeenCalled();
+    expect(screen.getAllByText(RESERVATION_OVERLAP_MESSAGE)).toHaveLength(1);
+    expect(screen.getByRole('button', { name: 'Confirmar reserva' })).toBeInTheDocument();
+  });
+
+  it('shows no overlap message and submits when the range sits right after the occupied period', async () => {
+    mockCreateReservation.mockResolvedValue({
+      data: { message: 'ok', reservation: { id: 1, start_date: '2030-03-16', end_date: '2030-03-20', total_mount: '10', rent_subtotal: '10' } },
+    });
+
+    await openModalWithDates('2030-03-16', '2030-03-20');
+    expect(screen.queryByText(RESERVATION_OVERLAP_MESSAGE)).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Confirmar reserva' }));
+    await waitFor(() => expect(mockCreateReservation).toHaveBeenCalledTimes(1));
+  });
+
+  it('maps a server 409 to the ERS constant and ignores the server message text', async () => {
+    mockGetReservedDates.mockResolvedValue({ data: [] });
+    mockCreateReservation.mockRejectedValue({
+      response: { status: 409, data: { message: 'La bodega ya está reservada en esas fechas.' } },
+    });
+
+    await openModalWithDates('2030-01-10', '2030-02-10');
+    fireEvent.click(screen.getByRole('button', { name: 'Confirmar reserva' }));
+
+    await waitFor(() => expect(screen.getByText(RESERVATION_OVERLAP_MESSAGE)).toBeInTheDocument());
+    expect(screen.queryByText('La bodega ya está reservada en esas fechas.')).not.toBeInTheDocument();
+  });
+
+  it('shows the past-start copy when the server answers 422 with an error on start_date', async () => {
+    mockGetReservedDates.mockResolvedValue({ data: [] });
+    mockCreateReservation.mockRejectedValue({
+      response: { status: 422, data: { errors: { start_date: ['server copy'] } } },
+    });
+
+    await openModalWithDates('2030-01-10', '2030-02-10');
+    fireEvent.click(screen.getByRole('button', { name: 'Confirmar reserva' }));
+
+    await waitFor(() =>
+      expect(screen.getByText('La fecha de inicio no puede ser anterior a hoy.')).toBeInTheDocument()
+    );
+  });
+
+  it('keeps the generic copy for a 422 that is not about start_date', async () => {
+    mockGetReservedDates.mockResolvedValue({ data: [] });
+    mockCreateReservation.mockRejectedValue({
+      response: { status: 422, data: { errors: { end_date: ['bad'] } } },
+    });
+
+    await openModalWithDates('2030-01-10', '2030-02-10');
+    fireEvent.click(screen.getByRole('button', { name: 'Confirmar reserva' }));
+
+    await waitFor(() => expect(screen.getByText('Revisa las fechas ingresadas.')).toBeInTheDocument());
+    expect(screen.queryByText('La fecha de inicio no puede ser anterior a hoy.')).not.toBeInTheDocument();
+  });
+});
+
+describe('LeodegaUI occupied periods hint in the modal (D6)', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mockUseAuth.mockReturnValue({ user: { id: 9, role: 'tenant' } });
+    mockGetStoreRoomDetail.mockResolvedValue({ data: storeRoomDetail });
+    mockGetStoreRoomQuote.mockResolvedValue({
+      data: { rent_subtotal: '450.00', service_fee: '27.00', deposit: '0.00', total_mount: '450.00' },
+    });
+  });
+
+  async function openModal() {
+    render(<LeodegaUI />);
+    await waitFor(() => screen.getByText('Bodega Norte'));
+    await waitFor(() => expect(mockGetReservedDates).toHaveBeenCalled());
+    fireEvent.click(screen.getByRole('button', { name: 'Reservar' }));
+    await waitFor(() => expect(screen.queryByText('Cargando disponibilidad...')).not.toBeInTheDocument());
+  }
+
+  it('lists the next 3 upcoming occupied periods, soonest first, and skips past ones', async () => {
+    mockGetReservedDates.mockResolvedValue({
+      data: [
+        { start_date: '2030-05-01', end_date: '2030-05-02' },
+        { start_date: '2020-01-01', end_date: '2020-01-05' },
+        { start_date: '2030-03-01', end_date: '2030-03-02' },
+        { start_date: '2030-04-01', end_date: '2030-04-02' },
+        { start_date: '2030-02-01', end_date: '2030-02-02' },
+      ],
+    });
+
+    await openModal();
+
+    expect(screen.getByText('Períodos ocupados')).toBeInTheDocument();
+    const items = screen.getAllByRole('listitem').map((li) => li.textContent);
+    expect(items).toEqual([
+      '2030-02-01 al 2030-02-02',
+      '2030-03-01 al 2030-03-02',
+      '2030-04-01 al 2030-04-02',
+    ]);
+  });
+
+  it('shows no hint when there are no upcoming occupied periods', async () => {
+    mockGetReservedDates.mockResolvedValue({ data: [{ start_date: '2020-01-01', end_date: '2020-01-05' }] });
+
+    await openModal();
+
+    expect(screen.queryByText('Períodos ocupados')).not.toBeInTheDocument();
+  });
+});
+
+describe('LeodegaUI availability label vs calendar (SRD-2)', () => {
+  const todayRange = () => {
+    const iso = new Date().toLocaleDateString('en-CA');
+    return { start_date: iso, end_date: iso };
+  };
+  const todayCell = () => screen.getByRole('button', { name: String(new Date().getDate()) });
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mockUseAuth.mockReturnValue({ user: null });
+    mockGetStoreRoomQuote.mockResolvedValue({
+      data: { rent_subtotal: '450.00', service_fee: '27.00', deposit: '0.00', total_mount: '450.00' },
+    });
+  });
+
+  it('occupied now: shows the label and the future-dates subtext while Reservar stays enabled', async () => {
+    mockGetStoreRoomDetail.mockResolvedValue({ data: { ...storeRoomDetail, is_available_now: false } });
+    mockGetReservedDates.mockResolvedValue({ data: [todayRange()] });
+
+    render(<LeodegaUI />);
+    await waitFor(() => screen.getByText('Bodega Norte'));
+
+    expect(screen.getByText('Actualmente no disponible')).toBeInTheDocument();
+    expect(screen.getByText('Aún puedes reservar fechas futuras.')).toBeInTheDocument();
+    expect(screen.queryByText('Disponible ahora')).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Reservar' })).not.toBeDisabled();
+    await waitFor(() => expect(todayCell()).toBeDisabled());
+  });
+
+  it('free now: shows "Disponible ahora" and neither the unavailable label nor its subtext', async () => {
+    mockGetStoreRoomDetail.mockResolvedValue({ data: { ...storeRoomDetail, is_available_now: true } });
+    mockGetReservedDates.mockResolvedValue({ data: [] });
+
+    render(<LeodegaUI />);
+    await waitFor(() => screen.getByText('Bodega Norte'));
+
+    expect(screen.getByText('Disponible ahora')).toBeInTheDocument();
+    expect(screen.queryByText('Actualmente no disponible')).not.toBeInTheDocument();
+    expect(screen.queryByText('Aún puedes reservar fechas futuras.')).not.toBeInTheDocument();
+  });
+
+  it('hold-only today: the label says available while the calendar still marks the held range (visitor)', async () => {
+    mockGetStoreRoomDetail.mockResolvedValue({ data: { ...storeRoomDetail, is_available_now: true } });
+    mockGetReservedDates.mockResolvedValue({ data: [todayRange()] });
+
+    render(<LeodegaUI />);
+    await waitFor(() => screen.getByText('Bodega Norte'));
+
+    expect(screen.getByText('Disponible ahora')).toBeInTheDocument();
+    await waitFor(() => expect(todayCell()).toBeDisabled());
+  });
+});
+
+describe('LeodegaUI single reserve control and back label (RB-6, SRD-3)', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mockGetStoreRoomDetail.mockResolvedValue({ data: storeRoomDetail });
+    mockGetReservedDates.mockResolvedValue({ data: [] });
+    mockGetStoreRoomQuote.mockResolvedValue({
+      data: { rent_subtotal: '450.00', service_fee: '27.00', deposit: '0.00', total_mount: '450.00' },
+    });
+  });
+
+  it('exposes exactly one "Reservar" button and never the old labels', async () => {
+    mockUseAuth.mockReturnValue({ user: { id: 9, role: 'tenant' } });
+
+    render(<LeodegaUI />);
+    await waitFor(() => screen.getByText('Bodega Norte'));
+
+    expect(screen.getAllByRole('button', { name: 'Reservar' })).toHaveLength(1);
+    expect(screen.queryByText('Enviar solicitud')).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Reservar' }));
+    expect(screen.queryByText('Solicitud de reserva')).not.toBeInTheDocument();
+    expect(screen.queryByText('Enviar solicitud')).not.toBeInTheDocument();
+  });
+
+  it('labels the top-bar back button "← Volver al catálogo" for a tenant and goes to /storage', async () => {
+    mockUseAuth.mockReturnValue({ user: { id: 9, role: 'tenant' } });
+
+    render(<LeodegaUI />);
+    await waitFor(() => screen.getByText('Bodega Norte'));
+    fireEvent.click(screen.getByRole('button', { name: '← Volver al catálogo' }));
+
+    expect(mockNavigate).toHaveBeenCalledWith('/storage');
+  });
+
+  it('labels the top-bar back button "← Volver a mis bodegas" for a landlord and goes to /arrendador/bodegas', async () => {
+    mockUseAuth.mockReturnValue({ user: { id: 2, role: 'landlord' } });
+
+    render(<LeodegaUI />);
+    await waitFor(() => screen.getByText('Bodega Norte'));
+    fireEvent.click(screen.getByRole('button', { name: '← Volver a mis bodegas' }));
+
+    expect(mockNavigate).toHaveBeenCalledWith('/arrendador/bodegas');
   });
 });

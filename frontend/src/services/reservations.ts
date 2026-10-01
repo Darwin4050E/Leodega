@@ -49,9 +49,13 @@ export function getLandlordReservations() {
 
 /**
  * Since commits `338f35c`..`eae68fd`, this endpoint returns the UNION of
- * confirmed reservations and landlord date blocks in the same bare
- * `{start_date, end_date}` shape. Consumers must treat every range as an
+ * confirmed reservations, active holds and landlord date blocks in the same
+ * bare `{start_date, end_date}` shape. Consumers must treat every range as an
  * opaque occupied interval and must not attempt to distinguish origin.
+ *
+ * The endpoint is PUBLIC (HUC-03): visitors call it without a token. The
+ * request interceptor only attaches `Authorization` when a token exists, so
+ * no special visitor path is needed here.
  */
 export interface ReservedRange {
   start_date: string;
