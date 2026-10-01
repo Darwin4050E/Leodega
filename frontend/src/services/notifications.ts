@@ -10,6 +10,15 @@ export interface ReservationBookedAndPaidData {
   end_date: string; // YYYY-MM-DD
 }
 
+export interface ReservationExpiredData {
+  reservation_id: number;
+  store_room_id: number;
+  customer_name: string;
+  store_room_title: string;
+  start_date: string; // YYYY-MM-DD
+  end_date: string; // YYYY-MM-DD
+}
+
 export interface AppNotification {
   id: number;
   title: string;
@@ -31,6 +40,22 @@ export function hasPaidReservationData(
     typeof d.customer_name === "string" &&
     typeof d.store_room_title === "string" &&
     (typeof d.amount === "string" || typeof d.amount === "number") &&
+    typeof d.start_date === "string" &&
+    typeof d.end_date === "string"
+  );
+}
+
+export function hasExpiredReservationData(
+  n: AppNotification
+): n is AppNotification & { data: ReservationExpiredData } {
+  if (n.type !== "reservation_expired" || !n.data) {
+    return false;
+  }
+
+  const d = n.data;
+  return (
+    typeof d.customer_name === "string" &&
+    typeof d.store_room_title === "string" &&
     typeof d.start_date === "string" &&
     typeof d.end_date === "string"
   );

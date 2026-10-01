@@ -48,6 +48,31 @@ const legacyPaidNoData = {
   data: { reservation_id: 11, store_room_id: 21 },
 };
 
+const expiredWithData = {
+  id: 3,
+  title: 'Reserva expirada',
+  body: 'El cliente no completó el pago a tiempo; la bodega volvió a estar disponible.',
+  type: 'reservation_expired',
+  is_read: false,
+  data: {
+    reservation_id: 12,
+    store_room_id: 22,
+    customer_name: 'Luis Pérez',
+    store_room_title: 'Bodega Sur',
+    start_date: '2026-03-01',
+    end_date: '2026-03-10',
+  },
+};
+
+const expiredNoData = {
+  id: 4,
+  title: 'Reserva expirada',
+  body: 'El cliente no completó el pago a tiempo; la bodega volvió a estar disponible.',
+  type: 'reservation_expired',
+  is_read: true,
+  data: null,
+};
+
 describe('NotificationsDropdown', () => {
   beforeEach(() => {
     vi.clearAllMocks();
@@ -97,5 +122,35 @@ describe('NotificationsDropdown', () => {
     mockMarkNotificationRead.mockClear();
     await user.click(screen.getByText(legacyPaidNoData.body));
     expect(mockMarkNotificationRead).not.toHaveBeenCalled();
+  });
+
+  it('renders structured data for an expired-hold notification with full data', async () => {
+    mockGetNotifications.mockResolvedValue({ data: [expiredWithData] });
+
+    render(<NotificationsDropdown onUnreadChange={vi.fn()} />);
+
+    expect(await screen.findByText('Luis Pérez')).toBeInTheDocument();
+    expect(screen.getByText('Bodega Sur')).toBeInTheDocument();
+    expect(screen.getByText(/2026-03-01/)).toBeInTheDocument();
+  });
+
+  it('falls back to the static body for an expired-hold notification missing structured data', async () => {
+    mockGetNotifications.mockResolvedValue({ data: [expiredNoData] });
+
+    render(<NotificationsDropdown onUnreadChange={vi.fn()} />);
+
+    expect(await screen.findByText(expiredNoData.body)).toBeInTheDocument();
+  });
+
+  it('navigates to /arrendador/solicitudes when an expired-hold notification is clicked', async () => {
+    mockGetNotifications.mockResolvedValue({ data: [expiredWithData] });
+    const user = userEvent.setup();
+
+    render(<NotificationsDropdown onUnreadChange={vi.fn()} />);
+    await screen.findByText('Luis Pérez');
+
+    await user.click(screen.getByText('Luis Pérez'));
+
+    await waitFor(() => expect(mockNavigate).toHaveBeenCalledWith('/arrendador/solicitudes'));
   });
 });

@@ -3,6 +3,7 @@ import {
     getNotifications,
     markNotificationRead,
     hasPaidReservationData,
+    hasExpiredReservationData,
     type AppNotification,
 } from "../services/notifications";
 import { formatUSD } from "../utils/money";
@@ -33,7 +34,7 @@ const NotificationsDropdown = ({ onUnreadChange }: NotificationsDropdownProps) =
         // REDIRIGIR según tipo
         if (n.type === "store_reported") {
             navigate("/admin/solicitudes");
-        } else if (n.type === "reservation_booked_and_paid") {
+        } else if (n.type === "reservation_booked_and_paid" || n.type === "reservation_expired") {
             navigate("/arrendador/solicitudes");
         }
     };
@@ -54,6 +55,14 @@ const NotificationsDropdown = ({ onUnreadChange }: NotificationsDropdownProps) =
                             <p className="text-xs text-gray-500">{n.data.store_room_title}</p>
                             <p className="text-xs text-gray-500">
                                 {formatUSD(n.data.amount)} · {n.data.start_date} - {n.data.end_date}
+                            </p>
+                        </>
+                    ) : hasExpiredReservationData(n) ? (
+                        <>
+                            <p className="text-sm font-medium">{n.data.customer_name}</p>
+                            <p className="text-xs text-gray-500">{n.data.store_room_title}</p>
+                            <p className="text-xs text-gray-500">
+                                {n.data.start_date} - {n.data.end_date}
                             </p>
                         </>
                     ) : (
