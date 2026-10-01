@@ -149,9 +149,10 @@ class ReservationService
                 ]
             );
 
-            $locked->load('storeRooms.landlord.user');
+            $locked->load(['storeRooms.landlord.user', 'tenants.user']);
             $room = $locked->storeRooms;
             if ($room && $room->landlord && $room->landlord->user) {
+                $tenantUser = $locked->tenants->user;
                 NotificationService::send(
                     $actingUserId,
                     $room->landlord->user->id,
@@ -161,6 +162,11 @@ class ReservationService
                     [
                         'reservation_id' => $locked->id,
                         'store_room_id' => $locked->store_room_id,
+                        'customer_name' => trim("{$tenantUser->name} {$tenantUser->lastname}"),
+                        'store_room_title' => $room->title,
+                        'amount' => $locked->total_mount,
+                        'start_date' => $locked->start_date,
+                        'end_date' => $locked->end_date,
                     ]
                 );
             }

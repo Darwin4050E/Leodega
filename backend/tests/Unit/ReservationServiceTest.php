@@ -197,6 +197,45 @@ class ReservationServiceTest extends TestCase
         ]);
     }
 
+    /**
+     * sdd/hug02-paid-notification-chat S1: the landlord notification `data`
+     * must carry enough structured info for the dropdown to render the
+     * customer/store/amount/dates without a follow-up request.
+     */
+    public function test_confirm_enriches_the_paid_booking_notification_data()
+    {
+        $tenantUser = User::factory()->create(['name' => 'Ana', 'lastname' => 'Torres']);
+        $tenant = Tenants::factory()->create(['user_id' => $tenantUser->id]);
+        $landlordUser = User::factory()->create(['role' => 'landlord']);
+        $landlord = Landlords::factory()->create(['user_id' => $landlordUser->id]);
+        $room = StoreRooms::factory()->create(['landlord_id' => $landlord->id, 'title' => 'Bodega Norte']);
+        $this->monthPriceFor($room);
+
+        $reservation = $this->service()->create($tenant, $room, [
+            'start_date' => '2026-02-01',
+            'end_date' => '2026-05-01',
+        ], $tenant->user_id);
+        $reservation->load('storeRooms');
+
+        $this->service()->confirm($reservation, $tenantUser->id);
+
+        $notification = \App\Models\Notifications::where('receiver_id', $landlordUser->id)
+            ->where('type', 'reservation_booked_and_paid')
+            ->firstOrFail();
+
+        $this->assertSame($reservation->id, $notification->data['reservation_id']);
+        $this->assertSame($room->id, $notification->data['store_room_id']);
+        $this->assertSame('Ana Torres', $notification->data['customer_name']);
+        $this->assertSame('Bodega Norte', $notification->data['store_room_title']);
+        // total_mount has no Eloquent cast; assert the raw stored value
+        // (sqlite in tests returns a native number, MySQL in production
+        // returns a decimal string — both represent the same stored value).
+        $this->assertEquals($reservation->total_mount, $notification->data['amount']);
+        $this->assertEquals(3000, $notification->data['amount']);
+        $this->assertSame('2026-02-01', $notification->data['start_date']);
+        $this->assertSame('2026-05-01', $notification->data['end_date']);
+    }
+
     public function test_confirm_throws_when_another_confirmed_reservation_overlaps()
     {
         $tenant = Tenants::factory()->create();
