@@ -10,6 +10,8 @@ use App\Models\StoreRooms;
 use App\Models\Tenants;
 use App\Notifications\ReservationCancellationNotification;
 use App\Support\CancellationRefundCalculator;
+use Carbon\Carbon;
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 
@@ -25,42 +27,74 @@ class ReservationService
      * eventual total_mount enviado por el cliente en $data es IGNORADO.
      *
      * @throws ReservationConflictException si ya hay una reserva confirmada
-     *                                      que se solapa con el rango solicitado.
+     *                                      que se solapa con el rango solicitado,
+     *                                      o si otro tenant tiene un hold
+     *                                      activo (pending, no expirado) que
+     *                                      se solapa (sdd/hug02-payment-hold-expiry).
      * @throws \App\Exceptions\ReservationPricingException si la bodega no
      *                                                     tiene un precio mensual disponible.
+     *
+     * sdd/hug02-payment-hold-expiry: wrapped in DB::transaction() with a
+     * StoreRooms::lockForUpdate() room lock, mirroring confirm()'s pattern,
+     * to serialize concurrent creates for the same room. Inside the lock,
+     * the tenant's OWN overlapping active holds are first superseded
+     * (canceled, no notification -- this is a synchronous supersede, not
+     * the lazy expiry sweep, so the two can never conflate reasons or
+     * double-notify). The conflict check then blocks on either a
+     * `confirmed` row or ANOTHER tenant's active (non-expired) `pending`
+     * hold -- a `pending` row alone no longer silently coexists.
      */
     public function create(Tenants $tenant, StoreRooms $room, array $data, ?int $actingUserId): Reservations
     {
-        $hasConflict = Reservations::where('store_room_id', $room->id)
-            ->where('status', 'confirmed')
-            ->whereDate('start_date', '<=', $data['end_date'])
-            ->whereDate('end_date', '>=', $data['start_date'])
-            ->exists();
+        return DB::transaction(function () use ($tenant, $room, $data) {
+            StoreRooms::where('id', $room->id)->lockForUpdate()->first();
 
-        if ($hasConflict) {
-            throw new ReservationConflictException('La bodega ya está reservada en esas fechas.');
-        }
+            $this->expireElapsedHolds(Reservations::where('store_room_id', $room->id));
 
-        $quote = $this->pricingService->quote($room, $data['start_date'], $data['end_date']);
+            Reservations::where('store_room_id', $room->id)
+                ->where('tenant_id', $tenant->id)
+                ->activeHold()
+                ->whereDate('start_date', '<=', $data['end_date'])
+                ->whereDate('end_date', '>=', $data['start_date'])
+                ->update([
+                    'status' => 'canceled',
+                    'cancelation_reason' => 'Superseded by a newer hold',
+                ]);
 
-        $reservation = Reservations::create([
-            'store_room_id' => $room->id,
-            'tenant_id' => $tenant->id,
-            'start_date' => $data['start_date'],
-            'end_date' => $data['end_date'],
-            'status' => 'pending',
-            'total_mount' => $quote['total_mount'],
-            'rent_subtotal' => $quote['rent_subtotal'],
-            'cancelation_reason' => null,
-            // sdd/tenant-self-cancel decision #339: snapshot the room's
-            // CURRENT tier now, forever, so a later landlord edit to the
-            // storeroom's tier cannot change what an already-paying tenant
-            // gets back on cancellation.
-            'cancellation_policy_tier' => $room->cancellation_policy_tier,
-            'creation_date' => now(),
-        ]);
+            $hasConflict = Reservations::where('store_room_id', $room->id)
+                ->where(function ($query) use ($tenant) {
+                    $query->where('status', 'confirmed')
+                        ->orWhere(function ($activeHoldQuery) use ($tenant) {
+                            $activeHoldQuery->activeHold()->where('tenant_id', '!=', $tenant->id);
+                        });
+                })
+                ->whereDate('start_date', '<=', $data['end_date'])
+                ->whereDate('end_date', '>=', $data['start_date'])
+                ->exists();
 
-        return $reservation;
+            if ($hasConflict) {
+                throw new ReservationConflictException('La bodega ya está reservada en esas fechas.');
+            }
+
+            $quote = $this->pricingService->quote($room, $data['start_date'], $data['end_date']);
+
+            return Reservations::create([
+                'store_room_id' => $room->id,
+                'tenant_id' => $tenant->id,
+                'start_date' => $data['start_date'],
+                'end_date' => $data['end_date'],
+                'status' => 'pending',
+                'total_mount' => $quote['total_mount'],
+                'rent_subtotal' => $quote['rent_subtotal'],
+                'cancelation_reason' => null,
+                // sdd/tenant-self-cancel decision #339: snapshot the room's
+                // CURRENT tier now, forever, so a later landlord edit to the
+                // storeroom's tier cannot change what an already-paying tenant
+                // gets back on cancellation.
+                'cancellation_policy_tier' => $room->cancellation_policy_tier,
+                'creation_date' => now(),
+            ]);
+        });
     }
 
     /**
@@ -149,9 +183,10 @@ class ReservationService
                 ]
             );
 
-            $locked->load('storeRooms.landlord.user');
+            $locked->load(['storeRooms.landlord.user', 'tenants.user']);
             $room = $locked->storeRooms;
             if ($room && $room->landlord && $room->landlord->user) {
+                $tenantUser = $locked->tenants->user;
                 NotificationService::send(
                     $actingUserId,
                     $room->landlord->user->id,
@@ -161,6 +196,11 @@ class ReservationService
                     [
                         'reservation_id' => $locked->id,
                         'store_room_id' => $locked->store_room_id,
+                        'customer_name' => trim("{$tenantUser->name} {$tenantUser->lastname}"),
+                        'store_room_title' => $room->title,
+                        'amount' => $locked->total_mount,
+                        'start_date' => $locked->start_date,
+                        'end_date' => $locked->end_date,
                     ]
                 );
             }
@@ -177,6 +217,86 @@ class ReservationService
 
             return $locked->load(['storeRooms', 'tenants.user']);
         });
+    }
+
+    /**
+     * sdd/hug02-payment-hold-expiry: lazy, idempotent transition of every
+     * `pending` row matched by `$scope` whose payment hold has elapsed into
+     * `canceled`/`'Expired: payment hold elapsed'`. Called from create(),
+     * reservedDates(), landlordIndex(), tenantIndex(), and
+     * PaymentService::process() -- there is no scheduler/cron.
+     *
+     * Fetches candidate rows first (eager-loading storeRooms.landlord.user
+     * and tenants.user to stay N+1-free for listings), then writes each row
+     * with a per-row CONDITIONAL `UPDATE ... WHERE id=? AND status='pending'`.
+     * That conditional update's own row-level write lock re-checks
+     * staleness at write time -- no separate `lockForUpdate()` SELECT is
+     * needed. Only the request whose UPDATE actually flips the row
+     * (`affected === 1`) sends the notification; a loser that raced and
+     * lost (`affected === 0`) skips it. A row already canceled by
+     * supersession is NEVER matched by `scopeExpiredHold()` (it filters
+     * `status = 'pending'`), so it is never touched here.
+     *
+     * The landlord notification fires only when the elapsed time since the
+     * hold's expiry instant is within `payment_hold_notify_recency_hours`
+     * (default 24h) -- older stale rows are released silently, avoiding a
+     * deploy-time notification burst for pre-existing stale rows.
+     */
+    public function expireElapsedHolds(Builder $scope): void
+    {
+        $rows = (clone $scope)->expiredHold()
+            ->with(['storeRooms.landlord.user', 'tenants.user'])
+            ->get();
+
+        if ($rows->isEmpty()) {
+            return;
+        }
+
+        $holdMinutes = (int) config('reservations.payment_hold_minutes');
+        $recencyHours = (int) config('reservations.payment_hold_notify_recency_hours');
+
+        foreach ($rows as $row) {
+            $affected = Reservations::where('id', $row->id)
+                ->where('status', 'pending')
+                ->update([
+                    'status' => 'canceled',
+                    'cancelation_reason' => 'Expired: payment hold elapsed',
+                ]);
+
+            if ($affected !== 1) {
+                continue;
+            }
+
+            $expiryInstant = Carbon::parse($row->created_at)->addMinutes($holdMinutes);
+            $hoursSinceExpiry = $expiryInstant->diffInHours(now());
+
+            if ($hoursSinceExpiry > $recencyHours) {
+                continue;
+            }
+
+            $room = $row->storeRooms;
+            $tenantUser = $row->tenants->user ?? null;
+
+            if (! $room || ! $room->landlord || ! $room->landlord->user || ! $tenantUser) {
+                continue;
+            }
+
+            NotificationService::send(
+                $tenantUser->id,
+                $room->landlord->user->id,
+                NotificationType::RESERVATION_EXPIRED,
+                'Reserva expirada',
+                'El cliente no completó el pago a tiempo; la bodega volvió a estar disponible.',
+                [
+                    'reservation_id' => $row->id,
+                    'store_room_id' => $row->store_room_id,
+                    'customer_name' => trim("{$tenantUser->name} {$tenantUser->lastname}"),
+                    'store_room_title' => $room->title,
+                    'start_date' => $row->start_date,
+                    'end_date' => $row->end_date,
+                ]
+            );
+        }
     }
 
     /**

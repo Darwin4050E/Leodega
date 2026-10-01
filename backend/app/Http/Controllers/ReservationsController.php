@@ -32,10 +32,17 @@ class ReservationsController extends Controller
         ], 201);
     }
 
-    public function landlordIndex(Request $request)
+    public function landlordIndex(Request $request, ReservationService $reservationService)
     {
         $user = $request->user();
         $landlord = Landlords::where('user_id', $user->id)->firstOrFail();
+
+        // sdd/hug02-payment-hold-expiry: trigger the lazy expiry sweep for
+        // this landlord's rooms before querying, so an elapsed hold shows
+        // as canceled without a separate request.
+        $reservationService->expireElapsedHolds(
+            Reservations::whereHas('storeRooms', fn ($q) => $q->where('landlord_id', $landlord->id))
+        );
 
         $items = Reservations::with([
             'storeRooms:id,title,direction,city,size,room_type,landlord_id',
@@ -142,21 +149,42 @@ class ReservationsController extends Controller
      * no discriminator key -- because the sole consumer
      * (services/reservations.ts::getReservedDates()) treats every range as
      * an opaque interval and must require zero changes this cycle.
+     *
+     * sdd/hug02-payment-hold-expiry: also runs the lazy expiry sweep for
+     * this room, then blocks active (non-expired) `pending` holds like
+     * `confirmed` rows. The AUTHENTICATED CALLER's own active hold is
+     * excluded when the caller resolves to a tenant identity, resolved via
+     * $request->user() (route is `auth.api:sanctum`) -- NEVER
+     * auth()->user(), whose default guard is `web` and resolves to null
+     * here. A landlord or any other non-tenant caller sees every active
+     * hold blocked, with no self-exclusion.
      */
-    public function reservedDates($storeRoomId)
+    public function reservedDates(Request $request, $storeRoomId, ReservationService $reservationService)
     {
         $room = StoreRooms::findOrFail($storeRoomId);
 
-        $reservationRanges = Reservations::select('start_date', 'end_date')
+        $reservationService->expireElapsedHolds(Reservations::where('store_room_id', $room->id));
+
+        $confirmedRanges = Reservations::select('start_date', 'end_date')
             ->where('store_room_id', $room->id)
             ->where('status', 'confirmed')
             ->get();
+
+        $activeHoldQuery = Reservations::select('start_date', 'end_date')
+            ->where('store_room_id', $room->id)
+            ->activeHold();
+
+        $tenant = Tenants::where('user_id', $request->user()->id)->first();
+        if ($tenant) {
+            $activeHoldQuery->where('tenant_id', '!=', $tenant->id);
+        }
 
         $blockRanges = StoreDisponibility::select('start_date', 'end_date')
             ->where('store_room_id', $room->id)
             ->get();
 
-        $ranges = $reservationRanges
+        $ranges = $confirmedRanges
+            ->concat($activeHoldQuery->get())
             ->concat($blockRanges)
             ->sortBy('start_date')
             ->values();
@@ -216,10 +244,14 @@ class ReservationsController extends Controller
         ]);
     }
 
-    public function tenantIndex(Request $request)
+    public function tenantIndex(Request $request, ReservationService $reservationService)
     {
         $user = $request->user();
         $tenant = Tenants::where('user_id', $user->id)->firstOrFail();
+
+        // sdd/hug02-payment-hold-expiry: trigger the lazy expiry sweep for
+        // this tenant's own reservations before querying.
+        $reservationService->expireElapsedHolds(Reservations::where('tenant_id', $tenant->id));
 
         $items = Reservations::with([
             'storeRooms:id,title,direction,city,size,room_type,landlord_id',

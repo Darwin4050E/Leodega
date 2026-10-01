@@ -276,4 +276,33 @@ class LandlordReservationIndexTest extends TestCase
             ])
             ->assertStatus(409);
     }
+
+    /**
+     * sdd/hug02-payment-hold-expiry: landlordIndex() must trigger the lazy
+     * expiry sweep before querying, so an elapsed hold shows as
+     * canceled/pending-payment (existing 'Cancelada'/'Sin cobro' labels)
+     * without a separate request.
+     */
+    public function test_landlord_index_triggers_sweep_and_shows_expired_hold_as_canceled_pending_payment()
+    {
+        [$user, $landlord] = $this->landlord();
+        $room = StoreRooms::factory()->create(['landlord_id' => $landlord->id]);
+        $tenant = \App\Models\Tenants::factory()->create();
+
+        config(['reservations.payment_hold_minutes' => 15]);
+        $reservation = Reservations::factory()->create([
+            'store_room_id' => $room->id,
+            'tenant_id' => $tenant->id,
+            'status' => 'pending',
+            'created_at' => now()->subMinutes(20),
+        ]);
+
+        $response = $this->actingAs($user, 'sanctum')->getJson('/api/landlord/reservations');
+
+        $response->assertStatus(200);
+        $item = collect($response->json())->firstWhere('id', $reservation->id);
+        $this->assertSame('canceled', $item['status']);
+        $this->assertSame('pending', $item['payment_status']);
+        $this->assertFalse($item['has_refund_obligation']);
+    }
 }

@@ -12,6 +12,7 @@ use App\Models\Tenants;
 use App\Models\User;
 use App\Services\ReservationPricingService;
 use App\Services\ReservationService;
+use Carbon\Carbon;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Tests\TestCase;
 
@@ -195,6 +196,45 @@ class ReservationServiceTest extends TestCase
             'receiver_id' => $landlordUser->id,
             'type' => 'reservation_booked_and_paid',
         ]);
+    }
+
+    /**
+     * sdd/hug02-paid-notification-chat S1: the landlord notification `data`
+     * must carry enough structured info for the dropdown to render the
+     * customer/store/amount/dates without a follow-up request.
+     */
+    public function test_confirm_enriches_the_paid_booking_notification_data()
+    {
+        $tenantUser = User::factory()->create(['name' => 'Ana', 'lastname' => 'Torres']);
+        $tenant = Tenants::factory()->create(['user_id' => $tenantUser->id]);
+        $landlordUser = User::factory()->create(['role' => 'landlord']);
+        $landlord = Landlords::factory()->create(['user_id' => $landlordUser->id]);
+        $room = StoreRooms::factory()->create(['landlord_id' => $landlord->id, 'title' => 'Bodega Norte']);
+        $this->monthPriceFor($room);
+
+        $reservation = $this->service()->create($tenant, $room, [
+            'start_date' => '2026-02-01',
+            'end_date' => '2026-05-01',
+        ], $tenant->user_id);
+        $reservation->load('storeRooms');
+
+        $this->service()->confirm($reservation, $tenantUser->id);
+
+        $notification = \App\Models\Notifications::where('receiver_id', $landlordUser->id)
+            ->where('type', 'reservation_booked_and_paid')
+            ->firstOrFail();
+
+        $this->assertSame($reservation->id, $notification->data['reservation_id']);
+        $this->assertSame($room->id, $notification->data['store_room_id']);
+        $this->assertSame('Ana Torres', $notification->data['customer_name']);
+        $this->assertSame('Bodega Norte', $notification->data['store_room_title']);
+        // total_mount has no Eloquent cast; assert the raw stored value
+        // (sqlite in tests returns a native number, MySQL in production
+        // returns a decimal string — both represent the same stored value).
+        $this->assertEquals($reservation->total_mount, $notification->data['amount']);
+        $this->assertEquals(3000, $notification->data['amount']);
+        $this->assertSame('2026-02-01', $notification->data['start_date']);
+        $this->assertSame('2026-05-01', $notification->data['end_date']);
     }
 
     public function test_confirm_throws_when_another_confirmed_reservation_overlaps()
@@ -477,6 +517,221 @@ class ReservationServiceTest extends TestCase
         } catch (ReservationConflictException $e) {
             $this->assertDatabaseCount('reservation_cancellation_obligations', 0);
         }
+    }
+
+    // -- sdd/hug02-payment-hold-expiry: create() lock/supersede/block -----
+
+    protected function tearDown(): void
+    {
+        Carbon::setTestNow();
+        parent::tearDown();
+    }
+
+    public function test_create_supersedes_tenants_own_overlapping_active_hold_without_notifying()
+    {
+        $room = StoreRooms::factory()->create();
+        $this->monthPriceFor($room);
+        $tenant = Tenants::factory()->create();
+
+        $firstHold = $this->service()->create($tenant, $room, [
+            'start_date' => '2026-07-01',
+            'end_date' => '2026-07-10',
+        ], $tenant->user_id);
+
+        $secondHold = $this->service()->create($tenant, $room, [
+            'start_date' => '2026-07-05',
+            'end_date' => '2026-07-15',
+        ], $tenant->user_id);
+
+        $this->assertDatabaseHas('reservations', [
+            'id' => $firstHold->id,
+            'status' => 'canceled',
+            'cancelation_reason' => 'Superseded by a newer hold',
+        ]);
+        $this->assertDatabaseHas('reservations', [
+            'id' => $secondHold->id,
+            'status' => 'pending',
+        ]);
+        $this->assertDatabaseCount('notifications', 0);
+    }
+
+    public function test_create_does_not_supersede_a_non_overlapping_own_hold()
+    {
+        $room = StoreRooms::factory()->create();
+        $this->monthPriceFor($room);
+        $tenant = Tenants::factory()->create();
+
+        $firstHold = $this->service()->create($tenant, $room, [
+            'start_date' => '2026-07-01',
+            'end_date' => '2026-07-10',
+        ], $tenant->user_id);
+
+        $this->service()->create($tenant, $room, [
+            'start_date' => '2026-08-01',
+            'end_date' => '2026-08-10',
+        ], $tenant->user_id);
+
+        $this->assertDatabaseHas('reservations', [
+            'id' => $firstHold->id,
+            'status' => 'pending',
+        ]);
+    }
+
+    public function test_create_blocks_when_another_tenant_has_an_active_hold()
+    {
+        $room = StoreRooms::factory()->create();
+        $this->monthPriceFor($room);
+        $tenantA = Tenants::factory()->create();
+        $tenantB = Tenants::factory()->create();
+
+        $this->service()->create($tenantA, $room, [
+            'start_date' => '2026-07-01',
+            'end_date' => '2026-07-10',
+        ], $tenantA->user_id);
+
+        $this->expectException(ReservationConflictException::class);
+
+        $this->service()->create($tenantB, $room, [
+            'start_date' => '2026-07-05',
+            'end_date' => '2026-07-15',
+        ], $tenantB->user_id);
+    }
+
+    public function test_create_allows_a_new_hold_once_the_blocking_hold_has_expired()
+    {
+        $room = StoreRooms::factory()->create();
+        $this->monthPriceFor($room);
+        $tenantA = Tenants::factory()->create();
+        $tenantB = Tenants::factory()->create();
+
+        config(['reservations.payment_hold_minutes' => 15]);
+        Carbon::setTestNow(now()->subMinutes(20));
+        $this->service()->create($tenantA, $room, [
+            'start_date' => '2026-07-01',
+            'end_date' => '2026-07-10',
+        ], $tenantA->user_id);
+        Carbon::setTestNow();
+
+        $secondHold = $this->service()->create($tenantB, $room, [
+            'start_date' => '2026-07-05',
+            'end_date' => '2026-07-15',
+        ], $tenantB->user_id);
+
+        $this->assertDatabaseHas('reservations', [
+            'id' => $secondHold->id,
+            'status' => 'pending',
+        ]);
+    }
+
+    // -- sdd/hug02-payment-hold-expiry: expireElapsedHolds() --------------
+
+    public function test_expire_elapsed_holds_transitions_and_notifies_within_recency_window()
+    {
+        Carbon::setTestNow('2026-01-01 12:00:00');
+        config(['reservations.payment_hold_minutes' => 15, 'reservations.payment_hold_notify_recency_hours' => 24]);
+
+        $landlordUser = User::factory()->create(['role' => 'landlord']);
+        $landlord = Landlords::factory()->create(['user_id' => $landlordUser->id]);
+        $room = StoreRooms::factory()->create(['landlord_id' => $landlord->id]);
+        $tenantUser = User::factory()->create();
+        $tenant = Tenants::factory()->create(['user_id' => $tenantUser->id]);
+
+        $reservation = Reservations::factory()->create([
+            'store_room_id' => $room->id,
+            'tenant_id' => $tenant->id,
+            'status' => 'pending',
+            'created_at' => Carbon::parse('2026-01-01 09:45:00'), // elapsed 2h15m ago, within 24h
+        ]);
+
+        $this->service()->expireElapsedHolds(Reservations::where('store_room_id', $room->id));
+
+        $this->assertDatabaseHas('reservations', [
+            'id' => $reservation->id,
+            'status' => 'canceled',
+            'cancelation_reason' => 'Expired: payment hold elapsed',
+        ]);
+        $this->assertDatabaseHas('notifications', [
+            'sender_id' => $tenantUser->id,
+            'receiver_id' => $landlordUser->id,
+            'type' => 'reservation_expired',
+            'title' => 'Reserva expirada',
+            'body' => 'El cliente no completó el pago a tiempo; la bodega volvió a estar disponible.',
+        ]);
+    }
+
+    public function test_expire_elapsed_holds_is_idempotent_on_a_second_call()
+    {
+        Carbon::setTestNow('2026-01-01 12:00:00');
+        config(['reservations.payment_hold_minutes' => 15, 'reservations.payment_hold_notify_recency_hours' => 24]);
+
+        $room = StoreRooms::factory()->create();
+        $tenant = Tenants::factory()->create();
+
+        $reservation = Reservations::factory()->create([
+            'store_room_id' => $room->id,
+            'tenant_id' => $tenant->id,
+            'status' => 'pending',
+            'created_at' => Carbon::parse('2026-01-01 09:45:00'),
+        ]);
+
+        $this->service()->expireElapsedHolds(Reservations::where('store_room_id', $room->id));
+        $this->assertDatabaseCount('notifications', 1);
+
+        $this->service()->expireElapsedHolds(Reservations::where('store_room_id', $room->id));
+
+        $this->assertDatabaseCount('notifications', 1);
+        $this->assertDatabaseHas('reservations', ['id' => $reservation->id, 'status' => 'canceled']);
+    }
+
+    public function test_expire_elapsed_holds_releases_stale_row_beyond_recency_window_with_no_notification()
+    {
+        Carbon::setTestNow('2026-01-01 12:00:00');
+        config(['reservations.payment_hold_minutes' => 15, 'reservations.payment_hold_notify_recency_hours' => 24]);
+
+        $room = StoreRooms::factory()->create();
+        $tenant = Tenants::factory()->create();
+
+        $reservation = Reservations::factory()->create([
+            'store_room_id' => $room->id,
+            'tenant_id' => $tenant->id,
+            'status' => 'pending',
+            'created_at' => Carbon::parse('2025-12-30 00:00:00'), // ~48h before now, well past the 24h window
+        ]);
+
+        $this->service()->expireElapsedHolds(Reservations::where('store_room_id', $room->id));
+
+        $this->assertDatabaseHas('reservations', [
+            'id' => $reservation->id,
+            'status' => 'canceled',
+            'cancelation_reason' => 'Expired: payment hold elapsed',
+        ]);
+        $this->assertDatabaseCount('notifications', 0);
+    }
+
+    public function test_expire_elapsed_holds_never_touches_an_already_superseded_row()
+    {
+        Carbon::setTestNow('2026-01-01 12:00:00');
+        config(['reservations.payment_hold_minutes' => 15]);
+
+        $room = StoreRooms::factory()->create();
+        $tenant = Tenants::factory()->create();
+
+        $superseded = Reservations::factory()->create([
+            'store_room_id' => $room->id,
+            'tenant_id' => $tenant->id,
+            'status' => 'canceled',
+            'cancelation_reason' => 'Superseded by a newer hold',
+            'created_at' => Carbon::parse('2026-01-01 09:00:00'),
+        ]);
+
+        $this->service()->expireElapsedHolds(Reservations::where('store_room_id', $room->id));
+
+        $this->assertDatabaseHas('reservations', [
+            'id' => $superseded->id,
+            'status' => 'canceled',
+            'cancelation_reason' => 'Superseded by a newer hold',
+        ]);
+        $this->assertDatabaseCount('notifications', 0);
     }
 
     // -- sdd/tenant-self-cancel: cancelByTenant() -------------------------

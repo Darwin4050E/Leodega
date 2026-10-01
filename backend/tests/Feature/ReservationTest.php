@@ -8,12 +8,19 @@ use App\Models\StorePrices;
 use App\Models\StoreRooms;
 use App\Models\Tenants;
 use App\Models\User;
+use Carbon\Carbon;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Tests\TestCase;
 
 class ReservationTest extends TestCase
 {
     use RefreshDatabase;
+
+    protected function tearDown(): void
+    {
+        Carbon::setTestNow();
+        parent::tearDown();
+    }
 
     /** @test */
     public function tenant_can_create_reservation_for_available_store_room()
@@ -219,6 +226,147 @@ class ReservationTest extends TestCase
         ]);
         $response->assertJsonMissingPath('0.origin');
         $response->assertJsonMissingPath('0.type');
+    }
+
+    /**
+     * sdd/hug02-payment-hold-expiry: a second tenant's create() request
+     * must be rejected with 409, identically to a confirmed conflict, when
+     * another tenant holds an active (non-expired) pending reservation on
+     * overlapping dates.
+     */
+    public function test_create_returns_409_when_another_tenants_hold_is_active()
+    {
+        $room = StoreRooms::factory()->create();
+        StorePrices::factory()->create([
+            'store_room_id' => $room->id,
+            'mode' => 'month',
+            'price' => 1000,
+            'disponibility' => true,
+        ]);
+
+        $userA = User::factory()->create();
+        Tenants::factory()->create(['user_id' => $userA->id]);
+        $this->actingAs($userA, 'sanctum')->postJson('/api/reservations', [
+            'store_room_id' => $room->id,
+            'start_date' => '2026-07-01',
+            'end_date' => '2026-07-10',
+        ])->assertStatus(201);
+
+        $userB = User::factory()->create();
+        Tenants::factory()->create(['user_id' => $userB->id]);
+
+        $response = $this->actingAs($userB, 'sanctum')->postJson('/api/reservations', [
+            'store_room_id' => $room->id,
+            'start_date' => '2026-07-05',
+            'end_date' => '2026-07-15',
+        ]);
+
+        $response->assertStatus(409);
+    }
+
+    /**
+     * sdd/hug02-payment-hold-expiry: once the first tenant's hold has
+     * elapsed, a second tenant's overlapping request must succeed.
+     */
+    public function test_create_succeeds_after_the_blocking_hold_expires()
+    {
+        $room = StoreRooms::factory()->create();
+        StorePrices::factory()->create([
+            'store_room_id' => $room->id,
+            'mode' => 'month',
+            'price' => 1000,
+            'disponibility' => true,
+        ]);
+
+        $userA = User::factory()->create();
+        Tenants::factory()->create(['user_id' => $userA->id]);
+
+        config(['reservations.payment_hold_minutes' => 15]);
+        Carbon::setTestNow(now()->subMinutes(20));
+        $this->actingAs($userA, 'sanctum')->postJson('/api/reservations', [
+            'store_room_id' => $room->id,
+            'start_date' => '2026-07-01',
+            'end_date' => '2026-07-10',
+        ])->assertStatus(201);
+        Carbon::setTestNow();
+
+        $userB = User::factory()->create();
+        Tenants::factory()->create(['user_id' => $userB->id]);
+
+        $response = $this->actingAs($userB, 'sanctum')->postJson('/api/reservations', [
+            'store_room_id' => $room->id,
+            'start_date' => '2026-07-05',
+            'end_date' => '2026-07-15',
+        ]);
+
+        $response->assertStatus(201);
+    }
+
+    /**
+     * sdd/hug02-payment-hold-expiry (orchestrator correction): reservedDates()
+     * must exclude the AUTHENTICATED CALLER'S OWN active hold when the
+     * caller resolves to a tenant, via $request->user() (never auth()).
+     */
+    public function test_reserved_dates_excludes_the_tenant_callers_own_active_hold()
+    {
+        $room = StoreRooms::factory()->create();
+        $userA = User::factory()->create();
+        $tenantA = Tenants::factory()->create(['user_id' => $userA->id]);
+
+        Reservations::factory()->create([
+            'store_room_id' => $room->id,
+            'tenant_id' => $tenantA->id,
+            'status' => 'pending',
+            'start_date' => '2026-09-01',
+            'end_date' => '2026-09-10',
+        ]);
+
+        $response = $this->actingAs($userA, 'sanctum')
+            ->getJson("/api/storeRooms/{$room->id}/reserved-dates");
+
+        $response->assertStatus(200)->assertJsonCount(0);
+    }
+
+    public function test_reserved_dates_includes_another_tenants_active_hold()
+    {
+        $room = StoreRooms::factory()->create();
+        $userA = User::factory()->create();
+        $tenantA = Tenants::factory()->create(['user_id' => $userA->id]);
+        $userB = User::factory()->create();
+        Tenants::factory()->create(['user_id' => $userB->id]);
+
+        Reservations::factory()->create([
+            'store_room_id' => $room->id,
+            'tenant_id' => $tenantA->id,
+            'status' => 'pending',
+            'start_date' => '2026-09-01',
+            'end_date' => '2026-09-10',
+        ]);
+
+        $response = $this->actingAs($userB, 'sanctum')
+            ->getJson("/api/storeRooms/{$room->id}/reserved-dates");
+
+        $response->assertStatus(200)->assertJsonCount(1);
+    }
+
+    public function test_reserved_dates_shows_all_active_holds_to_a_landlord_caller_with_no_self_exclusion()
+    {
+        $room = StoreRooms::factory()->create();
+        $tenant = Tenants::factory()->create();
+        $landlordUser = User::factory()->create(['role' => 'landlord']);
+
+        Reservations::factory()->create([
+            'store_room_id' => $room->id,
+            'tenant_id' => $tenant->id,
+            'status' => 'pending',
+            'start_date' => '2026-09-01',
+            'end_date' => '2026-09-10',
+        ]);
+
+        $response = $this->actingAs($landlordUser, 'sanctum')
+            ->getJson("/api/storeRooms/{$room->id}/reserved-dates");
+
+        $response->assertStatus(200)->assertJsonCount(1);
     }
 
     public function test_reserved_dates_still_404s_for_nonexistent_store_room()

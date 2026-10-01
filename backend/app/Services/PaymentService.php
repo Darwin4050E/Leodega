@@ -52,8 +52,33 @@ class PaymentService
         $reservationJustConfirmed = false;
         $isNoop = false;
 
+        // sdd/hug02-payment-hold-expiry: run BEFORE opening the main
+        // transaction below, deliberately OUTSIDE it. expireElapsedHolds()'s
+        // own per-row conditional `UPDATE ... WHERE status='pending'` is
+        // already its own atomic write with its own row-level lock -- it
+        // needs no surrounding transaction for correctness. Running it
+        // inside the main transaction would roll its status flip back the
+        // instant the 409 below is thrown, leaving the row incorrectly
+        // 'pending' after a request that is supposed to end it
+        // 'canceled'/'Expired: payment hold elapsed'.
+        if ($reservation->status === 'pending' && $reservation->isExpiredHold()) {
+            $this->reservationService->expireElapsedHolds(
+                Reservations::where('id', $reservation->id)
+            );
+        }
+
         $result = DB::transaction(function () use ($reservation, $data, $actingUserId, &$reservationJustConfirmed, &$isNoop) {
             $locked = Reservations::where('id', $reservation->id)->lockForUpdate()->firstOrFail();
+
+            // Checked BEFORE the generic 'canceled' branch below: a row
+            // already expired by an earlier touch (e.g. the landlord's
+            // dashboard ran the sweep first) must still surface the
+            // HUC-05-specific copy, never the generic canceled message.
+            if ($locked->status === 'canceled' && $locked->cancelation_reason === 'Expired: payment hold elapsed') {
+                throw new ReservationConflictException(
+                    'No completaste el pago, por lo que la reserva no se finalizó. Puedes iniciar una nueva reserva cuando quieras.'
+                );
+            }
 
             if ($locked->status === 'canceled') {
                 throw new ReservationConflictException('Esta reserva fue cancelada y ya no admite pagos.');

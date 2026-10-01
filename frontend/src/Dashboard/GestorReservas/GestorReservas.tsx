@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
+import { useNavigate } from "react-router-dom";
 
 import { getLandlordReservations, type LandlordReservation } from "../../services/reservations";
 import { asApiError } from "../../api/errors";
@@ -66,6 +67,7 @@ const VigenciaBadge = ({ vigencia }: { vigencia: string }) => {
  * deliberately out of scope for this change.
  */
 const GestorReservas = () => {
+  const navigate = useNavigate();
   const [reservations, setReservations] = useState<LandlordReservation[]>([]);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState<string>("");
@@ -210,7 +212,11 @@ const GestorReservas = () => {
           ) : null}
 
           <div className="flex gap-2.5 mt-5 flex-wrap">
-            <button className="flex items-center gap-1.5 px-4 py-2.5 bg-[#7551E9] text-white rounded-lg text-sm font-semibold">
+            <button
+              onClick={() => navigate(`/arrendador/mensajes?userId=${selected.tenants?.user?.id}`)}
+              disabled={!selected.tenants?.user?.id}
+              className="flex items-center gap-1.5 px-4 py-2.5 bg-[#7551E9] text-white rounded-lg text-sm font-semibold disabled:opacity-50 disabled:cursor-not-allowed"
+            >
               Mensaje al cliente
             </button>
             {selected.payment_id !== null && (

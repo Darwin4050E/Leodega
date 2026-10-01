@@ -3,6 +3,7 @@
 namespace App\Models;
 
 use Carbon\Carbon;
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 
@@ -79,5 +80,52 @@ class Reservations extends Model
     {
         return in_array($this->status, ['pending', 'confirmed'], true)
             && Carbon::parse($this->start_date)->startOfDay()->gt(today());
+    }
+
+    /**
+     * sdd/hug02-payment-hold-expiry: single definition of the payment-hold
+     * cutoff instant (`now() - payment_hold_minutes`). Every caller that
+     * needs to reason about hold expiry -- scopeActiveHold,
+     * scopeExpiredHold, isExpiredHold() -- routes through this one method,
+     * so the single tunable (config key, `now()`) lives in one place and
+     * `Carbon::setTestNow()`/`$this->travel()` control every caller
+     * identically.
+     */
+    public function holdCutoff(): Carbon
+    {
+        return now()->subMinutes((int) config('reservations.payment_hold_minutes'));
+    }
+
+    /**
+     * `pending` rows whose hold has NOT elapsed: `created_at` strictly
+     * after the cutoff instant. Exclusive boundary -- a row created
+     * EXACTLY at the cutoff is EXPIRED, not active (see scopeExpiredHold).
+     */
+    public function scopeActiveHold(Builder $query): Builder
+    {
+        return $query->where('status', 'pending')
+            ->where('created_at', '>', $this->holdCutoff());
+    }
+
+    /**
+     * `pending` rows whose hold HAS elapsed: `created_at` at or before the
+     * cutoff instant. Mirrors scopeActiveHold()'s boundary exactly so the
+     * two scopes partition every `pending` row with no gap and no overlap.
+     */
+    public function scopeExpiredHold(Builder $query): Builder
+    {
+        return $query->where('status', 'pending')
+            ->where('created_at', '<=', $this->holdCutoff());
+    }
+
+    /**
+     * Instance-level mirror of scopeExpiredHold()'s time boundary, for a
+     * single already-fetched row (e.g. PaymentService's locked row) where
+     * running a new query is unnecessary. Time-only check -- callers decide
+     * whether `status === 'pending'` also matters.
+     */
+    public function isExpiredHold(): bool
+    {
+        return Carbon::parse($this->created_at)->lte($this->holdCutoff());
     }
 }

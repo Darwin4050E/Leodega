@@ -9,6 +9,7 @@ use App\Models\StoreRooms;
 use App\Models\Tenants;
 use App\Models\User;
 use App\Notifications\ReservationReceiptNotification;
+use Carbon\Carbon;
 use Illuminate\Contracts\Notifications\Dispatcher;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Notification;
@@ -477,6 +478,126 @@ class PaymentsTest extends TestCase
             $response->assertStatus(403);
             $this->assertDatabaseMissing('payments', ['reservation_id' => $reservation->id]);
         }
+    }
+
+    // -- sdd/hug02-payment-hold-expiry: PaymentService 409 branch ---------
+
+    protected function tearDown(): void
+    {
+        Carbon::setTestNow();
+        parent::tearDown();
+    }
+
+    /**
+     * HUC-05 S2: paying an expired hold must be rejected with 409 and the
+     * verbatim tenant-facing copy, write no Payments row, and leave the
+     * reservation canceled/'Expired: payment hold elapsed'.
+     */
+    public function test_payment_on_expired_hold_returns_409_with_verbatim_huc05_message()
+    {
+        config(['reservations.payment_hold_minutes' => 15]);
+        Carbon::setTestNow('2026-01-01 12:00:00');
+
+        [$reservation, $tenantUser] = $this->reservationWithOwner([
+            'status' => 'pending',
+            'created_at' => Carbon::parse('2026-01-01 11:00:00'), // 60m ago, elapsed
+        ]);
+
+        $response = $this->actingAs($tenantUser, 'sanctum')->postJson('/api/payments', [
+            'reservation_id' => $reservation->id,
+            'payment_method' => 'credit card',
+            'payment_state' => 'paid',
+        ]);
+
+        $response->assertStatus(409);
+        $response->assertJson([
+            'message' => 'No completaste el pago, por lo que la reserva no se finalizó. Puedes iniciar una nueva reserva cuando quieras.',
+        ]);
+        $this->assertDatabaseMissing('payments', ['reservation_id' => $reservation->id]);
+        $this->assertDatabaseHas('reservations', [
+            'id' => $reservation->id,
+            'status' => 'canceled',
+            'cancelation_reason' => 'Expired: payment hold elapsed',
+        ]);
+    }
+
+    /**
+     * Regression: a payment made WITHIN an active (non-expired) hold must
+     * still confirm, unchanged from cycle A.
+     */
+    public function test_payment_within_active_hold_still_confirms()
+    {
+        config(['reservations.payment_hold_minutes' => 15]);
+        Carbon::setTestNow('2026-01-01 12:00:00');
+
+        [$reservation, $tenantUser] = $this->reservationWithOwner([
+            'status' => 'pending',
+            'created_at' => Carbon::parse('2026-01-01 11:55:00'), // 5m ago, still active
+        ]);
+
+        $response = $this->actingAs($tenantUser, 'sanctum')->postJson('/api/payments', [
+            'reservation_id' => $reservation->id,
+            'payment_method' => 'credit card',
+            'payment_state' => 'paid',
+        ]);
+
+        $response->assertStatus(201);
+        $this->assertDatabaseHas('reservations', ['id' => $reservation->id, 'status' => 'confirmed']);
+    }
+
+    /**
+     * Order-independence: the row was ALREADY expired by an earlier touch
+     * (e.g. the landlord checked their dashboard first, which ran the
+     * sweep and set status=canceled/'Expired: payment hold elapsed'
+     * directly). PaymentService must still surface the HUC-05 copy, not
+     * the generic 'Esta reserva fue cancelada y ya no admite pagos.'
+     * message, by checking the expired-reason BEFORE the generic
+     * canceled branch.
+     */
+    public function test_payment_on_a_row_already_expired_by_an_earlier_touch_still_gets_huc05_message()
+    {
+        config(['reservations.payment_hold_minutes' => 15]);
+        Carbon::setTestNow('2026-01-01 12:00:00');
+
+        [$reservation, $tenantUser] = $this->reservationWithOwner([
+            'status' => 'canceled',
+            'cancelation_reason' => 'Expired: payment hold elapsed',
+            'created_at' => Carbon::parse('2026-01-01 11:00:00'),
+        ]);
+
+        $response = $this->actingAs($tenantUser, 'sanctum')->postJson('/api/payments', [
+            'reservation_id' => $reservation->id,
+            'payment_method' => 'credit card',
+            'payment_state' => 'paid',
+        ]);
+
+        $response->assertStatus(409);
+        $response->assertJson([
+            'message' => 'No completaste el pago, por lo que la reserva no se finalizó. Puedes iniciar una nueva reserva cuando quieras.',
+        ]);
+    }
+
+    /**
+     * A reservation canceled for a DIFFERENT reason must keep the generic
+     * message -- only the expired-hold reason gets the HUC-05 copy.
+     */
+    public function test_payment_on_a_canceled_reservation_with_a_different_reason_keeps_the_generic_message()
+    {
+        [$reservation, $tenantUser] = $this->reservationWithOwner([
+            'status' => 'canceled',
+            'cancelation_reason' => 'Blocked by confirmed reservation',
+        ]);
+
+        $response = $this->actingAs($tenantUser, 'sanctum')->postJson('/api/payments', [
+            'reservation_id' => $reservation->id,
+            'payment_method' => 'credit card',
+            'payment_state' => 'paid',
+        ]);
+
+        $response->assertStatus(409);
+        $response->assertJson([
+            'message' => 'Esta reserva fue cancelada y ya no admite pagos.',
+        ]);
     }
 
     public function test_destroy_requires_authentication()

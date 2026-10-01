@@ -9,6 +9,7 @@ enum NotificationType: string
     case RESERVATION_BOOKED_AND_PAID = 'reservation_booked_and_paid';
     case RESERVATION_CONFIRMED = 'reservation_confirmed';
     case RESERVATION_CANCELED = 'reservation_canceled';
+    case RESERVATION_EXPIRED = 'reservation_expired';
     case STORE_CREATED = 'store_created';
     case STORE_REPORTED = 'store_reported';
     case STORE_APPROVED = 'store_approved';
