@@ -4,12 +4,18 @@ import { render, screen, fireEvent, waitFor, within } from '@testing-library/rea
 const mockGetLandlordReservations = vi.hoisted(() => vi.fn());
 const mockCancelReservation = vi.hoisted(() => vi.fn());
 const mockGetCancellationRate = vi.hoisted(() => vi.fn());
+const mockNavigate = vi.hoisted(() => vi.fn());
 
 vi.mock('../../services/reservations', () => ({
   getLandlordReservations: mockGetLandlordReservations,
   cancelReservation: mockCancelReservation,
   getCancellationRate: mockGetCancellationRate,
 }));
+
+vi.mock('react-router-dom', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('react-router-dom')>();
+  return { ...actual, useNavigate: () => mockNavigate };
+});
 
 import GestorReservas from './GestorReservas';
 
@@ -30,7 +36,7 @@ const reservations = [
     payment_method: 'credit card',
     payment_date: '2030-01-05',
     store_rooms: { title: 'Bodega Norte' },
-    tenants: { user: { name: 'Ana', lastname: 'Torres', email: 'ana@example.com' } },
+    tenants: { user: { id: 501, name: 'Ana', lastname: 'Torres', email: 'ana@example.com' } },
   },
   {
     id: 2,
@@ -154,16 +160,30 @@ describe('GestorReservas', () => {
     expect(screen.queryByText('Reserva #1')).not.toBeInTheDocument();
   });
 
-  it('"Mensaje al cliente" is decorative and produces no side effects', async () => {
+  it('"Mensaje al cliente" navigates to the tenant conversation when tenants.user.id is present', async () => {
     render(<GestorReservas />);
     await waitFor(() => screen.getAllByText('Bodega Norte'));
 
     fireEvent.click(screen.getByText('Ana Torres'));
-    fireEvent.click(screen.getByText('Mensaje al cliente'));
+    const button = screen.getByText('Mensaje al cliente');
+    expect(button).not.toBeDisabled();
 
-    // No navigation, no additional API calls beyond the initial list load.
-    expect(mockGetLandlordReservations).toHaveBeenCalledTimes(1);
-    expect(mockCancelReservation).not.toHaveBeenCalled();
+    fireEvent.click(button);
+
+    expect(mockNavigate).toHaveBeenCalledWith('/arrendador/mensajes?userId=501');
+  });
+
+  it('"Mensaje al cliente" is disabled and does not navigate when tenants.user.id is absent', async () => {
+    render(<GestorReservas />);
+    await waitFor(() => screen.getAllByText('Bodega Norte'));
+
+    fireEvent.click(screen.getByText('Luis Perez'));
+    const button = screen.getByText('Mensaje al cliente');
+    expect(button).toBeDisabled();
+
+    fireEvent.click(button);
+
+    expect(mockNavigate).not.toHaveBeenCalled();
   });
 
   /**
