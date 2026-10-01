@@ -12,6 +12,7 @@ use App\Models\Tenants;
 use App\Models\User;
 use App\Services\ReservationPricingService;
 use App\Services\ReservationService;
+use Carbon\Carbon;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Tests\TestCase;
 
@@ -516,6 +517,110 @@ class ReservationServiceTest extends TestCase
         } catch (ReservationConflictException $e) {
             $this->assertDatabaseCount('reservation_cancellation_obligations', 0);
         }
+    }
+
+    // -- sdd/hug02-payment-hold-expiry: create() lock/supersede/block -----
+
+    protected function tearDown(): void
+    {
+        Carbon::setTestNow();
+        parent::tearDown();
+    }
+
+    public function test_create_supersedes_tenants_own_overlapping_active_hold_without_notifying()
+    {
+        $room = StoreRooms::factory()->create();
+        $this->monthPriceFor($room);
+        $tenant = Tenants::factory()->create();
+
+        $firstHold = $this->service()->create($tenant, $room, [
+            'start_date' => '2026-07-01',
+            'end_date' => '2026-07-10',
+        ], $tenant->user_id);
+
+        $secondHold = $this->service()->create($tenant, $room, [
+            'start_date' => '2026-07-05',
+            'end_date' => '2026-07-15',
+        ], $tenant->user_id);
+
+        $this->assertDatabaseHas('reservations', [
+            'id' => $firstHold->id,
+            'status' => 'canceled',
+            'cancelation_reason' => 'Superseded by a newer hold',
+        ]);
+        $this->assertDatabaseHas('reservations', [
+            'id' => $secondHold->id,
+            'status' => 'pending',
+        ]);
+        $this->assertDatabaseCount('notifications', 0);
+    }
+
+    public function test_create_does_not_supersede_a_non_overlapping_own_hold()
+    {
+        $room = StoreRooms::factory()->create();
+        $this->monthPriceFor($room);
+        $tenant = Tenants::factory()->create();
+
+        $firstHold = $this->service()->create($tenant, $room, [
+            'start_date' => '2026-07-01',
+            'end_date' => '2026-07-10',
+        ], $tenant->user_id);
+
+        $this->service()->create($tenant, $room, [
+            'start_date' => '2026-08-01',
+            'end_date' => '2026-08-10',
+        ], $tenant->user_id);
+
+        $this->assertDatabaseHas('reservations', [
+            'id' => $firstHold->id,
+            'status' => 'pending',
+        ]);
+    }
+
+    public function test_create_blocks_when_another_tenant_has_an_active_hold()
+    {
+        $room = StoreRooms::factory()->create();
+        $this->monthPriceFor($room);
+        $tenantA = Tenants::factory()->create();
+        $tenantB = Tenants::factory()->create();
+
+        $this->service()->create($tenantA, $room, [
+            'start_date' => '2026-07-01',
+            'end_date' => '2026-07-10',
+        ], $tenantA->user_id);
+
+        $this->expectException(ReservationConflictException::class);
+
+        $this->service()->create($tenantB, $room, [
+            'start_date' => '2026-07-05',
+            'end_date' => '2026-07-15',
+        ], $tenantB->user_id);
+    }
+
+    public function test_create_allows_a_new_hold_once_the_blocking_hold_has_expired()
+    {
+        $room = StoreRooms::factory()->create();
+        $this->monthPriceFor($room);
+        $tenantA = Tenants::factory()->create();
+        $tenantB = Tenants::factory()->create();
+
+        config(['reservations.payment_hold_minutes' => 15]);
+        Carbon::setTestNow(now()->subMinutes(20));
+        $this->service()->create($tenantA, $room, [
+            'start_date' => '2026-07-01',
+            'end_date' => '2026-07-10',
+        ], $tenantA->user_id);
+        Carbon::setTestNow();
+
+        $secondHold = $this->service()->create($tenantB, $room, [
+            'start_date' => '2026-07-05',
+            'end_date' => '2026-07-15',
+        ], $tenantB->user_id);
+
+        $this->assertDatabaseHas('reservations', [
+            'id' => $secondHold->id,
+            'status' => 'pending',
+        ]);
     }
 
     // -- sdd/tenant-self-cancel: cancelByTenant() -------------------------

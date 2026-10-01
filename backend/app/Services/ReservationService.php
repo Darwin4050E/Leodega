@@ -25,42 +25,72 @@ class ReservationService
      * eventual total_mount enviado por el cliente en $data es IGNORADO.
      *
      * @throws ReservationConflictException si ya hay una reserva confirmada
-     *                                      que se solapa con el rango solicitado.
+     *                                      que se solapa con el rango solicitado,
+     *                                      o si otro tenant tiene un hold
+     *                                      activo (pending, no expirado) que
+     *                                      se solapa (sdd/hug02-payment-hold-expiry).
      * @throws \App\Exceptions\ReservationPricingException si la bodega no
      *                                                     tiene un precio mensual disponible.
+     *
+     * sdd/hug02-payment-hold-expiry: wrapped in DB::transaction() with a
+     * StoreRooms::lockForUpdate() room lock, mirroring confirm()'s pattern,
+     * to serialize concurrent creates for the same room. Inside the lock,
+     * the tenant's OWN overlapping active holds are first superseded
+     * (canceled, no notification -- this is a synchronous supersede, not
+     * the lazy expiry sweep, so the two can never conflate reasons or
+     * double-notify). The conflict check then blocks on either a
+     * `confirmed` row or ANOTHER tenant's active (non-expired) `pending`
+     * hold -- a `pending` row alone no longer silently coexists.
      */
     public function create(Tenants $tenant, StoreRooms $room, array $data, ?int $actingUserId): Reservations
     {
-        $hasConflict = Reservations::where('store_room_id', $room->id)
-            ->where('status', 'confirmed')
-            ->whereDate('start_date', '<=', $data['end_date'])
-            ->whereDate('end_date', '>=', $data['start_date'])
-            ->exists();
+        return DB::transaction(function () use ($tenant, $room, $data) {
+            StoreRooms::where('id', $room->id)->lockForUpdate()->first();
 
-        if ($hasConflict) {
-            throw new ReservationConflictException('La bodega ya está reservada en esas fechas.');
-        }
+            Reservations::where('store_room_id', $room->id)
+                ->where('tenant_id', $tenant->id)
+                ->activeHold()
+                ->whereDate('start_date', '<=', $data['end_date'])
+                ->whereDate('end_date', '>=', $data['start_date'])
+                ->update([
+                    'status' => 'canceled',
+                    'cancelation_reason' => 'Superseded by a newer hold',
+                ]);
 
-        $quote = $this->pricingService->quote($room, $data['start_date'], $data['end_date']);
+            $hasConflict = Reservations::where('store_room_id', $room->id)
+                ->where(function ($query) use ($tenant) {
+                    $query->where('status', 'confirmed')
+                        ->orWhere(function ($activeHoldQuery) use ($tenant) {
+                            $activeHoldQuery->activeHold()->where('tenant_id', '!=', $tenant->id);
+                        });
+                })
+                ->whereDate('start_date', '<=', $data['end_date'])
+                ->whereDate('end_date', '>=', $data['start_date'])
+                ->exists();
 
-        $reservation = Reservations::create([
-            'store_room_id' => $room->id,
-            'tenant_id' => $tenant->id,
-            'start_date' => $data['start_date'],
-            'end_date' => $data['end_date'],
-            'status' => 'pending',
-            'total_mount' => $quote['total_mount'],
-            'rent_subtotal' => $quote['rent_subtotal'],
-            'cancelation_reason' => null,
-            // sdd/tenant-self-cancel decision #339: snapshot the room's
-            // CURRENT tier now, forever, so a later landlord edit to the
-            // storeroom's tier cannot change what an already-paying tenant
-            // gets back on cancellation.
-            'cancellation_policy_tier' => $room->cancellation_policy_tier,
-            'creation_date' => now(),
-        ]);
+            if ($hasConflict) {
+                throw new ReservationConflictException('La bodega ya está reservada en esas fechas.');
+            }
 
-        return $reservation;
+            $quote = $this->pricingService->quote($room, $data['start_date'], $data['end_date']);
+
+            return Reservations::create([
+                'store_room_id' => $room->id,
+                'tenant_id' => $tenant->id,
+                'start_date' => $data['start_date'],
+                'end_date' => $data['end_date'],
+                'status' => 'pending',
+                'total_mount' => $quote['total_mount'],
+                'rent_subtotal' => $quote['rent_subtotal'],
+                'cancelation_reason' => null,
+                // sdd/tenant-self-cancel decision #339: snapshot the room's
+                // CURRENT tier now, forever, so a later landlord edit to the
+                // storeroom's tier cannot change what an already-paying tenant
+                // gets back on cancellation.
+                'cancellation_policy_tier' => $room->cancellation_policy_tier,
+                'creation_date' => now(),
+            ]);
+        });
     }
 
     /**
