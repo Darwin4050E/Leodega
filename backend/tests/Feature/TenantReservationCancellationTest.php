@@ -16,7 +16,7 @@ class TenantReservationCancellationTest extends TestCase
 
     private function reservationFor(Tenants $tenant, array $overrides = []): Reservations
     {
-        $room = StoreRooms::factory()->create();
+        $room = StoreRooms::factory()->approved()->create();
 
         return Reservations::factory()->create(array_merge([
             'store_room_id' => $room->id,

@@ -107,6 +107,10 @@ Route::get('/store-rooms/{id}/detail', [StoreRoomsController::class, 'detail']);
 // by ReservationPricingService::quote(), no auth required, same public
 // pattern as detail() above.
 Route::get('/store-rooms/{id}/quote', [StoreRoomsController::class, 'quote']);
+// Public (visitors see occupied periods before logging in). Same visibility
+// rule as detail(): non-approved rooms 404 unless the optional Sanctum caller
+// is the owning landlord or an admin. Date ranges only, no tenant data.
+Route::get('/storeRooms/{id}/reserved-dates', [ReservationsController::class, 'reservedDates']);
 // El registro (POST) queda restringido a landlords autenticados (HUG-04);
 // PUT/DELETE se mantienen en su propio grupo solo-auth porque PUT es el
 // camino de moderación admin (StoreModerationService::moderate) y no debe
@@ -162,7 +166,6 @@ Route::middleware('auth.api:sanctum')->group(function () {
     Route::get('/landlord/reservations', [ReservationsController::class, 'landlordIndex']);
     Route::get('/landlord/reservations/cancellation-rate', [ReservationsController::class, 'cancellationRate']);
     Route::patch('/landlord/reservations/{reservation}/cancel', [ReservationsController::class, 'cancel']);
-    Route::get('/storeRooms/{id}/reserved-dates', [ReservationsController::class, 'reservedDates']);
 });
 
 Route::middleware('auth.api:sanctum')->group(function () {

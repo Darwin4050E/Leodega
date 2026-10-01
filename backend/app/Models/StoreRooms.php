@@ -157,4 +157,23 @@ class StoreRooms extends Model
 
         return $query->where('publication_status', 'approved');
     }
+
+    /**
+     * Single-room counterpart of scopeVisibleTo() for public endpoints that
+     * address one storeroom by id (detail(), reservedDates()). The owner is
+     * resolved from the row itself, so the rule is exactly scopeVisibleTo()'s
+     * and is never copied: approved rooms are visible to everyone, any other
+     * room only to an admin or its owning landlord. A missing, soft-deleted or
+     * hidden room all yield an empty result, which callers turn into the same
+     * 404 so existence does not leak.
+     */
+    public function scopeViewableById($query, $id, ?User $viewer)
+    {
+        $ownerLandlordId = static::query()->whereKey($id)->value('landlord_id');
+
+        return $query->whereKey($id)->visibleTo(
+            $viewer,
+            $ownerLandlordId === null ? null : (int) $ownerLandlordId
+        );
+    }
 }

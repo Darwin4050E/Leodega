@@ -392,7 +392,7 @@ class StoreRoomTest extends TestCase
         $stored = json_encode(['camara' => true, 'ruido' => false, 'control' => true, 'objetos' => false]);
 
         $landlord = Landlords::factory()->create();
-        $room = \App\Models\StoreRooms::factory()->create([
+        $room = \App\Models\StoreRooms::factory()->approved()->create([
             'landlord_id' => $landlord->id,
             'security' => $stored,
         ]);
@@ -402,6 +402,81 @@ class StoreRoomTest extends TestCase
         $response->assertStatus(200);
         $this->assertIsString($response->json('security'));
         $this->assertSame($stored, $response->json('security'));
+    }
+
+    /**
+     * SRD-1: detail() is public, but a room that is not approved is only
+     * visible to its owning landlord and to admins. Everyone else gets the
+     * exact same 404 an unknown id returns, so existence does not leak.
+     */
+    public function test_detail_of_a_pending_room_is_404_for_a_visitor_with_the_unknown_id_body()
+    {
+        $room = StoreRooms::factory()->create(['publication_status' => 'pending']);
+
+        $this->getJson("/api/store-rooms/{$room->id}/detail")
+            ->assertStatus(404)
+            ->assertExactJson(['message' => 'Bodega no encontrada']);
+
+        $this->getJson('/api/store-rooms/999999/detail')
+            ->assertStatus(404)
+            ->assertExactJson(['message' => 'Bodega no encontrada']);
+    }
+
+    public function test_detail_of_a_rejected_room_is_404_for_a_tenant()
+    {
+        $room = StoreRooms::factory()->create(['publication_status' => 'rejected']);
+        $tenantUser = User::factory()->create(['role' => 'tenant']);
+
+        $this->actingAs($tenantUser, 'sanctum')
+            ->getJson("/api/store-rooms/{$room->id}/detail")
+            ->assertStatus(404)
+            ->assertExactJson(['message' => 'Bodega no encontrada']);
+    }
+
+    public function test_detail_of_a_pending_room_is_404_for_a_landlord_who_does_not_own_it()
+    {
+        $room = StoreRooms::factory()->create(['publication_status' => 'pending']);
+        $otherUser = User::factory()->create(['role' => 'landlord']);
+        Landlords::factory()->create(['user_id' => $otherUser->id]);
+
+        $this->actingAs($otherUser, 'sanctum')
+            ->getJson("/api/store-rooms/{$room->id}/detail")
+            ->assertStatus(404);
+    }
+
+    public function test_detail_of_a_pending_room_is_200_for_the_owning_landlord()
+    {
+        $ownerUser = User::factory()->create(['role' => 'landlord']);
+        $landlord = Landlords::factory()->create(['user_id' => $ownerUser->id]);
+        $room = StoreRooms::factory()->create([
+            'landlord_id' => $landlord->id,
+            'publication_status' => 'pending',
+        ]);
+
+        $this->actingAs($ownerUser, 'sanctum')
+            ->getJson("/api/store-rooms/{$room->id}/detail")
+            ->assertStatus(200)
+            ->assertJsonPath('id', $room->id);
+    }
+
+    public function test_detail_of_a_pending_room_is_200_for_an_admin()
+    {
+        $room = StoreRooms::factory()->create(['publication_status' => 'pending']);
+        $admin = User::factory()->create(['role' => 'admin']);
+
+        $this->actingAs($admin, 'sanctum')
+            ->getJson("/api/store-rooms/{$room->id}/detail")
+            ->assertStatus(200)
+            ->assertJsonPath('id', $room->id);
+    }
+
+    public function test_detail_of_an_approved_room_stays_public_for_a_visitor()
+    {
+        $room = StoreRooms::factory()->approved()->create();
+
+        $this->getJson("/api/store-rooms/{$room->id}/detail")
+            ->assertStatus(200)
+            ->assertJsonPath('id', $room->id);
     }
 
     /**
@@ -433,7 +508,7 @@ class StoreRoomTest extends TestCase
     public function test_a_future_only_confirmed_reservation_does_not_make_the_room_currently_occupied()
     {
         $landlord = Landlords::factory()->create();
-        $room = StoreRooms::factory()->create(['landlord_id' => $landlord->id]);
+        $room = StoreRooms::factory()->approved()->create(['landlord_id' => $landlord->id]);
 
         \App\Models\Reservations::factory()->create([
             'store_room_id' => $room->id,

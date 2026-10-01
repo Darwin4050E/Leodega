@@ -383,8 +383,11 @@ class StoreRoomsController extends ApiController
             'storePrices',
             'storePhotos',
             'landlord.user',
-        ])->withCount('activeReservations')->find($id);
+        ])->withCount('activeReservations')
+            ->viewableById($id, auth('sanctum')->user())
+            ->first();
 
+        // Missing, soft-deleted and not-visible rooms share this exact 404.
         if (! $room) {
             return response()->json(['message' => 'Bodega no encontrada'], 404);
         }
