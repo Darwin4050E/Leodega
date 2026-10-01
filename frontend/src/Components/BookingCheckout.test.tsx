@@ -157,6 +157,37 @@ describe("BookingCheckout", () => {
     expect(submit).not.toBeDisabled();
   });
 
+  it("shows the verbatim HUC-05 message on a 409 createPayment rejection for an expired hold", async () => {
+    mockCreatePayment.mockRejectedValue({
+      response: {
+        status: 409,
+        data: {
+          message:
+            "No completaste el pago, por lo que la reserva no se finalizó. Puedes iniciar una nueva reserva cuando quieras.",
+        },
+      },
+    });
+
+    render(
+      <BookingCheckout storeRoom={storeRoom} reservation={reservation} pricePerMonth={780} onPaid={onPaid} onBack={onBack} />
+    );
+
+    fillValidCard();
+    fireEvent.click(screen.getByRole("button", { name: /Confirmar y pagar/ }));
+
+    await waitFor(() =>
+      expect(
+        screen.getByText(
+          "No completaste el pago, por lo que la reserva no se finalizó. Puedes iniciar una nueva reserva cuando quieras."
+        )
+      ).toBeInTheDocument()
+    );
+    expect(screen.queryByText(/rechazó la tarjeta/)).not.toBeInTheDocument();
+
+    const submit = screen.getByRole("button", { name: /Confirmar y pagar/ });
+    expect(submit).not.toBeDisabled();
+  });
+
   it("shows the login-required copy on a 401 createPayment rejection without dropping back to detail", async () => {
     mockCreatePayment.mockRejectedValue({ response: { status: 401 } });
 

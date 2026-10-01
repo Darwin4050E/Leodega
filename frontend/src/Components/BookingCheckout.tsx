@@ -133,6 +133,8 @@ export default function BookingCheckout({
       const err = asApiError(e);
       if (err.response?.status === 401) {
         setAuthRequired(true);
+      } else if (err.response?.status === 409) {
+        setPayError(err.response?.data?.message || COPY.networkError);
       } else {
         setPayError(COPY.networkError);
       }
