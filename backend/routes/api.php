@@ -245,6 +245,8 @@ Route::middleware('auth.api:sanctum')->group(function () {
     // the cancel modal on open, same ownership gate as the cancel action
     // above.
     Route::get('/tenant/reservations/{reservation}/cancellation-preview', [ReservationsController::class, 'cancellationPreview']);
+    // sdd/huc05-payment-receipt: owner-scoped payment receipt PDF.
+    Route::get('/tenant/reservations/{reservation}/receipt', [ReservationsController::class, 'receipt']);
 });
 
 Route::middleware(['auth.api:sanctum', 'role:admin'])->group(function () {

@@ -49,6 +49,15 @@ class Reservations extends Model
     }
 
     /**
+     * Most recent 'paid' Payments row, by id (insertion order) rather than
+     * payment_date, which is client-suppliable and not guaranteed monotonic.
+     */
+    public function latestPaidPayment(): ?Payments
+    {
+        return $this->payments->sortByDesc('id')->firstWhere('payment_state', 'paid');
+    }
+
+    /**
      * Single definition of the HUG-06 gestor cancellation rule: the
      * reservation must be paid (`confirmed` is only reachable from
      * PaymentService's paid branch), priced (legacy rows have a null

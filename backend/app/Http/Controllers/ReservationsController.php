@@ -11,6 +11,9 @@ use App\Models\StoreDisponibility;
 use App\Models\StoreRooms;
 use App\Models\Tenants;
 use App\Services\ReservationService;
+use App\Support\ReservationCode;
+use App\Support\ReservationReceipt;
+use Barryvdh\DomPDF\Facade\Pdf;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Gate;
 
@@ -92,7 +95,7 @@ class ReservationsController extends Controller
              * being non-null, not payment_status, to decide whether a
              * receipt exists.
              */
-            $latestPaidPayment = $item->payments->sortByDesc('id')->firstWhere('payment_state', 'paid');
+            $latestPaidPayment = $item->latestPaidPayment();
             $item->payment_id = $latestPaidPayment->id ?? null;
             $item->payment_method = $latestPaidPayment->payment_method ?? null;
             $item->payment_date = $latestPaidPayment->payment_date ?? null;
@@ -265,6 +268,8 @@ class ReservationsController extends Controller
         $items = Reservations::with([
             'storeRooms:id,title,direction,city,size,room_type,landlord_id',
             'storeRooms.storePhotos',
+            'storeRooms.landlord.user:id,name,lastname',
+            'payments',
         ])
             ->where('tenant_id', $tenant->id)
             ->orderBy('start_date')
@@ -272,12 +277,33 @@ class ReservationsController extends Controller
 
         $items->each(function (Reservations $item) {
             $item->can_be_cancelled = $item->isCancellableByTenant();
+            $item->receipt = ReservationReceipt::build($item);
 
             $firstPhoto = $item->storeRooms?->storePhotos->first();
             $item->photo_url = $firstPhoto ? asset('storage/'.$firstPhoto->photo_url) : null;
-            $item->storeRooms?->makeHidden('storePhotos');
+            $item->makeHidden('payments');
+            $item->storeRooms?->makeHidden(['storePhotos', 'landlord']);
         });
 
         return response()->json($items);
+    }
+
+    /**
+     * sdd/huc05-payment-receipt: owner-scoped PDF of the payment receipt.
+     * Authorization runs before the state check so a non-owner never learns
+     * the reservation's status; an owner without a receipt gets a 404.
+     */
+    public function receipt(Reservations $reservation)
+    {
+        Gate::authorize('viewReceipt', $reservation);
+
+        $receipt = ReservationReceipt::build($reservation);
+
+        abort_if($receipt === null, 404, 'No existe un comprobante para esta reserva.');
+
+        return Pdf::loadView('pdf.reservation-receipt', ['receipt' => $receipt])
+            ->setPaper('a4')
+            ->setOption('isRemoteEnabled', false)
+            ->download('comprobante-'.ReservationCode::format($reservation->id).'.pdf');
     }
 }
