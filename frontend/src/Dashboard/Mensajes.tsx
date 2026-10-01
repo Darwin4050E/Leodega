@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from "react";
+import { useSearchParams } from "react-router-dom";
 import {
     getMe,
     getConversations,
@@ -35,6 +36,8 @@ interface Conversation {
 }
 
 const Mensajes = () => {
+    const [searchParams, setSearchParams] = useSearchParams();
+    const openedUserIdRef = useRef<number | null>(null);
     const [authUser, setAuthUser] = useState<User | null>(null);
     const [conversations, setConversations] = useState<Conversation[]>([]);
     const [activeConversation, setActiveConversation] = useState<Conversation | null>(null);
@@ -135,6 +138,22 @@ const Mensajes = () => {
     useEffect(() => {
         messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
     }, [messages]);
+
+    useEffect(() => {
+        const raw = searchParams.get("userId");
+        const userId = raw !== null ? Number(raw) : NaN;
+        const isValid = Number.isInteger(userId) && userId > 0;
+
+        if (isValid && openedUserIdRef.current !== userId) {
+            openedUserIdRef.current = userId;
+            startConversation(userId);
+        }
+
+        if (raw !== null) {
+            setSearchParams({}, { replace: true });
+        }
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [searchParams]);
 
     /* ================= FILTER ================= */
 
