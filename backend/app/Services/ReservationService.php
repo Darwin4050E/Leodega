@@ -10,6 +10,8 @@ use App\Models\StoreRooms;
 use App\Models\Tenants;
 use App\Notifications\ReservationCancellationNotification;
 use App\Support\CancellationRefundCalculator;
+use Carbon\Carbon;
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 
@@ -46,6 +48,8 @@ class ReservationService
     {
         return DB::transaction(function () use ($tenant, $room, $data) {
             StoreRooms::where('id', $room->id)->lockForUpdate()->first();
+
+            $this->expireElapsedHolds(Reservations::where('store_room_id', $room->id));
 
             Reservations::where('store_room_id', $room->id)
                 ->where('tenant_id', $tenant->id)
@@ -213,6 +217,86 @@ class ReservationService
 
             return $locked->load(['storeRooms', 'tenants.user']);
         });
+    }
+
+    /**
+     * sdd/hug02-payment-hold-expiry: lazy, idempotent transition of every
+     * `pending` row matched by `$scope` whose payment hold has elapsed into
+     * `canceled`/`'Expired: payment hold elapsed'`. Called from create(),
+     * reservedDates(), landlordIndex(), tenantIndex(), and
+     * PaymentService::process() -- there is no scheduler/cron.
+     *
+     * Fetches candidate rows first (eager-loading storeRooms.landlord.user
+     * and tenants.user to stay N+1-free for listings), then writes each row
+     * with a per-row CONDITIONAL `UPDATE ... WHERE id=? AND status='pending'`.
+     * That conditional update's own row-level write lock re-checks
+     * staleness at write time -- no separate `lockForUpdate()` SELECT is
+     * needed. Only the request whose UPDATE actually flips the row
+     * (`affected === 1`) sends the notification; a loser that raced and
+     * lost (`affected === 0`) skips it. A row already canceled by
+     * supersession is NEVER matched by `scopeExpiredHold()` (it filters
+     * `status = 'pending'`), so it is never touched here.
+     *
+     * The landlord notification fires only when the elapsed time since the
+     * hold's expiry instant is within `payment_hold_notify_recency_hours`
+     * (default 24h) -- older stale rows are released silently, avoiding a
+     * deploy-time notification burst for pre-existing stale rows.
+     */
+    public function expireElapsedHolds(Builder $scope): void
+    {
+        $rows = (clone $scope)->expiredHold()
+            ->with(['storeRooms.landlord.user', 'tenants.user'])
+            ->get();
+
+        if ($rows->isEmpty()) {
+            return;
+        }
+
+        $holdMinutes = (int) config('reservations.payment_hold_minutes');
+        $recencyHours = (int) config('reservations.payment_hold_notify_recency_hours');
+
+        foreach ($rows as $row) {
+            $affected = Reservations::where('id', $row->id)
+                ->where('status', 'pending')
+                ->update([
+                    'status' => 'canceled',
+                    'cancelation_reason' => 'Expired: payment hold elapsed',
+                ]);
+
+            if ($affected !== 1) {
+                continue;
+            }
+
+            $expiryInstant = Carbon::parse($row->created_at)->addMinutes($holdMinutes);
+            $hoursSinceExpiry = $expiryInstant->diffInHours(now());
+
+            if ($hoursSinceExpiry > $recencyHours) {
+                continue;
+            }
+
+            $room = $row->storeRooms;
+            $tenantUser = $row->tenants->user ?? null;
+
+            if (! $room || ! $room->landlord || ! $room->landlord->user || ! $tenantUser) {
+                continue;
+            }
+
+            NotificationService::send(
+                $tenantUser->id,
+                $room->landlord->user->id,
+                NotificationType::RESERVATION_EXPIRED,
+                'Reserva expirada',
+                'El cliente no completó el pago a tiempo; la bodega volvió a estar disponible.',
+                [
+                    'reservation_id' => $row->id,
+                    'store_room_id' => $row->store_room_id,
+                    'customer_name' => trim("{$tenantUser->name} {$tenantUser->lastname}"),
+                    'store_room_title' => $room->title,
+                    'start_date' => $row->start_date,
+                    'end_date' => $row->end_date,
+                ]
+            );
+        }
     }
 
     /**

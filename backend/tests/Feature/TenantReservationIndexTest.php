@@ -114,4 +114,29 @@ class TenantReservationIndexTest extends TestCase
         $item = collect($response->json())->firstWhere('id', $reservation->id);
         $this->assertNull($item['photo_url']);
     }
+
+    /**
+     * sdd/hug02-payment-hold-expiry: tenantIndex() must trigger the lazy
+     * expiry sweep before querying, so the tenant's own elapsed hold shows
+     * as canceled without a separate request.
+     */
+    public function test_tenant_index_triggers_sweep_and_shows_expired_hold_as_canceled()
+    {
+        [$user, $tenant] = $this->tenant();
+        $room = StoreRooms::factory()->create();
+
+        config(['reservations.payment_hold_minutes' => 15]);
+        $reservation = Reservations::factory()->create([
+            'store_room_id' => $room->id,
+            'tenant_id' => $tenant->id,
+            'status' => 'pending',
+            'created_at' => now()->subMinutes(20),
+        ]);
+
+        $response = $this->actingAs($user, 'sanctum')->getJson('/api/tenant/reservations');
+
+        $response->assertStatus(200);
+        $item = collect($response->json())->firstWhere('id', $reservation->id);
+        $this->assertSame('canceled', $item['status']);
+    }
 }

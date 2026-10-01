@@ -302,6 +302,73 @@ class ReservationTest extends TestCase
         $response->assertStatus(201);
     }
 
+    /**
+     * sdd/hug02-payment-hold-expiry (orchestrator correction): reservedDates()
+     * must exclude the AUTHENTICATED CALLER'S OWN active hold when the
+     * caller resolves to a tenant, via $request->user() (never auth()).
+     */
+    public function test_reserved_dates_excludes_the_tenant_callers_own_active_hold()
+    {
+        $room = StoreRooms::factory()->create();
+        $userA = User::factory()->create();
+        $tenantA = Tenants::factory()->create(['user_id' => $userA->id]);
+
+        Reservations::factory()->create([
+            'store_room_id' => $room->id,
+            'tenant_id' => $tenantA->id,
+            'status' => 'pending',
+            'start_date' => '2026-09-01',
+            'end_date' => '2026-09-10',
+        ]);
+
+        $response = $this->actingAs($userA, 'sanctum')
+            ->getJson("/api/storeRooms/{$room->id}/reserved-dates");
+
+        $response->assertStatus(200)->assertJsonCount(0);
+    }
+
+    public function test_reserved_dates_includes_another_tenants_active_hold()
+    {
+        $room = StoreRooms::factory()->create();
+        $userA = User::factory()->create();
+        $tenantA = Tenants::factory()->create(['user_id' => $userA->id]);
+        $userB = User::factory()->create();
+        Tenants::factory()->create(['user_id' => $userB->id]);
+
+        Reservations::factory()->create([
+            'store_room_id' => $room->id,
+            'tenant_id' => $tenantA->id,
+            'status' => 'pending',
+            'start_date' => '2026-09-01',
+            'end_date' => '2026-09-10',
+        ]);
+
+        $response = $this->actingAs($userB, 'sanctum')
+            ->getJson("/api/storeRooms/{$room->id}/reserved-dates");
+
+        $response->assertStatus(200)->assertJsonCount(1);
+    }
+
+    public function test_reserved_dates_shows_all_active_holds_to_a_landlord_caller_with_no_self_exclusion()
+    {
+        $room = StoreRooms::factory()->create();
+        $tenant = Tenants::factory()->create();
+        $landlordUser = User::factory()->create(['role' => 'landlord']);
+
+        Reservations::factory()->create([
+            'store_room_id' => $room->id,
+            'tenant_id' => $tenant->id,
+            'status' => 'pending',
+            'start_date' => '2026-09-01',
+            'end_date' => '2026-09-10',
+        ]);
+
+        $response = $this->actingAs($landlordUser, 'sanctum')
+            ->getJson("/api/storeRooms/{$room->id}/reserved-dates");
+
+        $response->assertStatus(200)->assertJsonCount(1);
+    }
+
     public function test_reserved_dates_still_404s_for_nonexistent_store_room()
     {
         $user = User::factory()->create();
