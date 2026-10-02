@@ -26,11 +26,9 @@ class UserController extends ApiController
     {
         $rules = (new StoreUserRequest)->rules();
 
-        // Este endpoint se mantiene público porque es el alta de cuenta real que
-        // usa el flujo de registro (Decision.tsx envía role=landlord|tenant sin
-        // sesión). Sin este guard, cualquier petición anónima podría mandar
-        // role=admin y auto-promoverse a administrador.
-        if (! $request->user('sanctum') && $request->input('role') === 'admin') {
+        // Endpoint público (alta de cuenta en Decision.tsx). Los administradores
+        // se crean solo por POST /admin, por eso role=admin se rechaza siempre.
+        if ($request->input('role') === 'admin') {
             return response()->json([
                 'message' => 'No autorizado para crear un usuario con rol admin',
             ], 403);

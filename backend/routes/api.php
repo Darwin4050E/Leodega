@@ -60,8 +60,7 @@ Route::middleware('auth.api:sanctum')->group(function () {
 });
 // POST se mantiene público: es el mecanismo real de alta de cuenta que usa
 // Decision.tsx tras el flujo de "¿cuál es tu rol?". UserController::store
-// bloquea explícitamente que una petición no autenticada se auto-asigne
-// role=admin.
+// rechaza role=admin para cualquier llamador; los admins se crean por POST /admin.
 Route::post('/user', [UserController::class, 'store']);
 Route::middleware(['auth.api:sanctum', 'role:admin'])->group(function () {
     Route::put('/user/{id}', [UserController::class, 'update']);

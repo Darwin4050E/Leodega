@@ -6,6 +6,7 @@ use App\Models\Landlords;
 use App\Models\Tenants;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use PHPUnit\Framework\Attributes\DataProvider;
 use Tests\TestCase;
 
 class UserTest extends TestCase
@@ -130,6 +131,77 @@ class UserTest extends TestCase
 
         $response->assertStatus(403);
         $this->assertDatabaseMissing('user', ['email' => 'atacante@leodega.com']);
+    }
+
+    #[DataProvider('callerRoleProvider')]
+    public function test_store_rejects_role_admin_for_every_caller(?string $role)
+    {
+        $caller = $this->callerAs($role);
+        $adminsBefore = User::where('role', 'admin')->count();
+
+        $response = $caller->postJson('/api/user', [
+            'name' => 'Atacante',
+            'lastname' => 'Escalada',
+            'email' => 'escalada@leodega.com',
+            'phone' => '0990000001',
+            'password' => 'secret123',
+            'role' => 'admin',
+            'enable_messages' => true,
+        ]);
+
+        $response->assertStatus(403);
+        $response->assertExactJson(['message' => 'No autorizado para crear un usuario con rol admin']);
+        $this->assertDatabaseMissing('user', ['email' => 'escalada@leodega.com']);
+        $this->assertSame($adminsBefore, User::where('role', 'admin')->count());
+    }
+
+    public function test_authenticated_tenant_can_register_landlord_and_tenant()
+    {
+        $caller = $this->callerAs('tenant');
+
+        $caller->postJson('/api/user', [
+            'name' => 'Marta',
+            'lastname' => 'Rios',
+            'email' => 'marta@leodega.com',
+            'phone' => '0991111111',
+            'password' => 'secret123',
+            'role' => 'landlord',
+            'enable_messages' => true,
+        ])->assertStatus(201);
+
+        $caller->postJson('/api/user', [
+            'name' => 'Pedro',
+            'lastname' => 'Mora',
+            'email' => 'pedro@leodega.com',
+            'phone' => '0992222222',
+            'password' => 'secret123',
+            'role' => 'tenant',
+            'enable_messages' => true,
+        ])->assertStatus(201);
+
+        $landlord = User::where('email', 'marta@leodega.com')->firstOrFail();
+        $tenant = User::where('email', 'pedro@leodega.com')->firstOrFail();
+        $this->assertTrue(Landlords::where('user_id', $landlord->id)->exists());
+        $this->assertTrue(Tenants::where('user_id', $tenant->id)->exists());
+    }
+
+    public static function callerRoleProvider(): array
+    {
+        return [
+            'anonymous' => [null],
+            'tenant' => ['tenant'],
+            'landlord' => ['landlord'],
+            'admin' => ['admin'],
+        ];
+    }
+
+    private function callerAs(?string $role): static
+    {
+        if ($role === null) {
+            return $this;
+        }
+
+        return $this->actingAs(User::factory()->create(['role' => $role]), 'sanctum');
     }
 
     // --- PUT/DELETE /user/{id} ahora requieren sesión de administrador: no hay
