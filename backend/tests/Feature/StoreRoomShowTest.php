@@ -110,6 +110,67 @@ class StoreRoomShowTest extends TestCase
         $asAdmin->assertJsonMissingPath('firefighter_permit_path');
     }
 
+    /**
+     * Real Bearer token, no `actingAs`: `actingAs($u, 'sanctum')` makes sanctum
+     * the default guard in tests while production defaults to `web`, so only a
+     * token request proves show() resolves the viewer with auth('sanctum').
+     * One request per test method keeps the memoized guard from leaking.
+     */
+    private function bearerAs(User $user): static
+    {
+        $this->app['auth']->forgetGuards();
+
+        return $this->withToken($user->createToken('auth_token')->plainTextToken);
+    }
+
+    private function pendingRoomOwnedBy(User $ownerUser): StoreRooms
+    {
+        $owner = Landlords::factory()->create(['user_id' => $ownerUser->id]);
+
+        return StoreRooms::factory()->create([
+            'landlord_id' => $owner->id,
+            'publication_status' => 'pending',
+            'security' => self::SECURITY,
+            'firefighter_permit_path' => 'firefighter_permits/secret.pdf',
+        ]);
+    }
+
+    public function test_owner_reads_own_pending_room_with_bearer_token()
+    {
+        $ownerUser = User::factory()->create(['role' => 'landlord']);
+        $room = $this->pendingRoomOwnedBy($ownerUser);
+
+        $response = $this->bearerAs($ownerUser)->getJson("/api/storeRooms/{$room->id}");
+
+        $response->assertStatus(200);
+        $response->assertJsonPath('id', $room->id);
+        $response->assertJsonMissingPath('firefighter_permit_path');
+    }
+
+    public function test_admin_reads_pending_room_with_bearer_token()
+    {
+        $room = $this->roomWithPermit('pending');
+        $admin = User::factory()->create(['role' => 'admin']);
+
+        $response = $this->bearerAs($admin)->getJson("/api/storeRooms/{$room->id}");
+
+        $response->assertStatus(200);
+        $response->assertJsonPath('id', $room->id);
+        $response->assertJsonMissingPath('firefighter_permit_path');
+    }
+
+    public function test_non_owner_landlord_gets_exact_404_for_pending_room_with_bearer_token()
+    {
+        $room = $this->roomWithPermit('pending');
+        $other = User::factory()->create(['role' => 'landlord']);
+        Landlords::factory()->create(['user_id' => $other->id]);
+
+        $response = $this->bearerAs($other)->getJson("/api/storeRooms/{$room->id}");
+
+        $response->assertStatus(404);
+        $response->assertExactJson(self::NOT_FOUND);
+    }
+
     public function test_missing_room_returns_exact_404()
     {
         $response = $this->getJson('/api/storeRooms/999999');

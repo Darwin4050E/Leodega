@@ -191,11 +191,22 @@ class ReportsTest extends TestCase
             'POST api/reports',
         ], $surface);
 
-        $reads = $routes->filter(fn ($route) => in_array('GET', $route->methods(), true));
-        $this->assertCount(2, $reads);
-        foreach ($reads as $route) {
+        $this->assertCount(4, $routes);
+        foreach ($routes as $route) {
+            $this->assertContains('auth.api:sanctum', $route->gatherMiddleware());
+        }
+
+        $isPost = fn ($route) => in_array('POST', $route->methods(), true);
+
+        $adminOnly = $routes->reject($isPost);
+        $this->assertCount(3, $adminOnly);
+        foreach ($adminOnly as $route) {
             $this->assertContains('role:admin', $route->gatherMiddleware());
         }
+
+        $create = $routes->filter($isPost);
+        $this->assertCount(1, $create);
+        $this->assertNotContains('role:admin', $create->first()->gatherMiddleware());
 
         $this->assertFalse(method_exists(ReportsController::class, 'update'));
         $this->assertFileDoesNotExist(app_path('Http/Requests/UpdateReportRequest.php'));
