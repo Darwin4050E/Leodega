@@ -22,6 +22,16 @@ vi.mock('./CancelarReservaTenantModal', () => ({
   ),
 }));
 
+// The receipt modal has its own test file; stubbed here like the cancel modal.
+vi.mock('./ComprobanteReservaModal', () => ({
+  default: ({ reservation, onClose }: { reservation: { id: number }; onClose: () => void }) => (
+    <div data-testid="receipt-modal">
+      <span>{`receipt-for-${reservation.id}`}</span>
+      <button onClick={onClose}>close-receipt</button>
+    </div>
+  ),
+}));
+
 import MisReservas from './MisReservas';
 
 function reservation(overrides = {}) {
@@ -126,5 +136,48 @@ describe('MisReservas', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Cancelar reserva' }));
 
     expect(screen.getByTestId('cancel-modal')).toBeInTheDocument();
+  });
+
+  it('opens the receipt modal for the clicked reservation and closes it', async () => {
+    const receipt = { code: 'LEO-000002', status_label: 'CONFIRMADA' };
+    mockGetTenantReservations.mockResolvedValue({
+      data: [
+        reservation({ id: 1, can_be_cancelled: false }),
+        reservation({ id: 2, can_be_cancelled: false, receipt }),
+      ],
+    });
+
+    render(<MisReservas />);
+
+    await waitFor(() => {
+      expect(screen.getByRole('button', { name: 'Ver comprobante' })).toBeInTheDocument();
+    });
+    expect(screen.queryByTestId('receipt-modal')).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Ver comprobante' }));
+
+    expect(screen.getByTestId('receipt-modal')).toBeInTheDocument();
+    expect(screen.getByText('receipt-for-2')).toBeInTheDocument();
+    expect(screen.queryByTestId('cancel-modal')).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('button', { name: 'close-receipt' }));
+
+    expect(screen.queryByTestId('receipt-modal')).not.toBeInTheDocument();
+  });
+
+  it('keeps the cancel flow working on a card that also has a receipt', async () => {
+    mockGetTenantReservations.mockResolvedValue({
+      data: [reservation({ receipt: { code: 'LEO-000001', status_label: 'CONFIRMADA' } })],
+    });
+
+    render(<MisReservas />);
+
+    await waitFor(() => {
+      expect(screen.getByRole('button', { name: 'Cancelar reserva' })).toBeInTheDocument();
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'Cancelar reserva' }));
+
+    expect(screen.getByTestId('cancel-modal')).toBeInTheDocument();
+    expect(screen.queryByTestId('receipt-modal')).not.toBeInTheDocument();
   });
 });

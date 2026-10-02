@@ -1,4 +1,4 @@
-import { ImageOff, MapPin, X } from "lucide-react";
+import { FileText, ImageOff, MapPin, X } from "lucide-react";
 
 import { formatReservationCode } from "../../utils/reservationCode";
 import { formatUSD } from "../../utils/money";
@@ -14,6 +14,7 @@ const RES_BADGE: Record<string, { bg: string; color: string; label: string }> = 
 interface ReservationCardProps {
   reservation: TenantReservation;
   onCancelClick: (reservation: TenantReservation) => void;
+  onReceiptClick: (reservation: TenantReservation) => void;
 }
 
 /**
@@ -22,9 +23,10 @@ interface ReservationCardProps {
  * title, badge, direction/city/size line, Período/Monto/Reserva stat row --
  * minus review/report actions (out of scope, spec #351). The cancel button
  * is gated exclusively on `reservation.can_be_cancelled` (server-computed),
- * never client-side date math.
+ * never client-side date math. "Ver comprobante" shows iff the server sent a
+ * non-null `reservation.receipt`.
  */
-const ReservationCard = ({ reservation, onCancelClick }: ReservationCardProps) => {
+const ReservationCard = ({ reservation, onCancelClick, onReceiptClick }: ReservationCardProps) => {
   const tab = deriveTenantTab(reservation);
   const badge = RES_BADGE[tab];
   const title = reservation.store_rooms?.title ?? "Bodega";
@@ -97,16 +99,27 @@ const ReservationCard = ({ reservation, onCancelClick }: ReservationCardProps) =
           </div>
         </div>
       </div>
-      {reservation.can_be_cancelled && (
+      {(reservation.receipt || reservation.can_be_cancelled) && (
         <div className="px-4 pb-4">
-          <div className="border-t border-gray-100 pt-3.5">
-            <button
-              onClick={() => onCancelClick(reservation)}
-              className="inline-flex items-center gap-1.5 px-4 py-2 bg-white text-red-600 border border-red-300 rounded-lg text-sm font-semibold"
-            >
-              <X size={14} color="#DC2626" />
-              Cancelar reserva
-            </button>
+          <div className="border-t border-gray-100 pt-3.5 flex gap-2.5 flex-wrap">
+            {reservation.receipt && (
+              <button
+                onClick={() => onReceiptClick(reservation)}
+                className="inline-flex items-center gap-1.5 px-4 py-2 bg-white text-[#7551E9] border border-[#7551E9] rounded-lg text-sm font-semibold"
+              >
+                <FileText size={14} color="#7551E9" />
+                Ver comprobante
+              </button>
+            )}
+            {reservation.can_be_cancelled && (
+              <button
+                onClick={() => onCancelClick(reservation)}
+                className="inline-flex items-center gap-1.5 px-4 py-2 bg-white text-red-600 border border-red-300 rounded-lg text-sm font-semibold"
+              >
+                <X size={14} color="#DC2626" />
+                Cancelar reserva
+              </button>
+            )}
           </div>
         </div>
       )}

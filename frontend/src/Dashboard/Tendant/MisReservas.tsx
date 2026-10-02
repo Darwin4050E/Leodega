@@ -7,6 +7,7 @@ import { asApiError } from "../../api/errors";
 import { deriveTenantTab, type TenantTab } from "../../utils/reservationVigencia";
 import ReservationCard from "./ReservationCard";
 import CancelarReservaTenantModal from "./CancelarReservaTenantModal";
+import ComprobanteReservaModal from "./ComprobanteReservaModal";
 
 const RES_TABS: { key: TenantTab; label: string }[] = [
   { key: "activa", label: "Activas" },
@@ -27,6 +28,7 @@ const MisReservas = () => {
   const [loadError, setLoadError] = useState<string>("");
   const [tab, setTab] = useState<TenantTab>("activa");
   const [cancelingReservation, setCancelingReservation] = useState<TenantReservation | null>(null);
+  const [receiptReservation, setReceiptReservation] = useState<TenantReservation | null>(null);
 
   const load = () => {
     setLoading(true);
@@ -150,7 +152,12 @@ const MisReservas = () => {
         ) : (
           <div className="flex flex-col gap-4 max-w-3xl">
             {list.map((r) => (
-              <ReservationCard key={r.id} reservation={r} onCancelClick={setCancelingReservation} />
+              <ReservationCard
+                key={r.id}
+                reservation={r}
+                onCancelClick={setCancelingReservation}
+                onReceiptClick={setReceiptReservation}
+              />
             ))}
           </div>
         )}
@@ -162,6 +169,13 @@ const MisReservas = () => {
           onClose={() => setCancelingReservation(null)}
           onCancelled={handleCancelled}
           onNeedsRefresh={handleNeedsRefresh}
+        />
+      )}
+
+      {receiptReservation && (
+        <ComprobanteReservaModal
+          reservation={receiptReservation}
+          onClose={() => setReceiptReservation(null)}
         />
       )}
     </>
