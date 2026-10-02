@@ -161,11 +161,8 @@ Route::middleware('auth.api:sanctum')->group(function () {
     Route::get('/ratings', [RatingsController::class, 'index']);
     Route::post('/ratings', [RatingsController::class, 'store']);
 });
-Route::middleware('auth.api:sanctum')->group(function () {
-    Route::get('/ratings/{id}', [RatingsController::class, 'show']);
-    Route::put('/ratings/{id}', [RatingsController::class, 'update']);
-    Route::delete('/ratings/{id}', [RatingsController::class, 'destroy']);
-});
+// /ratings/{id} was removed on purpose: any authenticated caller could read, edit
+// or delete any user's rating; ownership would derive from ratings.user_id.
 
 Route::get('/cancelations_polices', [CancelationsPolicesController::class, 'index']);
 Route::get('/cancelations_polices/{id}', [CancelationsPolicesController::class, 'show']);
