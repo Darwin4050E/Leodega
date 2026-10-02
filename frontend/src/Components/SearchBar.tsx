@@ -2,9 +2,10 @@ import { useState } from "react";
 import DatePicker from "react-datepicker";
 import { es } from "date-fns/locale";
 import "react-datepicker/dist/react-datepicker.css";
+import { ALL_CITIES_LABEL, CITIES } from "../utils/cities";
 
 export interface SearchBarFilters {
-  location: string;
+  city: string;
   minSize: string;
   minPrice: string;
   maxPrice: string;
@@ -15,7 +16,7 @@ interface SearchBarProps {
 }
 
 const SearchBar = ({ onSearch }: SearchBarProps) => {
-  const [location, setLocation] = useState("");
+  const [city, setCity] = useState("");
   const [minSize, setMinSize] = useState("");
   const [minPrice, setMinPrice] = useState("");
   const [maxPrice, setMaxPrice] = useState("");
@@ -34,7 +35,7 @@ const SearchBar = ({ onSearch }: SearchBarProps) => {
     }
 
     setError("");
-    onSearch({ location, minSize, minPrice, maxPrice });
+    onSearch({ city, minSize, minPrice, maxPrice });
   };
 
   return (
@@ -45,14 +46,20 @@ const SearchBar = ({ onSearch }: SearchBarProps) => {
         <div className="flex items-center gap-3 text-gray-600 w-full lg:w-auto">
           <i className="fa-solid fa-location-dot text-xl"></i>
           <div className="flex flex-col">
-            <label className="font-semibold text-sm text-gray-700">Ubicación</label>
-            <input
-              type="text"
-              placeholder="Busca según tu ubicación"
-              value={location}
-              onChange={(e) => setLocation(e.target.value)}
-              className="text-sm text-gray-500 focus:outline-none border-b border-gray-200 focus:border-blue-500 transition w-56"
-            />
+            <label htmlFor="searchbar-city" className="font-semibold text-sm text-gray-700">Ubicación</label>
+            <select
+              id="searchbar-city"
+              value={city}
+              onChange={(e) => setCity(e.target.value)}
+              className="text-sm text-gray-500 focus:outline-none border-b border-gray-200 focus:border-blue-500 transition w-56 bg-transparent"
+            >
+              <option value="">{ALL_CITIES_LABEL}</option>
+              {CITIES.map((option) => (
+                <option key={option.name} value={option.name}>
+                  {option.name}
+                </option>
+              ))}
+            </select>
           </div>
         </div>
 

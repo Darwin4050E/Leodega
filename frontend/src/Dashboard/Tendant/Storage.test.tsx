@@ -1,11 +1,10 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { render, screen, fireEvent, waitFor, within } from '@testing-library/react';
+import { render, screen, fireEvent, waitFor, within, act } from '@testing-library/react';
 
 const mockGetStoreRooms = vi.hoisted(() => vi.fn());
 const mockRateStoreRoom = vi.hoisted(() => vi.fn());
 const mockUseAuth = vi.hoisted(() => vi.fn());
 const mockNavigate = vi.hoisted(() => vi.fn());
-const mockAxiosGet = vi.hoisted(() => vi.fn());
 
 vi.mock('../../services/storeRooms', () => ({
   getStoreRooms: mockGetStoreRooms,
@@ -49,12 +48,6 @@ vi.mock('react-leaflet', () => ({
 
 vi.mock('leaflet', () => ({
   default: { Icon: class {} },
-}));
-
-// Storage.tsx geocodes the typed location via the bare `axios` package
-// (Nominatim), same pattern as PreguntaInicio4.tsx / its test.
-vi.mock('axios', () => ({
-  default: { get: mockAxiosGet },
 }));
 
 import Storage from './Storage';
@@ -167,24 +160,235 @@ describe('Storage (catalog container)', () => {
     );
   });
 
-  it('degrades gracefully when Nominatim geocoding fails: the search still runs with only size/price filters', async () => {
-    mockAxiosGet.mockRejectedValueOnce(new Error('network error'));
-    render(<Storage />);
-    await waitFor(() => expect(mockGetStoreRooms).toHaveBeenCalledTimes(1));
+  describe('city filter', () => {
+    const renderLoaded = async () => {
+      render(<Storage />);
+      await screen.findByText('Bodega Centro');
+    };
+    const selectCity = (name: string) =>
+      fireEvent.change(screen.getByLabelText('Ubicación'), { target: { value: name } });
+    const clickSearch = () => fireEvent.click(screen.getByRole('button', { name: 'Buscar' }));
 
-    fireEvent.change(screen.getByPlaceholderText('Busca según tu ubicación'), {
-      target: { value: 'Ubicación inexistente' },
+    it('S15: changing the select does not fetch; Buscar fetches exactly once', async () => {
+      await renderLoaded();
+      expect(mockGetStoreRooms).toHaveBeenCalledTimes(1);
+
+      selectCity('Quito');
+      expect(mockGetStoreRooms).toHaveBeenCalledTimes(1);
+
+      clickSearch();
+      await waitFor(() => expect(mockGetStoreRooms).toHaveBeenCalledTimes(2));
     });
-    fireEvent.click(screen.getByRole('button', { name: 'Buscar' }));
 
-    await waitFor(() => expect(mockAxiosGet).toHaveBeenCalled());
-    await waitFor(() => expect(mockGetStoreRooms).toHaveBeenCalledTimes(2));
+    it('S16/S20: a city search sends the city with its center and shows the estimated distance', async () => {
+      await renderLoaded();
 
-    const lastCallArgs = mockGetStoreRooms.mock.calls[1][0];
-    expect(lastCallArgs).not.toHaveProperty('lat');
-    expect(lastCallArgs).not.toHaveProperty('lng');
-    // No crash: the catalog is still on screen.
-    expect(await screen.findByText('Bodega Centro')).toBeInTheDocument();
+      selectCity('Quito');
+      clickSearch();
+
+      await waitFor(() =>
+        expect(mockGetStoreRooms).toHaveBeenLastCalledWith({
+          city: 'Quito',
+          lat: -0.18,
+          lng: -78.48,
+        })
+      );
+      expect(await screen.findByText(/3\.4 km/)).toBeInTheDocument();
+    });
+
+    it('S17/S21: "Todas las ciudades" sends no city, lat or lng and shows no distance', async () => {
+      await renderLoaded();
+
+      mockGetStoreRooms.mockResolvedValueOnce({ data: [roomWithoutCoords] });
+      clickSearch();
+
+      await waitFor(() => expect(mockGetStoreRooms).toHaveBeenCalledTimes(2));
+      const params = mockGetStoreRooms.mock.calls[1][0];
+      expect(Object.keys(params)).toEqual([]);
+      expect(params).not.toHaveProperty('city');
+      expect(await screen.findByText('Bodega Norte')).toBeInTheDocument();
+      expect(screen.queryByText(/ km/)).not.toBeInTheDocument();
+    });
+
+    it('S18: city composes with size and price filters', async () => {
+      await renderLoaded();
+
+      selectCity('Guayaquil');
+      fireEvent.change(screen.getByPlaceholderText('Ej. 10'), { target: { value: '20' } });
+      fireEvent.change(screen.getByPlaceholderText('Máx.'), { target: { value: '80' } });
+      clickSearch();
+
+      await waitFor(() =>
+        expect(mockGetStoreRooms).toHaveBeenLastCalledWith({
+          city: 'Guayaquil',
+          lat: -2.18,
+          lng: -79.9,
+          min_size: 20,
+          max_price: 80,
+        })
+      );
+    });
+
+    const deferred = <T,>() => {
+      let resolve!: (value: T) => void;
+      const promise = new Promise<T>((res) => {
+        resolve = res;
+      });
+      return { promise, resolve };
+    };
+
+    it('S23: the initial load shows the search bar and the loading indicator together', async () => {
+      const initial = deferred<{ data: unknown[] }>();
+      mockGetStoreRooms.mockReturnValueOnce(initial.promise);
+      render(<Storage />);
+
+      expect(screen.getByLabelText('Ubicación')).toBeInTheDocument();
+      expect(screen.getByRole('status')).toHaveTextContent('Cargando bodegas...');
+
+      initial.resolve({ data: [roomWithCoords] });
+      expect(await screen.findByText('Bodega Centro')).toBeInTheDocument();
+      expect(screen.queryByRole('status')).not.toBeInTheDocument();
+    });
+
+    it('S22: the search bar stays mounted and keeps the applied values while searching', async () => {
+      await renderLoaded();
+      const select = screen.getByLabelText('Ubicación') as HTMLSelectElement;
+
+      const pending = deferred<{ data: unknown[] }>();
+      mockGetStoreRooms.mockReturnValueOnce(pending.promise);
+      selectCity('Guayaquil');
+      fireEvent.change(screen.getByPlaceholderText('Mín.'), { target: { value: '50' } });
+      clickSearch();
+
+      expect(await screen.findByRole('status')).toHaveTextContent('Cargando bodegas...');
+      expect(screen.getByLabelText('Ubicación')).toBe(select);
+      expect(select.value).toBe('Guayaquil');
+      expect((screen.getByPlaceholderText('Mín.') as HTMLInputElement).value).toBe('50');
+
+      await act(async () => {
+        pending.resolve({ data: [roomWithCoords] });
+      });
+
+      expect(await screen.findByText('Bodega Centro')).toBeInTheDocument();
+      expect(screen.getByLabelText('Ubicación')).toBe(select);
+      expect(select.value).toBe('Guayaquil');
+      expect((screen.getByPlaceholderText('Mín.') as HTMLInputElement).value).toBe('50');
+    });
+
+    const NO_RESULTS =
+      'No encontramos bodegas disponibles con esos criterios. Intenta ampliar tu búsqueda';
+
+    it('S24: a city with no rooms shows the empty-state message and a clear-filters action', async () => {
+      await renderLoaded();
+
+      mockGetStoreRooms.mockResolvedValueOnce({ data: [] });
+      selectCity('Cuenca');
+      clickSearch();
+
+      expect(await screen.findByText(NO_RESULTS)).toBeInTheDocument();
+      expect(screen.queryByText('Bodega Centro')).not.toBeInTheDocument();
+      expect(screen.queryByRole('button', { name: /Ver bodega/ })).not.toBeInTheDocument();
+      expect(screen.getByRole('button', { name: 'Limpiar filtros' })).toBeInTheDocument();
+    });
+
+    it('S25: a city plus an unmatched price shows the same empty state', async () => {
+      await renderLoaded();
+
+      mockGetStoreRooms.mockResolvedValueOnce({ data: [] });
+      selectCity('Quito');
+      fireEvent.change(screen.getByPlaceholderText('Máx.'), { target: { value: '5' } });
+      clickSearch();
+
+      expect(await screen.findByText(NO_RESULTS)).toBeInTheDocument();
+      expect(screen.getByRole('button', { name: 'Limpiar filtros' })).toBeInTheDocument();
+    });
+
+    it('S26: clearing resets the select and inputs and refetches without params', async () => {
+      await renderLoaded();
+
+      mockGetStoreRooms.mockResolvedValueOnce({ data: [] });
+      selectCity('Quito');
+      fireEvent.change(screen.getByPlaceholderText('Ej. 10'), { target: { value: '20' } });
+      clickSearch();
+      await screen.findByText(NO_RESULTS);
+
+      fireEvent.click(screen.getByRole('button', { name: 'Limpiar filtros' }));
+
+      await waitFor(() => expect(mockGetStoreRooms).toHaveBeenLastCalledWith(undefined));
+      expect(await screen.findByText('Bodega Centro')).toBeInTheDocument();
+      expect((screen.getByLabelText('Ubicación') as HTMLSelectElement).value).toBe('');
+      expect((screen.getByPlaceholderText('Ej. 10') as HTMLInputElement).value).toBe('');
+    });
+
+    it('S27: with no filters applied, an empty catalog shows the message without a clear action', async () => {
+      mockGetStoreRooms.mockResolvedValueOnce({ data: [] });
+      render(<Storage />);
+
+      expect(await screen.findByText(NO_RESULTS)).toBeInTheDocument();
+      expect(screen.queryByRole('button', { name: 'Limpiar filtros' })).not.toBeInTheDocument();
+    });
+
+    it('F7: a slower earlier response never overwrites the latest search result', async () => {
+      await renderLoaded();
+
+      const first = deferred<{ data: unknown[] }>();
+      const second = deferred<{ data: unknown[] }>();
+      mockGetStoreRooms.mockReturnValueOnce(first.promise).mockReturnValueOnce(second.promise);
+
+      selectCity('Quito');
+      clickSearch();
+      selectCity('Guayaquil');
+      clickSearch();
+      await waitFor(() => expect(mockGetStoreRooms).toHaveBeenCalledTimes(3));
+
+      await act(async () => {
+        second.resolve({ data: [roomWithoutCoords] });
+      });
+      expect(await screen.findByText('Bodega Norte')).toBeInTheDocument();
+
+      await act(async () => {
+        first.resolve({ data: [roomWithCoords] });
+      });
+      expect(screen.getByText('Bodega Norte')).toBeInTheDocument();
+      expect(screen.queryByText('Bodega Centro')).not.toBeInTheDocument();
+    });
+
+    it('F7: a stale response does not clear the loading state of the newer request', async () => {
+      await renderLoaded();
+
+      const first = deferred<{ data: unknown[] }>();
+      const second = deferred<{ data: unknown[] }>();
+      mockGetStoreRooms.mockReturnValueOnce(first.promise).mockReturnValueOnce(second.promise);
+
+      selectCity('Quito');
+      clickSearch();
+      clickSearch();
+      await waitFor(() => expect(mockGetStoreRooms).toHaveBeenCalledTimes(3));
+
+      await act(async () => {
+        first.resolve({ data: [roomWithCoords] });
+      });
+      expect(screen.getByRole('status')).toHaveTextContent('Cargando bodegas...');
+      expect(screen.queryByText('Bodega Centro')).not.toBeInTheDocument();
+    });
+
+    it('S28: only approved rooms render, each with title, monthly price, size and a detail button', async () => {
+      const pendingRoom = {
+        ...roomWithCoords,
+        id: 3,
+        title: 'Bodega Pendiente',
+        publication_status: 'pending' as const,
+      };
+      mockGetStoreRooms.mockResolvedValueOnce({ data: [roomWithCoords, pendingRoom] });
+      render(<Storage />);
+
+      const card = (await screen.findByText('Bodega Centro')).closest('.rounded-2xl') as HTMLElement;
+      expect(screen.queryByText('Bodega Pendiente')).not.toBeInTheDocument();
+      expect(within(card).getByText('$120/mes')).toBeInTheDocument();
+      expect(within(card).getByText(/20 m²/)).toBeInTheDocument();
+      expect(within(card).getByRole('button', { name: /Ver bodega/ })).toBeInTheDocument();
+      expect(screen.getAllByRole('button', { name: /Ver bodega/ })).toHaveLength(1);
+    });
   });
 
   it('keeps the existing rating widget and "Ver bodega" navigation intact and additive', async () => {
