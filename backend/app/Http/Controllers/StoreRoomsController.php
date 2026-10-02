@@ -62,7 +62,9 @@ class StoreRoomsController extends ApiController
             ->visibleTo($viewer);
 
         if (array_key_exists('city', $filters)) {
-            $query->where('city', $filters['city']);
+            // Lower-case both sides in SQL so sqlite and PostgreSQL agree. Bare
+            // `city`: the table is camelCase (`storeRooms`) and input is bound.
+            $query->whereRaw('LOWER(TRIM(city)) = LOWER(?)', [trim($filters['city'])]);
         }
 
         if (array_key_exists('min_size', $filters)) {

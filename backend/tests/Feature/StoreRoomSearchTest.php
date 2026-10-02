@@ -68,6 +68,146 @@ class StoreRoomSearchTest extends TestCase
         $this->assertSame([$match->id], $ids);
     }
 
+    // -- City matching: case-insensitive, trimmed, exact --------------------
+
+    private function idsFor(string $url): array
+    {
+        $response = $this->getJson($url);
+        $response->assertStatus(200);
+
+        return collect($response->json())->pluck('id')->all();
+    }
+
+    public function test_city_filter_ignores_case_of_the_input(): void
+    {
+        $quito = $this->createApprovedRoom(['city' => 'Quito']);
+        $this->createApprovedRoom(['city' => 'Guayaquil']);
+
+        $this->assertSame([$quito->id], $this->idsFor('/api/storeRooms?city=quito'));
+        $this->assertSame([$quito->id], $this->idsFor('/api/storeRooms?city=QUITO'));
+    }
+
+    public function test_city_filter_ignores_whitespace_around_the_stored_city(): void
+    {
+        $padded = $this->createApprovedRoom(['city' => '  Quito  ']);
+        $trailing = $this->createApprovedRoom(['city' => 'quito ']);
+        $this->createApprovedRoom(['city' => 'Guayaquil']);
+
+        $ids = $this->idsFor('/api/storeRooms?city=Quito');
+
+        $this->assertEqualsCanonicalizing([$padded->id, $trailing->id], $ids);
+    }
+
+    public function test_city_filter_ignores_whitespace_around_the_input(): void
+    {
+        $quito = $this->createApprovedRoom(['city' => 'Quito']);
+        $this->createApprovedRoom(['city' => 'Cuenca']);
+
+        $this->assertSame([$quito->id], $this->idsFor('/api/storeRooms?city=%20Quito%20'));
+        $this->assertSame([$quito->id], $this->idsFor('/api/storeRooms?city=Quito'));
+    }
+
+    public function test_city_filter_does_not_fold_accents(): void
+    {
+        $cuenca = $this->createApprovedRoom(['city' => 'Cuenca']);
+
+        $this->assertSame([], $this->idsFor('/api/storeRooms?city=Cu%C3%A9nca'));
+        $this->assertSame([$cuenca->id], $this->idsFor('/api/storeRooms?city=Cuenca'));
+    }
+
+    public function test_city_filter_is_an_exact_match_not_a_partial_one(): void
+    {
+        $quito = $this->createApprovedRoom(['city' => 'Quito']);
+        $this->createApprovedRoom(['city' => 'Quito, Ecuador']);
+
+        $this->assertSame([], $this->idsFor('/api/storeRooms?city=Quit'));
+        $this->assertSame([$quito->id], $this->idsFor('/api/storeRooms?city=Quito'));
+    }
+
+    public function test_empty_or_whitespace_only_city_is_rejected_with_422(): void
+    {
+        $this->createApprovedRoom(['city' => 'Quito']);
+
+        $this->getJson('/api/storeRooms?city=')->assertStatus(422);
+        $this->getJson('/api/storeRooms?city=%20')->assertStatus(422);
+    }
+
+    public function test_city_without_rooms_returns_200_and_an_empty_array(): void
+    {
+        $this->createApprovedRoom(['city' => 'Quito']);
+
+        $response = $this->getJson('/api/storeRooms?city=Loja');
+
+        $response->assertStatus(200);
+        $response->assertExactJson([]);
+    }
+
+    public function test_city_filter_composes_with_min_size(): void
+    {
+        $large = $this->createApprovedRoom(['city' => 'Quito', 'size' => 20]);
+        $this->createApprovedRoom(['city' => 'Quito', 'size' => 8]);
+        $this->createApprovedRoom(['city' => 'Guayaquil', 'size' => 30]);
+
+        $this->assertSame([$large->id], $this->idsFor('/api/storeRooms?city=quito&min_size=10'));
+    }
+
+    public function test_city_filter_composes_with_price_range(): void
+    {
+        $match = $this->createApprovedRoom(['city' => 'Guayaquil'], 80);
+        $this->createApprovedRoom(['city' => 'Guayaquil'], 40);
+        $this->createApprovedRoom(['city' => 'Quito'], 80);
+
+        $ids = $this->idsFor('/api/storeRooms?city=guayaquil&min_price=50&max_price=100');
+
+        $this->assertSame([$match->id], $ids);
+    }
+
+    public function test_city_filter_keeps_distance_driven_only_by_coordinates(): void
+    {
+        $withCoords = $this->createApprovedRoom(['city' => 'Quito', 'latitude' => -0.2, 'longitude' => -78.5]);
+        $withoutCoords = $this->createApprovedRoom(['city' => 'Quito', 'latitude' => null, 'longitude' => null]);
+
+        $response = $this->getJson('/api/storeRooms?city=quito&lat=-0.18&lng=-78.48');
+
+        $response->assertStatus(200);
+        $this->assertIsFloat(collect($response->json())->firstWhere('id', $withCoords->id)['distance_km']);
+        $this->assertNull(collect($response->json())->firstWhere('id', $withoutCoords->id)['distance_km']);
+    }
+
+    public function test_city_filter_without_coordinates_returns_null_distance_everywhere(): void
+    {
+        $this->createApprovedRoom(['city' => 'Quito', 'latitude' => -0.2, 'longitude' => -78.5]);
+        $this->createApprovedRoom(['city' => 'Quito', 'latitude' => -0.3, 'longitude' => -78.6]);
+
+        $response = $this->getJson('/api/storeRooms?city=quito');
+
+        $response->assertStatus(200);
+        $distances = collect($response->json())->pluck('distance_km')->all();
+        $this->assertSame([null, null], $distances);
+    }
+
+    public function test_case_insensitive_city_match_does_not_expose_pending_rooms_to_anonymous(): void
+    {
+        $landlord = Landlords::factory()->create();
+        $this->seedMixedStatusesInCity($landlord->id, 'Quito');
+
+        $response = $this->getJson('/api/storeRooms?city=quito');
+
+        $response->assertStatus(200);
+        $this->assertCount(1, $response->json());
+        $this->assertSame(['approved'], $this->statusesFrom($response->json()));
+    }
+
+    public function test_city_filter_treats_sql_metacharacters_as_data(): void
+    {
+        $this->createApprovedRoom(['city' => 'Quito']);
+
+        $response = $this->getJson('/api/storeRooms?city='.rawurlencode("' OR 1=1 --"));
+
+        $response->assertStatus(200);
+        $response->assertExactJson([]);
+    }
+
     public function test_filter_by_min_size_returns_only_matching_rooms(): void
     {
         $match = $this->createApprovedRoom(['size' => 50]);
