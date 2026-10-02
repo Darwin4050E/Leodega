@@ -26,4 +26,13 @@ class StoreRoomsFactory extends Factory
             'publication_date' => now(),
         ];
     }
+
+    /**
+     * The default stays `pending`; only approved rooms are bookable and
+     * publicly visible, so tests that exercise those paths opt in here.
+     */
+    public function approved(): static
+    {
+        return $this->state(fn () => ['publication_status' => 'approved']);
+    }
 }

@@ -3,11 +3,9 @@
 namespace App\Http\Controllers;
 
 use App\Http\Requests\StoreReportRequest;
-use App\Http\Requests\UpdateReportRequest;
 use App\Http\Requests\UpdateReportStatusRequest;
 use App\Models\Reports;
 use App\Services\ReportService;
-use Illuminate\Http\Request;
 
 class ReportsController extends ApiController
 {
@@ -36,11 +34,6 @@ class ReportsController extends ApiController
             'message' => 'Reporte creado correctamente',
             'report' => $report,
         ], 201);
-    }
-
-    public function update(Request $request, $id)
-    {
-        return $this->updateModel($request, Reports::class, $id, (new UpdateReportRequest)->rules());
     }
 
     public function updateStatus(UpdateReportStatusRequest $request, Reports $report)

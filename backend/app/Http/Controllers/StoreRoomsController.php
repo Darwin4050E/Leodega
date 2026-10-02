@@ -62,7 +62,9 @@ class StoreRoomsController extends ApiController
             ->visibleTo($viewer);
 
         if (array_key_exists('city', $filters)) {
-            $query->where('city', $filters['city']);
+            // Lower-case both sides in SQL so sqlite and PostgreSQL agree. Bare
+            // `city`: the table is camelCase (`storeRooms`) and input is bound.
+            $query->whereRaw('LOWER(TRIM(city)) = LOWER(?)', [trim($filters['city'])]);
         }
 
         if (array_key_exists('min_size', $filters)) {
@@ -147,7 +149,14 @@ class StoreRoomsController extends ApiController
 
     public function show($id)
     {
-        return $this->showModel(StoreRooms::class, $id);
+        $room = StoreRooms::viewableById($id, auth('sanctum')->user())->first();
+
+        // Same 404 as detail(): missing, soft-deleted and hidden rooms are indistinguishable.
+        if (! $room) {
+            return response()->json(['message' => 'Bodega no encontrada'], 404);
+        }
+
+        return response()->json($room->makeHidden('firefighter_permit_path'), 200);
     }
 
     /**
@@ -383,8 +392,11 @@ class StoreRoomsController extends ApiController
             'storePrices',
             'storePhotos',
             'landlord.user',
-        ])->withCount('activeReservations')->find($id);
+        ])->withCount('activeReservations')
+            ->viewableById($id, auth('sanctum')->user())
+            ->first();
 
+        // Missing, soft-deleted and not-visible rooms share this exact 404.
         if (! $room) {
             return response()->json(['message' => 'Bodega no encontrada'], 404);
         }

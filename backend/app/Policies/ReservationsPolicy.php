@@ -39,6 +39,21 @@ class ReservationsPolicy
      */
     public function cancelAsTenant(User $user, Reservations $reservation): bool
     {
+        return $this->ownsAsTenant($user, $reservation);
+    }
+
+    /**
+     * sdd/huc05-payment-receipt: only the owning tenant may download the
+     * payment receipt. Identity only -- whether a receipt exists is the
+     * controller's job (ReservationReceipt::build() === null -> 404).
+     */
+    public function viewReceipt(User $user, Reservations $reservation): bool
+    {
+        return $this->ownsAsTenant($user, $reservation);
+    }
+
+    private function ownsAsTenant(User $user, Reservations $reservation): bool
+    {
         $reservation->loadMissing('tenants');
 
         return $reservation->tenants !== null && $reservation->tenants->user_id === $user->id;

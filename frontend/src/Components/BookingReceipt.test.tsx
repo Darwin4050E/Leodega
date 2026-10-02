@@ -1,5 +1,12 @@
-import { describe, it, expect, vi } from "vitest";
-import { render, screen, fireEvent } from "@testing-library/react";
+import { describe, it, expect, vi, beforeEach } from "vitest";
+import { render, screen, fireEvent, waitFor } from "@testing-library/react";
+
+const mockDownloadReservationReceipt = vi.hoisted(() => vi.fn());
+
+vi.mock("../utils/receiptDownload", () => ({
+  downloadReservationReceipt: mockDownloadReservationReceipt,
+}));
+
 import BookingReceipt from "./BookingReceipt";
 
 const storeRoom = {
@@ -22,6 +29,10 @@ const reservation = {
 describe("BookingReceipt", () => {
   const onViewReservations = vi.fn();
   const onBackToCatalog = vi.fn();
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
 
   it("shows the reservation code derived from reservation.id via formatReservationCode, not Math.random()", () => {
     render(
@@ -49,7 +60,7 @@ describe("BookingReceipt", () => {
     expect(screen.getByText(/Enviamos el comprobante a tu correo/)).toBeInTheDocument();
   });
 
-  it('renders the "PAGADO" badge unconditionally, with no network call required', () => {
+  it('renders the "PAGADA" badge unconditionally, with no network call required', () => {
     render(
       <BookingReceipt
         storeRoom={storeRoom}
@@ -59,7 +70,8 @@ describe("BookingReceipt", () => {
       />
     );
 
-    expect(screen.getByText(/PAGADO/)).toBeInTheDocument();
+    expect(screen.getByText(/PAGADA/)).toBeInTheDocument();
+    expect(screen.queryByText(/PAGADO/)).not.toBeInTheDocument();
   });
 
   it('"Monto pagado" equals reservation.total_mount exactly, no client-side addition', () => {
@@ -92,7 +104,13 @@ describe("BookingReceipt", () => {
     expect(screen.getByText("Laura Gomez")).toBeInTheDocument();
   });
 
-  it('"Descargar PDF" triggers the no-op demo toast, no real file generation', () => {
+  it('"Descargar PDF" downloads the real receipt for the reservation, with no demo toast', async () => {
+    let resolveDownload: () => void = () => {};
+    mockDownloadReservationReceipt.mockReturnValue(
+      new Promise<void>((resolve) => {
+        resolveDownload = resolve;
+      })
+    );
     render(
       <BookingReceipt
         storeRoom={storeRoom}
@@ -104,7 +122,39 @@ describe("BookingReceipt", () => {
 
     fireEvent.click(screen.getByRole("button", { name: "Descargar PDF" }));
 
-    expect(screen.getByText(/Comprobante PDF descargado/)).toBeInTheDocument();
+    expect(mockDownloadReservationReceipt).toHaveBeenCalledWith(42);
+    expect(screen.getByRole("button", { name: "Descargando..." })).toBeDisabled();
+
+    resolveDownload();
+
+    await waitFor(() => {
+      expect(screen.getByRole("button", { name: "Descargar PDF" })).toBeEnabled();
+    });
+    expect(screen.queryByText(/Comprobante PDF descargado/)).not.toBeInTheDocument();
+    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+  });
+
+  it('"Descargar PDF" shows the generic error on failure and leaves the screen intact', async () => {
+    mockDownloadReservationReceipt.mockRejectedValue(
+      new Error("No se pudo descargar el comprobante. Inténtalo de nuevo.")
+    );
+    render(
+      <BookingReceipt
+        storeRoom={storeRoom}
+        reservation={reservation}
+        onViewReservations={onViewReservations}
+        onBackToCatalog={onBackToCatalog}
+      />
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "Descargar PDF" }));
+
+    expect(await screen.findByRole("alert")).toHaveTextContent(
+      "No se pudo descargar el comprobante. Inténtalo de nuevo."
+    );
+    expect(screen.getByText("LEO-000042")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Ver mis reservas" })).toBeInTheDocument();
+    expect(screen.queryByText(/Comprobante PDF descargado/)).not.toBeInTheDocument();
   });
 
   it('"Ver mis reservas" calls onViewReservations', () => {

@@ -26,9 +26,9 @@ class ErrorShapeInvariantTest extends TestCase
 
     public function test_api_controller_generic_validation_error_has_no_status_key()
     {
-        $caller = User::factory()->create();
+        $admin = User::factory()->create(['role' => 'admin']);
 
-        $response = $this->actingAs($caller, 'sanctum')->postJson('/api/landlords', [
+        $response = $this->actingAs($admin, 'sanctum')->postJson('/api/admin', [
             'user_id' => 999999,
         ]);
 

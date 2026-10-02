@@ -1,4 +1,4 @@
-import { useParams, useNavigate } from "react-router-dom";
+import { useParams, useNavigate, useLocation } from "react-router-dom";
 import { useEffect, useMemo, useState } from "react";
 import { getStoreRoomDetail, type StoreRoomDetail } from "../services/storeRooms";
 import {
@@ -11,6 +11,7 @@ import { useAuth } from "../context/useAuth";
 import { asApiError } from "../api/errors";
 import { toDateOnlyISO, isDateBetween, formatMemberSince } from "../utils/dates";
 import { parseSecurityFeatures, SECURITY_LABELS, type ParsedSecurityFeatures } from "../utils/security";
+import { RESERVATION_OVERLAP_MESSAGE, upcomingOccupiedRanges } from "../utils/reservationFlow";
 import DetailStatusScreen from "./DetailStatusScreen";
 import RatingStars from "./RatingStars";
 import MiniMap from "../Dashboard/Moderacion/MiniMap";
@@ -30,6 +31,7 @@ type DetailStatus = (typeof DETAIL_STATUS)[keyof typeof DETAIL_STATUS];
 
 export default function LeodegaUI() {
   const navigate = useNavigate();
+  const location = useLocation();
   const { id } = useParams();
   const { user } = useAuth();
 
@@ -98,6 +100,25 @@ export default function LeodegaUI() {
     return reservedRanges.some((r) => startDate <= r.end_date && endDate >= r.start_date);
   }, [startDate, endDate, reservedRanges]);
 
+  const upcomingRanges = useMemo(
+    () => upcomingOccupiedRanges(reservedRanges, todayISO),
+    [reservedRanges, todayISO]
+  );
+
+  const hasOverlap = startDisabled || endDisabled || rangeHasOverlap;
+  // One message slot: a live overlap always wins over a stale submit error.
+  const modalMessage = hasOverlap ? RESERVATION_OVERLAP_MESSAGE : error;
+
+  // Visitors (and a session the server rejects with 401) are sent to /login
+  // with the room path so a tenant can come back to it (HUC-03 S3).
+  const goToLoginForReserve = () =>
+    navigate("/login", { state: { from: location.pathname, reason: "reserve" } });
+
+  const handleReservar = () => {
+    if (!user) goToLoginForReserve();
+    else setOpenReserve(true);
+  };
+
   const sendReservation = async () => {
     if (!id) return;
 
@@ -118,8 +139,8 @@ export default function LeodegaUI() {
       return;
     }
 
-    if (startDisabled || endDisabled || rangeHasOverlap) {
-      setError("Ese rango se cruza con una reserva ya confirmada. Elige otras fechas.");
+    if (hasOverlap) {
+      setError(RESERVATION_OVERLAP_MESSAGE);
       return;
     }
 
@@ -142,9 +163,11 @@ export default function LeodegaUI() {
       const err = asApiError(e);
       const status = err.response?.status;
 
-      if (status === 401) setError("Debes iniciar sesión para reservar.");
-      else if (status === 409) setError(err.response?.data?.message || "Fechas no disponibles.");
-      else if (status === 422) setError("Revisa las fechas ingresadas.");
+      if (status === 401) goToLoginForReserve();
+      else if (status === 409) setError(RESERVATION_OVERLAP_MESSAGE);
+      else if (status === 422 && err.response?.data?.errors?.start_date) {
+        setError("La fecha de inicio no puede ser anterior a hoy.");
+      } else if (status === 422) setError("Revisa las fechas ingresadas.");
       else setError("Ocurrió un error enviando la solicitud.");
     } finally {
       setSending(false);
@@ -153,18 +176,20 @@ export default function LeodegaUI() {
 
   const role = user?.role ?? null;
 
+  // The catalog is public, so it is a safe landing for every role (a visitor
+  // must never be bounced to /login just for leaving a room page).
+  const goCatalog = () => navigate("/storage");
+
   const handleVolver = () => {
     if (role === "landlord") navigate("/arrendador/bodegas");
-    else if (role === "tenant") navigate("/storage");
-    //else if (role === "admin") navigate("/admin/bodegas");
-    else navigate("/login");
+    else goCatalog();
   };
 
   if (status !== DETAIL_STATUS.READY || !data) {
     return (
       <DetailStatusScreen
         variant={status === DETAIL_STATUS.READY ? "loading" : status}
-        onBack={handleVolver}
+        onBack={status === DETAIL_STATUS.NOT_FOUND ? goCatalog : handleVolver}
       />
     );
   }
@@ -252,14 +277,7 @@ export default function LeodegaUI() {
               onClick={handleVolver}
               className="px-4 py-2 rounded-lg border border-gray-300 text-gray-700 hover:bg-gray-50"
             >
-              ← Volver a mis bodegas
-            </button>
-
-            <button
-              onClick={() => setOpenReserve(true)}
-              className="px-4 py-2 rounded-lg bg-yellow-500 text-white hover:bg-yellow-600"
-            >
-              Reservar
+              {role === "landlord" ? "← Volver a mis bodegas" : "← Volver al catálogo"}
             </button>
           </div>
         </div>
@@ -407,10 +425,10 @@ export default function LeodegaUI() {
                   </button>
 
                   <button
-                    onClick={() => setOpenReserve(true)}
+                    onClick={handleReservar}
                     className="px-4 py-2 rounded-lg bg-purple-600 text-white hover:bg-purple-700 text-sm flex-1"
                   >
-                    Enviar solicitud
+                    Reservar
                   </button>
                 </div>
 
@@ -434,9 +452,12 @@ export default function LeodegaUI() {
                   {data.is_available_now ? (
                     <p>Disponible ahora</p>
                   ) : (
-                    <span className="badge inline-block px-2 py-1 rounded-full bg-[#FEE2E2] text-[#B91C1C] text-xs font-medium">
-                      Ocupada ahora
-                    </span>
+                    <>
+                      <span className="badge inline-block px-2 py-1 rounded-full bg-[#FEE2E2] text-[#B91C1C] text-xs font-medium">
+                        Actualmente no disponible
+                      </span>
+                      <p className="mt-2">Aún puedes reservar fechas futuras.</p>
+                    </>
                   )}
                 </div>
               </div>
@@ -451,7 +472,7 @@ export default function LeodegaUI() {
           <div className="bg-white rounded-2xl w-full max-w-md shadow-xl border border-gray-200 overflow-hidden">
             <div className="px-6 py-4 border-b border-gray-200 flex items-center justify-between">
               <div>
-                <h3 className="font-semibold text-gray-900">Solicitud de reserva</h3>
+                <h3 className="font-semibold text-gray-900">Reservar bodega</h3>
                 <p className="text-xs text-gray-500">Precio mensual: <span className="font-semibold">${priceMonthly}</span></p>
               </div>
 
@@ -471,9 +492,18 @@ export default function LeodegaUI() {
               {loadingRanges ? (
                 <div className="text-sm text-gray-500 mb-3">Cargando disponibilidad...</div>
               ) : (
-                <div className="text-xs text-gray-500 mb-3">
-                  *Fechas bloqueadas = reservas confirmadas. Si se cruza, no te deja enviar.
-                </div>
+                upcomingRanges.length > 0 && (
+                  <div className="text-xs text-gray-500 mb-3">
+                    <p className="font-semibold text-gray-700">Períodos ocupados</p>
+                    <ul className="mt-1 space-y-0.5">
+                      {upcomingRanges.map((r) => (
+                        <li key={`${r.start_date}-${r.end_date}`}>
+                          {r.start_date} al {r.end_date}
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                )
               )}
 
               <div className="space-y-3">
@@ -487,9 +517,6 @@ export default function LeodegaUI() {
                     className={`w-full border rounded-xl px-3 py-2 mt-1 outline-none focus:ring-2 focus:ring-purple-200 ${startDisabled ? "border-red-400" : "border-gray-300"
                       }`}
                   />
-                  {startDisabled && (
-                    <p className="text-xs text-red-600 mt-1">Esta fecha está dentro de un rango reservado.</p>
-                  )}
                 </div>
 
                 <div>
@@ -504,13 +531,7 @@ export default function LeodegaUI() {
                   />
                 </div>
 
-                {rangeHasOverlap && (
-                  <p className="text-sm text-red-600">
-                    Ese rango se cruza con fechas ya confirmadas.
-                  </p>
-                )}
-
-                {error && <p className="text-sm text-red-600">{error}</p>}
+                {modalMessage && <p className="text-sm text-red-600">{modalMessage}</p>}
               </div>
             </div>
 
@@ -528,7 +549,7 @@ export default function LeodegaUI() {
                 className="px-4 py-2 rounded-xl bg-purple-600 text-white hover:bg-purple-700 disabled:opacity-60"
                 disabled={sending || loadingRanges}
               >
-                {sending ? "Enviando..." : "Enviar solicitud"}
+                {sending ? "Enviando..." : "Confirmar reserva"}
               </button>
             </div>
           </div>

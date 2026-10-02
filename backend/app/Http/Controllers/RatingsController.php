@@ -3,7 +3,6 @@
 namespace App\Http\Controllers;
 
 use App\Http\Requests\StoreRatingRequest;
-use App\Http\Requests\UpdateRatingRequest;
 use App\Models\Ratings;
 use App\Services\RatingsService;
 use Illuminate\Http\Request;
@@ -28,11 +27,6 @@ class RatingsController extends ApiController
         ]);
     }
 
-    public function show($id)
-    {
-        return $this->showModel(Ratings::class, $id);
-    }
-
     public function store(StoreRatingRequest $request, RatingsService $ratingsService)
     {
         $user = Auth::user();
@@ -47,15 +41,5 @@ class RatingsController extends ApiController
             'message' => 'Rating creado correctamente',
             'rating' => $rating,
         ], 201);
-    }
-
-    public function update(Request $request, $id)
-    {
-        return $this->updateModel($request, Ratings::class, $id, (new UpdateRatingRequest)->rules());
-    }
-
-    public function destroy($id)
-    {
-        return $this->destroyModel(Ratings::class, $id);
     }
 }

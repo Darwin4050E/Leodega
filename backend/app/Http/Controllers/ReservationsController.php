@@ -11,6 +11,9 @@ use App\Models\StoreDisponibility;
 use App\Models\StoreRooms;
 use App\Models\Tenants;
 use App\Services\ReservationService;
+use App\Support\ReservationCode;
+use App\Support\ReservationReceipt;
+use Barryvdh\DomPDF\Facade\Pdf;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Gate;
 
@@ -22,7 +25,11 @@ class ReservationsController extends Controller
 
         $user = $request->user();
         $tenant = Tenants::where('user_id', $user->id)->firstOrFail();
-        $room = StoreRooms::findOrFail($data['store_room_id']);
+        // Booking is stricter than visibility: only an `approved` room is
+        // bookable, for every caller. The guard lives here, not in
+        // ReservationService::create(), which stays publication-agnostic.
+        $room = StoreRooms::where('publication_status', 'approved')
+            ->findOrFail($data['store_room_id']);
 
         $reservation = $reservationService->create($tenant, $room, $data, auth()->id());
 
@@ -88,7 +95,7 @@ class ReservationsController extends Controller
              * being non-null, not payment_status, to decide whether a
              * receipt exists.
              */
-            $latestPaidPayment = $item->payments->sortByDesc('id')->firstWhere('payment_state', 'paid');
+            $latestPaidPayment = $item->latestPaidPayment();
             $item->payment_id = $latestPaidPayment->id ?? null;
             $item->payment_method = $latestPaidPayment->payment_method ?? null;
             $item->payment_date = $latestPaidPayment->payment_date ?? null;
@@ -139,29 +146,34 @@ class ReservationsController extends Controller
     }
 
     /**
-     * Corrección: findOrFail() primero para que el SoftDeletingScope global
-     * de StoreRooms produzca un 404 real cuando la bodega fue eliminada (o
-     * nunca existió), en vez de un array vacío silencioso.
+     * Public route: visitors may read the occupied periods of an approved
+     * room. The room is resolved through StoreRooms::viewableById() +
+     * firstOrFail() so a missing, soft-deleted or non-visible room is a real
+     * 404 (same rule as StoreRoomsController::detail()) instead of leaking
+     * the date ranges of an unpublished room or of a deleted room's
+     * surviving past reservations. The visibility check runs BEFORE the
+     * lazy hold sweep, so a hidden room has no write side effect.
      *
      * Obs #261: unions confirmed reservations with landlord-authored
      * StoreDisponibility blocks, sorted by start_date. The response shape
      * stays byte-compatible -- a bare `[{start_date,end_date}]` array with
-     * no discriminator key -- because the sole consumer
-     * (services/reservations.ts::getReservedDates()) treats every range as
-     * an opaque interval and must require zero changes this cycle.
+     * no discriminator key and no tenant/user data.
      *
      * sdd/hug02-payment-hold-expiry: also runs the lazy expiry sweep for
      * this room, then blocks active (non-expired) `pending` holds like
-     * `confirmed` rows. The AUTHENTICATED CALLER's own active hold is
-     * excluded when the caller resolves to a tenant identity, resolved via
-     * $request->user() (route is `auth.api:sanctum`) -- NEVER
-     * auth()->user(), whose default guard is `web` and resolves to null
-     * here. A landlord or any other non-tenant caller sees every active
-     * hold blocked, with no self-exclusion.
+     * `confirmed` rows. The route has no auth middleware, so the optional
+     * caller is resolved via auth('sanctum')->user() (an invalid or absent
+     * token degrades to a visitor) -- NEVER $request->user() or auth()->user(),
+     * whose default guard is `web` and resolves to null here. The caller's own
+     * active hold is excluded when they resolve to a tenant identity. A
+     * visitor, landlord or any other non-tenant caller sees every active hold
+     * blocked, with no self-exclusion.
      */
-    public function reservedDates(Request $request, $storeRoomId, ReservationService $reservationService)
+    public function reservedDates($storeRoomId, ReservationService $reservationService)
     {
-        $room = StoreRooms::findOrFail($storeRoomId);
+        $viewer = auth('sanctum')->user();
+
+        $room = StoreRooms::viewableById($storeRoomId, $viewer)->firstOrFail();
 
         $reservationService->expireElapsedHolds(Reservations::where('store_room_id', $room->id));
 
@@ -174,7 +186,7 @@ class ReservationsController extends Controller
             ->where('store_room_id', $room->id)
             ->activeHold();
 
-        $tenant = Tenants::where('user_id', $request->user()->id)->first();
+        $tenant = $viewer ? Tenants::where('user_id', $viewer->id)->first() : null;
         if ($tenant) {
             $activeHoldQuery->where('tenant_id', '!=', $tenant->id);
         }
@@ -256,6 +268,8 @@ class ReservationsController extends Controller
         $items = Reservations::with([
             'storeRooms:id,title,direction,city,size,room_type,landlord_id',
             'storeRooms.storePhotos',
+            'storeRooms.landlord.user:id,name,lastname',
+            'payments',
         ])
             ->where('tenant_id', $tenant->id)
             ->orderBy('start_date')
@@ -263,12 +277,33 @@ class ReservationsController extends Controller
 
         $items->each(function (Reservations $item) {
             $item->can_be_cancelled = $item->isCancellableByTenant();
+            $item->receipt = ReservationReceipt::build($item);
 
             $firstPhoto = $item->storeRooms?->storePhotos->first();
             $item->photo_url = $firstPhoto ? asset('storage/'.$firstPhoto->photo_url) : null;
-            $item->storeRooms?->makeHidden('storePhotos');
+            $item->makeHidden('payments');
+            $item->storeRooms?->makeHidden(['storePhotos', 'landlord']);
         });
 
         return response()->json($items);
+    }
+
+    /**
+     * sdd/huc05-payment-receipt: owner-scoped PDF of the payment receipt.
+     * Authorization runs before the state check so a non-owner never learns
+     * the reservation's status; an owner without a receipt gets a 404.
+     */
+    public function receipt(Reservations $reservation)
+    {
+        Gate::authorize('viewReceipt', $reservation);
+
+        $receipt = ReservationReceipt::build($reservation);
+
+        abort_if($receipt === null, 404, 'No existe un comprobante para esta reserva.');
+
+        return Pdf::loadView('pdf.reservation-receipt', ['receipt' => $receipt])
+            ->setPaper('a4')
+            ->setOption('isRemoteEnabled', false)
+            ->download('comprobante-'.ReservationCode::format($reservation->id).'.pdf');
     }
 }

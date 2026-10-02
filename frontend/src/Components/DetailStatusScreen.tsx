@@ -11,14 +11,19 @@ const COPY: Record<Exclude<DetailStatusVariant, "loading">, string> = {
     "No se pudo cargar la información de esta bodega. Verifica tu conexión e inténtalo de nuevo.",
 };
 
+const BACK_LABEL: Record<Exclude<DetailStatusVariant, "loading">, string> = {
+  "not-found": "← Volver al catálogo",
+  error: "← Volver",
+};
+
 /**
  * Shared loading/not-found/error screen for the storeroom detail routes.
  * The `not-found` and `error` variants render DIFFERENT copy (obs #247
  * overrides design #246 decision 3 on this point): a network/server error
  * must not tell the user the room "no existe" when its existence is simply
- * unknown. `onBack` is always the caller's role-branched `handleVolver` —
- * never a hardcoded path — so the back link works correctly on all three
- * mounting routes.
+ * unknown. The screen stays dumb: `onBack` is the caller's decision (the
+ * not-found screen is wired to the catalog for every role, HUC-02 S3), and
+ * only the button label depends on the variant.
  */
 const DetailStatusScreen: React.FC<DetailStatusScreenProps> = ({ variant, onBack }) => {
   return (
@@ -33,7 +38,7 @@ const DetailStatusScreen: React.FC<DetailStatusScreenProps> = ({ variant, onBack
               onClick={onBack}
               className="px-4 py-2 rounded-lg border border-gray-300 text-gray-700 hover:bg-gray-50"
             >
-              ← Volver
+              {BACK_LABEL[variant]}
             </button>
           </>
         )}

@@ -20,6 +20,7 @@ import {
   getTenantReservations,
   getCancellationPreview,
   cancelReservationAsTenant,
+  getReservationReceiptPdf,
 } from './reservations';
 
 describe('reservations service', () => {
@@ -181,5 +182,15 @@ describe('reservations service', () => {
     mockApi.patch.mockRejectedValue(error);
 
     await expect(cancelReservationAsTenant(9)).rejects.toEqual(error);
+  });
+
+  it('getReservationReceiptPdf GETs the receipt as a blob and returns it', async () => {
+    const blob = new Blob(['%PDF'], { type: 'application/pdf' });
+    mockApi.get.mockResolvedValue({ data: blob });
+
+    await expect(getReservationReceiptPdf(42)).resolves.toEqual({ data: blob });
+    expect(mockApi.get).toHaveBeenCalledWith('/tenant/reservations/42/receipt', {
+      responseType: 'blob',
+    });
   });
 });

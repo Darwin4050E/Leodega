@@ -49,9 +49,13 @@ export function getLandlordReservations() {
 
 /**
  * Since commits `338f35c`..`eae68fd`, this endpoint returns the UNION of
- * confirmed reservations and landlord date blocks in the same bare
- * `{start_date, end_date}` shape. Consumers must treat every range as an
+ * confirmed reservations, active holds and landlord date blocks in the same
+ * bare `{start_date, end_date}` shape. Consumers must treat every range as an
  * opaque occupied interval and must not attempt to distinguish origin.
+ *
+ * The endpoint is PUBLIC (HUC-03): visitors call it without a token. The
+ * request interceptor only attaches `Authorization` when a token exists, so
+ * no special visitor path is needed here.
  */
 export interface ReservedRange {
   start_date: string;
@@ -111,6 +115,27 @@ export function createPayment(data: CreatePaymentInput) {
 // -- sdd/tenant-reservations-screen ---------------------------------------
 
 /**
+ * Built server-side by ReservationReceipt::build() and nested in each
+ * tenantIndex() row; null for any reservation that is not confirmed and paid.
+ * `paid_at_label` is already formatted in America/Guayaquil: print it verbatim,
+ * never parse or convert it.
+ */
+export interface TenantReceipt {
+  code: string;
+  status_label: string;
+  store_room_title: string | null;
+  gestor_name: string | null;
+  start_date: string;
+  end_date: string;
+  total_paid: string;
+  payment_id: number;
+  payment_method: "credit card" | "debit card" | null;
+  payment_method_label: string | null;
+  paid_at: string;
+  paid_at_label: string;
+}
+
+/**
  * Shape of a row from GET /tenant/reservations (tenantIndex()). Mirrors
  * LandlordReservation's `can_be_cancelled` idiom: server-computed, never
  * re-derived client-side (design decision #2). `photo_url` is already a
@@ -131,6 +156,7 @@ export interface TenantReservation {
    * card MUST display this exact figure, never a re-derived one.
    */
   refund_amount?: string | number | null;
+  receipt?: TenantReceipt | null;
   store_rooms?: {
     id?: number;
     title?: string;
@@ -163,4 +189,8 @@ export function cancelReservationAsTenant(id: number | string) {
     `/tenant/reservations/${id}/cancel`,
     {}
   );
+}
+
+export function getReservationReceiptPdf(id: number | string) {
+  return api.get<Blob>(`/tenant/reservations/${id}/receipt`, { responseType: "blob" });
 }

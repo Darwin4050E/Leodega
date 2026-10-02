@@ -1,5 +1,4 @@
-import { useEffect, useState } from "react";
-import axios from "axios";
+import { useEffect, useRef, useState } from "react";
 import SearchBar, { type SearchBarFilters } from "../../Components/SearchBar";
 import StorageMap from "../../Components/StorageMap";
 import { Heart, ArrowRight, Star, List, Map as MapIcon } from "lucide-react";
@@ -9,6 +8,7 @@ import { rateStoreRoom } from "../../services/ratings";
 import { useAuth } from "../../context/useAuth";
 import { asApiError } from "../../api/errors";
 import HeaderTendant from "../../Components/HeaderTendant";
+import { findCity } from "../../utils/cities";
 
 type Warehouse = StoreRoomSummary;
 
@@ -22,6 +22,9 @@ const Storage = () => {
   const [loading, setLoading] = useState(true);
   const [filters, setFilters] = useState<StoreRoomFilters>({});
   const [view, setView] = useState<"list" | "map">("list");
+  const [searchBarKey, setSearchBarKey] = useState(0);
+
+  const latestRequest = useRef(0);
 
   const navigate = useNavigate();
   const { token } = useAuth();
@@ -31,19 +34,22 @@ const Storage = () => {
     "https://images.unsplash.com/photo-1586528116311-ad8dd3c8310d?w=600&h=400&fit=crop";
 
   const fetchWarehouses = async (appliedFilters?: StoreRoomFilters) => {
+    const requestId = ++latestRequest.current;
     setLoading(true);
     try {
       const res = await getStoreRooms(appliedFilters);
+      if (requestId !== latestRequest.current) return;
 
       const approvedWarehouses = res.data.filter(
         (warehouse: Warehouse) => warehouse.publication_status === "approved"
       );
       setWarehouses(approvedWarehouses);
     } catch (error) {
+      if (requestId !== latestRequest.current) return;
       console.error("Error al cargar bodegas:", error);
       setWarehouses([]);
     } finally {
-      setLoading(false);
+      if (requestId === latestRequest.current) setLoading(false);
     }
   };
 
@@ -51,40 +57,18 @@ const Storage = () => {
     fetchWarehouses();
   }, []);
 
-  const geocodeLocation = async (location: string): Promise<{ lat: number; lng: number } | null> => {
-    try {
-      const res = await axios.get(
-        `https://nominatim.openstreetmap.org/search?format=jsonv2&limit=1&countrycodes=ec&q=${encodeURIComponent(location)}`
-      );
-      const first = res.data?.[0];
-      if (!first) return null;
-
-      const lat = Number.parseFloat(first.lat);
-      const lng = Number.parseFloat(first.lon);
-      if (Number.isNaN(lat) || Number.isNaN(lng)) return null;
-
-      return { lat, lng };
-    } catch (error) {
-      // Nominatim can be rate-limited or unreachable; the search must still
-      // proceed with the size/price filters instead of failing entirely.
-      console.error("Error al geolocalizar la ubicación:", error);
-      return null;
-    }
-  };
-
-  const handleSearch = async (searchFilters: SearchBarFilters) => {
+  const handleSearch = (searchFilters: SearchBarFilters) => {
     const nextFilters: StoreRoomFilters = {};
 
     if (searchFilters.minSize) nextFilters.min_size = Number(searchFilters.minSize);
     if (searchFilters.minPrice) nextFilters.min_price = Number(searchFilters.minPrice);
     if (searchFilters.maxPrice) nextFilters.max_price = Number(searchFilters.maxPrice);
 
-    if (searchFilters.location.trim()) {
-      const coords = await geocodeLocation(searchFilters.location.trim());
-      if (coords) {
-        nextFilters.lat = coords.lat;
-        nextFilters.lng = coords.lng;
-      }
+    const city = findCity(searchFilters.city);
+    if (city) {
+      nextFilters.city = city.name;
+      nextFilters.lat = city.lat;
+      nextFilters.lng = city.lng;
     }
 
     setFilters(nextFilters);
@@ -93,6 +77,7 @@ const Storage = () => {
 
   const handleClearFilters = () => {
     setFilters({});
+    setSearchBarKey((key) => key + 1);
     fetchWarehouses();
   };
 
@@ -146,14 +131,6 @@ const Storage = () => {
     });
   };
 
-  if (loading) {
-    return (
-      <section className="min-h-screen flex items-center justify-center">
-        <p className="text-lg text-gray-600">Cargando bodegas...</p>
-      </section>
-    );
-  }
-
   const hasActiveFilters = Object.keys(filters).length > 0;
 
   return (
@@ -161,7 +138,7 @@ const Storage = () => {
       <HeaderTendant />
 
       <div className="mt-24">
-        <SearchBar onSearch={handleSearch} />
+        <SearchBar key={searchBarKey} onSearch={handleSearch} />
       </div>
 
       <div className="max-w-7xl mx-auto mt-16 px-4">
@@ -184,7 +161,11 @@ const Storage = () => {
           </button>
         </div>
 
-        {warehouses.length === 0 ? (
+        {loading ? (
+          <p role="status" className="py-20 text-center text-lg text-gray-600">
+            Cargando bodegas...
+          </p>
+        ) : warehouses.length === 0 ? (
           <div className="flex flex-col items-center justify-center gap-4 py-20 text-center">
             <p className="text-gray-600 text-lg">{NO_RESULTS_MESSAGE}</p>
             {hasActiveFilters && (

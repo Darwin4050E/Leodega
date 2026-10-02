@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { downloadReservationReceipt } from "../utils/receiptDownload";
 import { formatReservationCode } from "../utils/reservationCode";
 import { formatUSD } from "../utils/money";
 import { monthsBetween } from "../utils/dates";
@@ -30,21 +31,21 @@ const COPY = {
   title: "¡Reserva confirmada!",
   subtitle: "Tu bodega quedó reservada al instante. Enviamos el comprobante a tu correo.",
   reservationCodeLabel: "N.º de reserva",
-  paid: "● PAGADO",
+  paid: "● PAGADA",
   start: "Inicio",
   end: "Fin",
   duration: "Duración",
   gestor: "Gestor",
   amountPaid: "Monto pagado",
   downloadPdf: "Descargar PDF",
+  downloadingPdf: "Descargando...",
   viewReservations: "Ver mis reservas",
   backToCatalog: "Volver al catálogo",
-  downloadToast: "Comprobante PDF descargado (demo)",
 } as const;
 
 /**
  * Receipt step, fidelity to `BkReceipt` (`BookingFlow.jsx:386-435`). The
- * "PAGADO" badge renders unconditionally — this screen is reached only
+ * "PAGADA" badge renders unconditionally — this screen is reached only
  * after a successful `createPayment()` call in the same flow, so payment
  * success is known by construction, with no re-fetch (REQ-REC-3). Per the
  * corrected REQ-REC-1, the "Enviamos el comprobante a tu correo" line
@@ -57,10 +58,23 @@ export default function BookingReceipt({
   onViewReservations,
   onBackToCatalog,
 }: BookingReceiptProps) {
-  const [toast, setToast] = useState("");
+  const [downloading, setDownloading] = useState(false);
+  const [downloadError, setDownloadError] = useState("");
 
   const months = monthsBetween(reservation.start_date, reservation.end_date);
   const code = formatReservationCode(reservation.id);
+
+  const handleDownload = async () => {
+    setDownloading(true);
+    setDownloadError("");
+    try {
+      await downloadReservationReceipt(reservation.id);
+    } catch (e) {
+      setDownloadError((e as Error).message);
+    } finally {
+      setDownloading(false);
+    }
+  };
 
   return (
     <div className="mx-auto max-w-xl px-5 pb-16 pt-10">
@@ -145,11 +159,17 @@ export default function BookingReceipt({
       </div>
 
       <button
-        onClick={() => setToast(COPY.downloadToast)}
-        className="mt-4.5 flex w-full items-center justify-center gap-2 rounded-lg bg-purple-600 py-3.5 text-sm font-semibold text-white"
+        onClick={handleDownload}
+        disabled={downloading}
+        className="mt-4.5 flex w-full items-center justify-center gap-2 rounded-lg bg-purple-600 py-3.5 text-sm font-semibold text-white disabled:opacity-60"
       >
-        {COPY.downloadPdf}
+        {downloading ? COPY.downloadingPdf : COPY.downloadPdf}
       </button>
+      {downloadError && (
+        <p role="alert" className="mt-2 text-center text-sm text-red-600">
+          {downloadError}
+        </p>
+      )}
 
       <div className="mt-3 flex gap-3">
         <button
@@ -165,12 +185,6 @@ export default function BookingReceipt({
           {COPY.backToCatalog}
         </button>
       </div>
-
-      {toast && (
-        <div className="fixed bottom-6 left-1/2 -translate-x-1/2 rounded-lg bg-gray-900 px-5 py-3 text-sm font-medium text-white">
-          {toast}
-        </div>
-      )}
     </div>
   );
 }
