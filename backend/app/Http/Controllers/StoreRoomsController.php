@@ -149,7 +149,14 @@ class StoreRoomsController extends ApiController
 
     public function show($id)
     {
-        return $this->showModel(StoreRooms::class, $id);
+        $room = StoreRooms::viewableById($id, auth('sanctum')->user())->first();
+
+        // Same 404 as detail(): missing, soft-deleted and hidden rooms are indistinguishable.
+        if (! $room) {
+            return response()->json(['message' => 'Bodega no encontrada'], 404);
+        }
+
+        return response()->json($room->makeHidden('firefighter_permit_path'), 200);
     }
 
     /**
