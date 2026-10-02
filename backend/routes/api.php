@@ -25,7 +25,6 @@ use App\Http\Controllers\StorePermitController;
 use App\Http\Controllers\StorePhotoController;
 use App\Http\Controllers\StorePricesController;
 use App\Http\Controllers\StoreRoomsController;
-use App\Http\Controllers\TenantsController;
 use App\Http\Controllers\UserController;
 use Illuminate\Support\Facades\Route;
 
@@ -76,11 +75,8 @@ Route::middleware(['auth.api:sanctum', 'role:admin'])->group(function () {
 
 Route::get('/landlords', [LandlordsController::class, 'index']);
 Route::get('/landlords/{id}', [LandlordsController::class, 'show']);
-Route::middleware('auth.api:sanctum')->group(function () {
-    Route::post('/landlords', [LandlordsController::class, 'store']);
-    Route::put('/landlords/{id}', [LandlordsController::class, 'update']);
-    Route::delete('/landlords/{id}', [LandlordsController::class, 'destroy']);
-});
+// POST/PUT/DELETE /landlords were removed on purpose: landlords rows are created
+// only by UserRegistrationService and ownership derives from landlords.user_id.
 Route::get('/landlords/{id}/storeRooms', [StoreRoomsController::class, 'getByLandlord']);
 
 Route::middleware(['auth.api:sanctum', 'role:admin'])->group(function () {
@@ -91,13 +87,8 @@ Route::middleware(['auth.api:sanctum', 'role:admin'])->group(function () {
     Route::delete('/admin/{id}', [AdminController::class, 'destroy']);
 });
 
-Route::middleware('auth.api:sanctum')->group(function () {
-    Route::get('/tenants', [TenantsController::class, 'index']);
-    Route::get('/tenants/{id}', [TenantsController::class, 'show']);
-    Route::post('/tenants', [TenantsController::class, 'store']);
-    Route::put('/tenants/{id}', [TenantsController::class, 'update']);
-    Route::delete('/tenants/{id}', [TenantsController::class, 'destroy']);
-});
+// /tenants was removed on purpose: tenants rows are created only by
+// UserRegistrationService and ownership derives from tenants.user_id.
 
 Route::get('/storeRooms', [StoreRoomsController::class, 'index']);
 Route::get('/storeRooms/{id}', [StoreRoomsController::class, 'show']);
