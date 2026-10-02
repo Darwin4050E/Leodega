@@ -191,14 +191,14 @@ Route::middleware('auth.api:sanctum')->group(function () {
 
 Route::middleware('auth.api:sanctum')->group(function () {
     Route::post('/reports', [ReportsController::class, 'store']);
-    Route::get('/reports', [ReportsController::class, 'index']);
-    Route::get('/reports/{id}', [ReportsController::class, 'show']);
-    Route::put('/reports/{id}', [ReportsController::class, 'update']);
 });
 // El check de rol vivía como `if` manual dentro de updateStatus(); se formaliza
 // aquí como middleware, igual que el resto de rutas admin-only (Fase 0.5).
+// La lectura de reportes también es solo admin: incluye datos del reportante.
 Route::middleware(['auth.api:sanctum', 'role:admin'])->group(function () {
     Route::patch('/reports/{report}/status', [ReportsController::class, 'updateStatus']);
+    Route::get('/reports', [ReportsController::class, 'index']);
+    Route::get('/reports/{id}', [ReportsController::class, 'show']);
 });
 
 // Route::resource('reports', ReportsController::class)->except('create', 'edit');
