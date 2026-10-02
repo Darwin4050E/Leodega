@@ -169,11 +169,7 @@ Route::middleware('auth.api:sanctum')->group(function () {
 });
 
 Route::middleware('auth.api:sanctum')->group(function () {
-    Route::get('/payments', [PaymentsController::class, 'index']);
-    Route::get('/payments/{id}', [PaymentsController::class, 'show']);
     Route::post('/payments', [PaymentsController::class, 'store']);
-    Route::put('/payments/{id}', [PaymentsController::class, 'update']);
-    Route::delete('/payments/{id}', [PaymentsController::class, 'destroy']);
 });
 
 Route::middleware('auth.api:sanctum')->group(function () {

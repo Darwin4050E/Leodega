@@ -3,7 +3,6 @@
 namespace App\Http\Controllers;
 
 use App\Http\Requests\StorePaymentRequest;
-use App\Http\Requests\UpdatePaymentRequest;
 use App\Models\Payments;
 use App\Models\Reservations;
 use App\Services\PaymentService;
@@ -11,18 +10,8 @@ use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Gate;
 use Illuminate\Support\Facades\Validator;
 
-class PaymentsController extends ApiController
+class PaymentsController extends Controller
 {
-    public function index()
-    {
-        return $this->indexModel(Payments::class);
-    }
-
-    public function show($id)
-    {
-        return $this->showModel(Payments::class, $id);
-    }
-
     /**
      * Corrección de inconsistencia (ver PLAN_CORRECCION_INCONSISTENCIAS.md,
      * Fase 2.2): antes usaba el CRUD genérico (storeModel), sin autorización
@@ -56,15 +45,5 @@ class PaymentsController extends ApiController
             'message' => 'Item created successfully',
             'status' => $result['status'],
         ], $result['status']);
-    }
-
-    public function update(Request $request, $id)
-    {
-        return $this->updateModel($request, Payments::class, $id, (new UpdatePaymentRequest)->rules());
-    }
-
-    public function destroy($id)
-    {
-        return $this->destroyModel(Payments::class, $id);
     }
 }

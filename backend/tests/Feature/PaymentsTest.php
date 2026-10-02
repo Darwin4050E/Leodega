@@ -2,6 +2,8 @@
 
 namespace Tests\Feature;
 
+use App\Http\Controllers\PaymentsController;
+use App\Models\Landlords;
 use App\Models\Notifications;
 use App\Models\Payments;
 use App\Models\Reservations;
@@ -13,6 +15,8 @@ use Carbon\Carbon;
 use Illuminate\Contracts\Notifications\Dispatcher;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Notification;
+use Illuminate\Support\Facades\Route;
+use PHPUnit\Framework\Attributes\DataProvider;
 use Tests\TestCase;
 
 class PaymentsTest extends TestCase
@@ -34,26 +38,6 @@ class PaymentsTest extends TestCase
         return [$reservation, $tenantUser];
     }
 
-    // Fase 0.5: /api/payments ahora requiere sesión en todos sus métodos — es el
-    // dato más sensible de todos (hallazgo #1 de la matriz de riesgo).
-    public function test_index_requires_authentication()
-    {
-        $response = $this->getJson('/api/payments');
-
-        $response->assertStatus(401);
-    }
-
-    public function test_index_returns_payments_when_authenticated()
-    {
-        $caller = User::factory()->create();
-        Payments::factory()->count(2)->create();
-
-        $response = $this->actingAs($caller, 'sanctum')->getJson('/api/payments');
-
-        $response->assertStatus(200);
-        $response->assertJsonCount(2);
-    }
-
     public function test_store_requires_authentication()
     {
         $reservation = Reservations::factory()->create();
@@ -65,6 +49,7 @@ class PaymentsTest extends TestCase
         ]);
 
         $response->assertStatus(401);
+        $this->assertDatabaseMissing('payments', ['reservation_id' => $reservation->id]);
     }
 
     public function test_store_creates_payment_when_authenticated()
@@ -600,23 +585,126 @@ class PaymentsTest extends TestCase
         ]);
     }
 
-    public function test_destroy_requires_authentication()
+    /**
+     * sdd/payments-ownership-hardening: payments are append-only through
+     * POST /api/payments. Callers are created inside the test body because
+     * data providers run before the application boots.
+     */
+    public static function callerRoleProvider(): array
     {
-        $payment = Payments::factory()->create();
-
-        $response = $this->deleteJson("/api/payments/{$payment->id}");
-
-        $response->assertStatus(401);
+        return [
+            'anonymous' => [null],
+            'tenant' => ['tenant'],
+            'gestor' => ['landlord'],
+            'admin' => ['admin'],
+        ];
     }
 
-    public function test_destroy_deletes_payment_when_authenticated()
+    public static function removedItemVerbProvider(): iterable
     {
-        $caller = User::factory()->create();
-        $payment = Payments::factory()->create();
+        foreach (self::callerRoleProvider() as $caller => [$role]) {
+            foreach (['GET', 'PUT', 'DELETE'] as $method) {
+                yield "{$caller} ".strtolower($method) => [$role, $method];
+            }
+        }
+    }
 
-        $response = $this->actingAs($caller, 'sanctum')->deleteJson("/api/payments/{$payment->id}");
+    private function callerAs(?string $role): static
+    {
+        if ($role === null) {
+            return $this;
+        }
 
-        $response->assertStatus(200);
-        $this->assertDatabaseMissing('payments', ['id' => $payment->id]);
+        return $this->actingAs(User::factory()->create(['role' => $role]), 'sanctum');
+    }
+
+    #[DataProvider('callerRoleProvider')]
+    public function test_removed_collection_verbs_return_405(?string $role)
+    {
+        Payments::factory()->count(2)->create();
+
+        $response = $this->callerAs($role)->getJson('/api/payments');
+
+        $response->assertStatus(405);
+        $this->assertStringContainsString('POST', (string) $response->headers->get('Allow'));
+    }
+
+    #[DataProvider('removedItemVerbProvider')]
+    public function test_removed_item_verbs_return_404(?string $role, string $method)
+    {
+        $payment = Payments::factory()->create(['payment_state' => 'paid']);
+        $originalReservationId = $payment->reservation_id;
+        $otherReservation = Reservations::factory()->create();
+
+        $response = $this->callerAs($role)->json($method, "/api/payments/{$payment->id}", [
+            'payment_state' => 'failed',
+            'reservation_id' => $otherReservation->id,
+        ]);
+
+        $response->assertStatus(404);
+        $this->assertDatabaseHas('payments', [
+            'id' => $payment->id,
+            'payment_state' => 'paid',
+            'reservation_id' => $originalReservationId,
+        ]);
+    }
+
+    public function test_receipt_survives_stranger_delete_and_put()
+    {
+        $owner = User::factory()->create(['role' => 'tenant']);
+        $tenant = Tenants::factory()->create(['user_id' => $owner->id]);
+        $gestor = User::factory()->create(['role' => 'landlord']);
+        $landlord = Landlords::factory()->create(['user_id' => $gestor->id]);
+        $room = StoreRooms::factory()->approved()->create(['landlord_id' => $landlord->id]);
+        $reservation = Reservations::factory()->create([
+            'store_room_id' => $room->id,
+            'tenant_id' => $tenant->id,
+            'status' => 'confirmed',
+            'start_date' => now()->addDays(10)->toDateString(),
+            'end_date' => now()->addDays(20)->toDateString(),
+            'total_mount' => 1850,
+        ]);
+        $payment = Payments::factory()->create([
+            'reservation_id' => $reservation->id,
+            'payment_state' => 'paid',
+        ]);
+        $otherReservation = Reservations::factory()->create();
+        $stranger = User::factory()->create(['role' => 'tenant']);
+
+        $this->actingAs($stranger, 'sanctum')
+            ->deleteJson("/api/payments/{$payment->id}")
+            ->assertStatus(404);
+        $this->actingAs($stranger, 'sanctum')
+            ->putJson("/api/payments/{$payment->id}", [
+                'payment_state' => 'failed',
+                'reservation_id' => $otherReservation->id,
+            ])
+            ->assertStatus(404);
+
+        $receipt = $this->actingAs($owner, 'sanctum')
+            ->get("/api/tenant/reservations/{$reservation->id}/receipt");
+        $receipt->assertStatus(200);
+        $receipt->assertHeader('Content-Type', 'application/pdf');
+
+        $tenantList = collect($this->actingAs($owner, 'sanctum')->getJson('/api/tenant/reservations')->json());
+        $this->assertNotNull($tenantList->firstWhere('id', $reservation->id)['receipt']);
+
+        $gestorList = collect($this->actingAs($gestor, 'sanctum')->getJson('/api/landlord/reservations')->json());
+        $this->assertSame($payment->id, $gestorList->firstWhere('id', $reservation->id)['payment_id']);
+    }
+
+    public function test_only_post_is_registered_for_the_payments_uri()
+    {
+        $routes = collect(Route::getRoutes()->getRoutes())
+            ->filter(fn ($route) => str_starts_with($route->uri(), 'api/payments'));
+
+        $this->assertCount(1, $routes);
+        $this->assertSame('api/payments', $routes->first()->uri());
+        $this->assertSame(['POST'], $routes->first()->methods());
+
+        $this->assertTrue(method_exists(PaymentsController::class, 'store'));
+        foreach (['index', 'show', 'update', 'destroy'] as $removed) {
+            $this->assertFalse(method_exists(PaymentsController::class, $removed), "{$removed} must not exist");
+        }
     }
 }
