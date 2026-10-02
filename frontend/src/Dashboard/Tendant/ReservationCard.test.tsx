@@ -19,12 +19,15 @@ const receipt: TenantReceipt = {
   paid_at_label: '1 oct 2026, 22:30',
 };
 
+// Far-future end date keeps 'confirmed' fixtures active regardless of today's date.
+const ACTIVE_END_DATE = '2999-12-31';
+
 function reservation(overrides: Partial<TenantReservation> = {}): TenantReservation {
   return {
     id: 1,
     status: 'confirmed',
     start_date: '2026-07-01',
-    end_date: '2026-10-01',
+    end_date: ACTIVE_END_DATE,
     store_room_id: 3,
     total_mount: '1850.00',
     can_be_cancelled: false,

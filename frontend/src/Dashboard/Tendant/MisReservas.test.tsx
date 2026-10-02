@@ -34,12 +34,15 @@ vi.mock('./ComprobanteReservaModal', () => ({
 
 import MisReservas from './MisReservas';
 
+// Far-future end date keeps 'confirmed' fixtures active regardless of today's date.
+const ACTIVE_END_DATE = '2999-12-31';
+
 function reservation(overrides = {}) {
   return {
     id: 1,
     status: 'confirmed',
     start_date: '2026-07-01',
-    end_date: '2026-10-01',
+    end_date: ACTIVE_END_DATE,
     store_room_id: 3,
     total_mount: '1850.00',
     can_be_cancelled: true,
@@ -86,7 +89,7 @@ describe('MisReservas', () => {
   it('renders three tabs with count badges and filters the list', async () => {
     mockGetTenantReservations.mockResolvedValue({
       data: [
-        reservation({ id: 1, status: 'confirmed', end_date: '2026-10-01' }),
+        reservation({ id: 1, status: 'confirmed', end_date: ACTIVE_END_DATE }),
         reservation({ id: 2, status: 'confirmed', end_date: '2020-01-01', can_be_cancelled: false }),
         reservation({ id: 3, status: 'canceled', can_be_cancelled: false }),
       ],
