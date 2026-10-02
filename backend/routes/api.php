@@ -6,7 +6,6 @@ use App\Http\Controllers\AuthController;
 use App\Http\Controllers\CancelationsPolicesController;
 use App\Http\Controllers\ConversationController;
 use App\Http\Controllers\DashboardController;
-use App\Http\Controllers\FavoritesController;
 use App\Http\Controllers\LandlordsController;
 use App\Http\Controllers\MessageController;
 use App\Http\Controllers\NotificationsController;
@@ -76,7 +75,8 @@ Route::middleware(['auth.api:sanctum', 'role:admin'])->group(function () {
 Route::get('/landlords', [LandlordsController::class, 'index']);
 Route::get('/landlords/{id}', [LandlordsController::class, 'show']);
 // POST/PUT/DELETE /landlords were removed on purpose: landlords rows are created
-// only by UserRegistrationService and ownership derives from landlords.user_id.
+// over HTTP only by UserRegistrationService (POST /user) and ownership derives
+// from landlords.user_id.
 Route::get('/landlords/{id}/storeRooms', [StoreRoomsController::class, 'getByLandlord']);
 
 Route::middleware(['auth.api:sanctum', 'role:admin'])->group(function () {
@@ -87,8 +87,8 @@ Route::middleware(['auth.api:sanctum', 'role:admin'])->group(function () {
     Route::delete('/admin/{id}', [AdminController::class, 'destroy']);
 });
 
-// /tenants was removed on purpose: tenants rows are created only by
-// UserRegistrationService and ownership derives from tenants.user_id.
+// /tenants was removed on purpose: tenants rows are created over HTTP only by
+// UserRegistrationService (POST /user) and ownership derives from tenants.user_id.
 
 Route::get('/storeRooms', [StoreRoomsController::class, 'index']);
 Route::get('/storeRooms/{id}', [StoreRoomsController::class, 'show']);
@@ -133,13 +133,8 @@ Route::middleware('auth.api:sanctum')->group(function () {
     Route::delete('/store-rooms/{storeRoom}/photos/{photo}', [StorePhotoController::class, 'destroy']);
 });
 
-Route::middleware('auth.api:sanctum')->group(function () {
-    Route::get('/favorites', [FavoritesController::class, 'index']);
-    Route::get('/favorites/{id}', [FavoritesController::class, 'show']);
-    Route::post('/favorites', [FavoritesController::class, 'store']);
-    Route::put('/favorites/{id}', [FavoritesController::class, 'update']);
-    Route::delete('/favorites/{id}', [FavoritesController::class, 'destroy']);
-});
+// /favorites was removed on purpose: the generic CRUD let any caller read, forge
+// or delete any user's favorites; ownership would derive from favorites.user_id.
 
 Route::get('/storeDisponibility/{id}', [StoreDisponibilityController::class, 'show']);
 Route::middleware('auth.api:sanctum')->group(function () {
@@ -174,11 +169,8 @@ Route::middleware('auth.api:sanctum')->group(function () {
 
 Route::get('/cancelations_polices', [CancelationsPolicesController::class, 'index']);
 Route::get('/cancelations_polices/{id}', [CancelationsPolicesController::class, 'show']);
-Route::middleware('auth.api:sanctum')->group(function () {
-    Route::post('/cancelations_polices', [CancelationsPolicesController::class, 'store']);
-    Route::put('/cancelations_polices/{id}', [CancelationsPolicesController::class, 'update']);
-    Route::delete('/cancelations_polices/{id}', [CancelationsPolicesController::class, 'destroy']);
-});
+// POST/PUT/DELETE /cancelations_polices were removed on purpose: any caller could
+// edit or delete any landlord's policy; ownership derives from landlords.user_id.
 
 Route::middleware('auth.api:sanctum')->group(function () {
     Route::post('/reports', [ReportsController::class, 'store']);

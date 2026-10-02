@@ -16,8 +16,8 @@ use Tests\TestCase;
 
 /**
  * sdd/sanctum-crud-ownership-audit-b: the generic /api/tenants CRUD is gone.
- * Tenant rows are created only by UserRegistrationService (POST /user), so no
- * verb is left on /tenants and the router answers 404 before any middleware
+ * Tenant rows are created over HTTP only by UserRegistrationService (POST /user),
+ * so no verb is left on /tenants and the router answers 404 before any middleware
  * (never 401, even anonymous).
  */
 class TenantsRoutesRemovedTest extends TestCase

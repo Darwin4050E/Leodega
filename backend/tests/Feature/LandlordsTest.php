@@ -55,9 +55,10 @@ class LandlordsTest extends TestCase
     }
 
     /**
-     * sdd/sanctum-crud-ownership-audit-b: landlord rows are created only by
-     * UserRegistrationService; the generic write verbs are gone. GET shares
-     * the URI, so the router answers 405 before any middleware (never 401).
+     * sdd/sanctum-crud-ownership-audit-b: landlord rows are created over HTTP
+     * only by UserRegistrationService (POST /user); the generic write verbs are
+     * gone. GET shares the URI, so the router answers 405 before any middleware
+     * (never 401).
      */
     #[DataProvider('removedWriteVerbProvider')]
     public function test_removed_write_verbs_return_405(?string $role, string $method)
