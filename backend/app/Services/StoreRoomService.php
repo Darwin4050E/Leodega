@@ -107,6 +107,55 @@ class StoreRoomService
     }
 
     /**
+     * Owner-driven replacement of the fire-department permit PDF.
+     *
+     * Same file lifecycle as register() (D11): the new file is written
+     * first, a failed transaction deletes it (compensating delete), and the
+     * old file is only removed after commit, so a failure never leaves the
+     * room pointing at a missing permit.
+     *
+     * Status rule: an `approved` room goes back to `pending` because the
+     * admin approved a document that no longer exists; `pending` stays in
+     * the queue as is, and `rejected` stays `rejected` — the gestor still
+     * resubmits explicitly through resubmit().
+     */
+    public function replacePermit(StoreRooms $room, UploadedFile $permit, int $actingUserId): StoreRooms
+    {
+        $oldPath = $room->firefighter_permit_path;
+        $wasApproved = $room->publication_status === 'approved';
+
+        $path = $permit->store('firefighter_permits', 'private');
+
+        try {
+            $room = DB::transaction(function () use ($room, $path, $wasApproved) {
+                $changes = ['firefighter_permit_path' => $path];
+                if ($wasApproved) {
+                    $changes['publication_status'] = 'pending';
+                }
+
+                $room->update($changes);
+
+                return $room->fresh();
+            });
+        } catch (\Throwable $e) {
+            Storage::disk('private')->delete($path);
+            throw $e;
+        }
+
+        if ($oldPath && $oldPath !== $path) {
+            Storage::disk('private')->delete($oldPath);
+        }
+
+        // Post-commit, best-effort: only an approved room re-enters the
+        // moderation queue, so only then do admins have something new to review.
+        if ($wasApproved) {
+            $this->notifyAdmins($actingUserId, $room, NotificationType::STORE_PERMIT_REPLACED, 'Permiso de bomberos reemplazado, bodega pendiente de verificación');
+        }
+
+        return $room;
+    }
+
+    /**
      * HUG-08: partial edit of an already published listing by its owner.
      *
      * Only the fields the caller actually sent (already validated and

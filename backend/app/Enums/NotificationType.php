@@ -15,6 +15,7 @@ enum NotificationType: string
     case STORE_APPROVED = 'store_approved';
     case STORE_REJECTED = 'store_rejected';
     case STORE_RESUBMITTED = 'store_resubmitted';
+    case STORE_PERMIT_REPLACED = 'store_permit_replaced';
     case ACCOUNT_BLOCKED = 'account_blocked';
     case ACCOUNT_REACTIVATED = 'account_reactivated';
 }
