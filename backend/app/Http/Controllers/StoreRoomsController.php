@@ -5,7 +5,6 @@ namespace App\Http\Controllers;
 use App\Http\Requests\EditStoreRoomListingRequest;
 use App\Http\Requests\ModerationDecisionRules;
 use App\Http\Requests\StoreStoreRoomRequest;
-use App\Http\Requests\UpdateStoreRoomRequest;
 use App\Http\Resources\StoreRoomDetailResource;
 use App\Models\Landlords;
 use App\Models\StoreRooms;
@@ -19,6 +18,7 @@ use Carbon\Carbon;
 use Illuminate\Http\Request;
 use Illuminate\Support\Arr;
 use Illuminate\Support\Facades\Gate;
+use Illuminate\Support\Facades\Validator;
 use Illuminate\Validation\ValidationException;
 
 class StoreRoomsController extends ApiController
@@ -201,14 +201,19 @@ class StoreRoomsController extends ApiController
     }
 
     /**
-     * Corrección de inconsistencia (ver PLAN_CORRECCION_INCONSISTENCIAS.md,
-     * Fase 2.1): antes, publication_status se actualizaba vía CRUD genérico
-     * sin crear el registro de auditoría StoreModeration ni notificar al
-     * landlord. Se mantiene el mismo endpoint/contrato (PUT /storeRooms/{id})
-     * para no romper a los clientes existentes: si el payload trae un cambio
-     * real de publication_status a approved/rejected, se enruta por
-     * StoreModerationService antes de delegar el resto de campos al CRUD
-     * genérico heredado.
+     * PUT /storeRooms/{id} serves two audiences. For an administrator it is a
+     * moderation endpoint ONLY: the single accepted payload is an approve or
+     * reject decision to a status different from the current one, routed
+     * through StoreModerationService (status change, audit record and landlord
+     * notification in one transaction). Anything else sent by an admin is an
+     * explicit 422, never an edit: listing data belongs to the owning gestor.
+     * For everyone else the endpoint keeps its owner edit path (editListing())
+     * and a decision is still a 403.
+     *
+     * The decision and its reason/waiver fields are read from the request
+     * BODY only ($request->post()). Request::input() also merges the query
+     * string, so a `?publication_status=` could otherwise approve a room or
+     * silently revert an approval.
      */
     public function update(Request $request, $id, StoreModerationService $moderationService, StoreRoomService $service)
     {
@@ -217,38 +222,55 @@ class StoreRoomsController extends ApiController
             return response()->json(['message' => 'Not found'], 404);
         }
 
-        $newStatus = $request->input('publication_status');
-        $isModerationDecision = $newStatus !== null
-            && in_array($newStatus, ['approved', 'rejected'], true)
+        $newStatus = $request->post('publication_status');
+        $isModerationDecision = in_array($newStatus, ['approved', 'rejected'], true)
             && $newStatus !== $storeRoom->publication_status;
 
-        if ($isModerationDecision) {
-            if (! auth()->user() || auth()->user()->role !== 'admin') {
-                return response()->json([
-                    'message' => 'Solo un administrador puede aprobar o rechazar una bodega',
-                ], 403);
+        if (auth()->user()?->role === 'admin') {
+            if (! $isModerationDecision) {
+                throw ValidationException::withMessages([
+                    'publication_status' => 'Un administrador solo puede aprobar o rechazar una bodega con un estado distinto al actual; no se admiten otros cambios.',
+                ]);
             }
 
-            $rules = (new ModerationDecisionRules)->rules($newStatus, is_null($storeRoom->firefighter_permit_path));
-            $request->validate($rules);
+            return $this->moderateRoom($request, $storeRoom, $newStatus, $moderationService);
+        }
 
-            $moderationService->moderate($storeRoom, new ModerationDecision(
-                decision: $newStatus,
-                reason: $request->input('reason_rejected'),
-                reasonCode: $request->input('reason_code'),
-                adminId: auth()->id(),
-                permitWaiverAcknowledged: filter_var($request->input('permit_waiver_acknowledged'), FILTER_VALIDATE_BOOLEAN),
-            ));
-
-            $request->request->remove('publication_status');
-            $request->request->remove('reason_rejected');
-            $request->request->remove('reason_code');
-            $request->request->remove('permit_waiver_acknowledged');
-
-            return $this->updateModel($request, StoreRooms::class, $id, (new UpdateStoreRoomRequest)->rules());
+        if ($isModerationDecision) {
+            return response()->json([
+                'message' => 'Solo un administrador puede aprobar o rechazar una bodega',
+            ], 403);
         }
 
         return $this->editListing($storeRoom, $service);
+    }
+
+    /**
+     * Validates the decision fields against the shared moderation rules BEFORE
+     * anything is written, and feeds the service from the validated values
+     * only, so nothing can fail after the moderation commit. The success body
+     * keeps the shape the admin panel already consumes.
+     */
+    private function moderateRoom(Request $request, StoreRooms $storeRoom, string $decision, StoreModerationService $moderationService)
+    {
+        $validated = Validator::make(
+            $request->post(),
+            (new ModerationDecisionRules)->rules($decision, is_null($storeRoom->firefighter_permit_path))
+        )->validate();
+
+        $moderationService->moderate($storeRoom, new ModerationDecision(
+            decision: $decision,
+            reason: $validated['reason_rejected'] ?? null,
+            reasonCode: $validated['reason_code'] ?? null,
+            adminId: auth()->id(),
+            permitWaiverAcknowledged: filter_var($validated['permit_waiver_acknowledged'] ?? null, FILTER_VALIDATE_BOOLEAN),
+        ));
+
+        return response()->json([
+            'data' => $storeRoom->fresh(),
+            'message' => 'Updated successfully',
+            'status' => 200,
+        ], 200);
     }
 
     /**
