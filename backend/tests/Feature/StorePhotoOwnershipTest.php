@@ -244,6 +244,9 @@ class StorePhotoOwnershipTest extends TestCase
         Storage::fake('public');
         [$owner, $room] = $this->ownerWithRoom();
         $photo = $this->seedPhoto($room, 'mine');
+        $this->seedPhoto($room, 'keep-1');
+        $this->seedPhoto($room, 'keep-2');
+        $this->seedPhoto($room, 'keep-3');
 
         $response = $this->bearerAs($owner)->deleteJson("/api/store-rooms/{$room->id}/photos/{$photo->id}");
 
@@ -310,6 +313,9 @@ class StorePhotoOwnershipTest extends TestCase
             'updated_at' => now(),
         ]);
         $p = $this->seedPhoto($roomA, 'p');
+        $this->seedPhoto($roomA, 'keep-1');
+        $this->seedPhoto($roomA, 'keep-2');
+        $this->seedPhoto($roomA, 'keep-3');
         $this->assertNotSame($roomA->id, $p->id);
 
         $response = $this->bearerAs($owner)->deleteJson("/api/store-rooms/{$roomA->id}/photos/{$p->id}");

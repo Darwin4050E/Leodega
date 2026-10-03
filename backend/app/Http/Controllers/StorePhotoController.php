@@ -100,8 +100,19 @@ class StorePhotoController extends ApiController
             ], 404);
         }
 
+        DB::transaction(function () use ($room, $photo) {
+            StoreRooms::whereKey($room->id)->lockForUpdate()->first();
+
+            if ($room->storePhotos()->count() <= StoreRooms::MIN_PHOTOS) {
+                throw ValidationException::withMessages([
+                    'photos' => 'Una bodega debe conservar al menos '.StoreRooms::MIN_PHOTOS.' fotos. Sube la nueva foto antes de eliminar la anterior.',
+                ]);
+            }
+
+            $photo->delete();
+        });
+
         Storage::disk('public')->delete($photo->photo_url);
-        $photo->delete();
 
         return response()->json([
             'message' => 'Photo deleted successfully',
