@@ -7,6 +7,7 @@ use App\Http\Requests\UpdateUserRequest;
 use App\Models\User;
 use App\Services\UserRegistrationService;
 use Illuminate\Http\Request;
+use Illuminate\Support\Arr;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
 
@@ -48,8 +49,14 @@ class UserController extends ApiController
             ], 403);
         }
 
-        return DB::transaction(function () use ($request, $rules, $registrationService) {
-            $response = $this->storeModel($request, User::class, $rules);
+        // storeModel() creates related rows for every array key of the request, so
+        // only validated keys travel on; registered accounts always start active.
+        $payload = Arr::only($request->all(), array_keys($rules));
+        $payload['state'] = 'active';
+        $clean = Request::create('/', 'POST', $payload);
+
+        return DB::transaction(function () use ($clean, $rules, $registrationService) {
+            $response = $this->storeModel($clean, User::class, $rules);
             $data = $response->getData();
 
             if ($response->getStatusCode() === 201 && isset($data->item->id)) {
