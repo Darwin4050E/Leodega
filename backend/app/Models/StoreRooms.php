@@ -12,6 +12,10 @@ class StoreRooms extends Model
     use HasFactory;
     use SoftDeletes;
 
+    public const MIN_PHOTOS = 3;
+
+    public const MAX_PHOTOS = 10;
+
     protected $table = 'storeRooms';
 
     protected $fillable = [
@@ -49,6 +53,11 @@ class StoreRooms extends Model
     public function storePhotos()
     {
         return $this->hasMany(StorePhoto::class, 'store_room_id');
+    }
+
+    public function hasMinimumPhotos(): bool
+    {
+        return $this->storePhotos()->count() >= self::MIN_PHOTOS;
     }
 
     public function storeDisponibility()

@@ -11,6 +11,7 @@ use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Gate;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Facades\Validator;
+use Illuminate\Validation\ValidationException;
 
 class StorePhotoController extends ApiController
 {
@@ -56,6 +57,14 @@ class StorePhotoController extends ApiController
         $photosSaved = [];
 
         DB::transaction(function () use ($request, $room, &$photosSaved) {
+            $lockedRoom = StoreRooms::whereKey($room->id)->lockForUpdate()->first();
+
+            if ($lockedRoom->storePhotos()->count() + count($request->file('photos')) > StoreRooms::MAX_PHOTOS) {
+                throw ValidationException::withMessages([
+                    'photos' => 'Una bodega no puede tener más de '.StoreRooms::MAX_PHOTOS.' fotos.',
+                ]);
+            }
+
             foreach ($request->file('photos') as $photo) {
                 $path = $photo->store('store_photos', 'public');
 

@@ -92,6 +92,10 @@ class StoreRoomService
             throw StoreRoomResubmissionException::conflict('La bodega no está rechazada; no hay nada que reenviar.');
         }
 
+        if (! $room->hasMinimumPhotos()) {
+            throw ValidationException::withMessages(['photos' => StoreModerationService::MIN_PHOTOS_MESSAGE]);
+        }
+
         $room = DB::transaction(function () use ($room) {
             $room->update(['publication_status' => 'pending']);
 

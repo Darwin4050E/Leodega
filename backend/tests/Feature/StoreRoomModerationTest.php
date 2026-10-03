@@ -24,7 +24,7 @@ class StoreRoomModerationTest extends TestCase
         Sanctum::actingAs($admin);
 
         // Store room en estado pending, con permiso adjunto (no requiere waiver).
-        $storeRoom = StoreRooms::factory()->create([
+        $storeRoom = StoreRooms::factory()->withPhotos()->create([
             'publication_status' => 'pending',
             'firefighter_permit_path' => 'firefighter_permits/permit.pdf',
         ]);
@@ -53,7 +53,7 @@ class StoreRoomModerationTest extends TestCase
         $admin = User::factory()->create(['role' => 'admin']);
         Sanctum::actingAs($admin);
 
-        $storeRoom = StoreRooms::factory()->create([
+        $storeRoom = StoreRooms::factory()->withPhotos()->create([
             'publication_status' => 'pending',
             'firefighter_permit_path' => 'firefighter_permits/permit.pdf',
         ]);
@@ -88,7 +88,7 @@ class StoreRoomModerationTest extends TestCase
         $admin = User::factory()->create(['role' => 'admin']);
         Sanctum::actingAs($admin);
 
-        $storeRoom = StoreRooms::factory()->create([
+        $storeRoom = StoreRooms::factory()->withPhotos()->create([
             'publication_status' => 'pending',
             'firefighter_permit_path' => null,
         ]);
@@ -110,7 +110,7 @@ class StoreRoomModerationTest extends TestCase
         $admin = User::factory()->create(['role' => 'admin']);
         Sanctum::actingAs($admin);
 
-        $storeRoom = StoreRooms::factory()->create([
+        $storeRoom = StoreRooms::factory()->withPhotos()->create([
             'publication_status' => 'pending',
             'firefighter_permit_path' => null,
         ]);
@@ -131,7 +131,7 @@ class StoreRoomModerationTest extends TestCase
         $admin = User::factory()->create(['role' => 'admin']);
         Sanctum::actingAs($admin);
 
-        $storeRoom = StoreRooms::factory()->create([
+        $storeRoom = StoreRooms::factory()->withPhotos()->create([
             'publication_status' => 'pending',
             'firefighter_permit_path' => 'firefighter_permits/permit.pdf',
         ]);
@@ -358,5 +358,55 @@ class StoreRoomModerationTest extends TestCase
         $statuses = collect($response->json())->pluck('publication_status')->unique()->values()->all();
 
         $this->assertSame(['approved'], $statuses);
+    }
+
+    public function test_approving_a_room_with_fewer_than_three_photos_fails_through_both_entry_points()
+    {
+        $admin = User::factory()->create(['role' => 'admin']);
+        Sanctum::actingAs($admin);
+
+        $roomForPut = StoreRooms::factory()->withPhotos(2)->create([
+            'publication_status' => 'pending',
+            'firefighter_permit_path' => 'firefighter_permits/permit.pdf',
+        ]);
+        $roomForPost = StoreRooms::factory()->withPhotos(2)->create([
+            'publication_status' => 'pending',
+            'firefighter_permit_path' => 'firefighter_permits/permit.pdf',
+        ]);
+
+        $putResponse = $this->putJson("/api/storeRooms/{$roomForPut->id}", [
+            'publication_status' => 'approved',
+        ]);
+        $postResponse = $this->postJson('/api/store_moderation', [
+            'store_id' => $roomForPost->id,
+            'status' => 'approved',
+        ]);
+
+        foreach ([$putResponse, $postResponse] as $response) {
+            $response->assertStatus(422);
+            $response->assertJsonValidationErrors('photos');
+            $response->assertJsonPath('message', 'La bodega necesita al menos 3 fotos para ser aprobada.');
+        }
+
+        foreach ([$roomForPut, $roomForPost] as $room) {
+            $this->assertDatabaseHas('storeRooms', ['id' => $room->id, 'publication_status' => 'pending']);
+        }
+        $this->assertDatabaseCount('store_moderation', 0);
+        $this->assertDatabaseCount('notifications', 0);
+    }
+
+    public function test_rejecting_a_room_without_photos_is_still_allowed()
+    {
+        $admin = User::factory()->create(['role' => 'admin']);
+        Sanctum::actingAs($admin);
+
+        $storeRoom = StoreRooms::factory()->create(['publication_status' => 'pending']);
+
+        $this->putJson("/api/storeRooms/{$storeRoom->id}", [
+            'publication_status' => 'rejected',
+            'reason_code' => 'fotos',
+        ])->assertStatus(200);
+
+        $this->assertDatabaseHas('storeRooms', ['id' => $storeRoom->id, 'publication_status' => 'rejected']);
     }
 }
