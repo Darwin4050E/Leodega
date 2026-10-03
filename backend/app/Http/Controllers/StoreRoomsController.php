@@ -411,6 +411,10 @@ class StoreRoomsController extends ApiController
      * ReservationPricingService::quote() verbatim — this controller never
      * recomputes or approximates any figure the service already owns.
      *
+     * Visibility follows show()/detail(): a non-approved room is quoted only for
+     * its owner or an admin; anyone else gets the same 404 as a missing room,
+     * decided before the date validation below.
+     *
      * `start_date`/`end_date` are optional together; when both are absent,
      * the panel's default 3-month estimate is computed HERE, server-side
      * (design decision), so the frontend never does date math. When the
@@ -421,7 +425,7 @@ class StoreRoomsController extends ApiController
      */
     public function quote(Request $request, $id, ReservationPricingService $pricingService)
     {
-        $room = StoreRooms::find($id);
+        $room = StoreRooms::viewableById($id, $request->user('sanctum'))->first();
         if (! $room) {
             return response()->json(['message' => 'Bodega no encontrada'], 404);
         }
