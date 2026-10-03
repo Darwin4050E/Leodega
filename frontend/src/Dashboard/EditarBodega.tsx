@@ -32,6 +32,11 @@ import { validatePermitFile } from "../utils/permitFile";
 
 const SUCCESS_MESSAGE = "Los cambios se guardaron correctamente.";
 
+const REVIEW_CONFIRM_MESSAGE =
+  "Este cambio enviará tu bodega a revisión y dejará de estar disponible para nuevas reservas hasta ser aprobada. ¿Quieres continuar?";
+
+const MATERIAL_FIELDS = ["title", "description", "size", "price"];
+
 interface FormState {
   title: string;
   description: string;
@@ -66,6 +71,7 @@ const EditarBodega = () => {
   const [saving, setSaving] = useState(false);
   const [successMessage, setSuccessMessage] = useState("");
   const [noticeMessage, setNoticeMessage] = useState("");
+  const [reviewNotice, setReviewNotice] = useState("");
 
   const [publicationStatus, setPublicationStatus] = useState<string | undefined>(undefined);
 
@@ -133,6 +139,7 @@ const EditarBodega = () => {
     setErrors((prev) => ({ ...prev, [key]: undefined }));
     setSuccessMessage("");
     setNoticeMessage("");
+    setReviewNotice("");
     setServerError("");
   };
 
@@ -180,6 +187,7 @@ const EditarBodega = () => {
     event.preventDefault();
     setSuccessMessage("");
     setNoticeMessage("");
+    setReviewNotice("");
     setServerError("");
 
     const validationErrors = validate();
@@ -194,11 +202,21 @@ const EditarBodega = () => {
       return;
     }
 
+    const sendsToReview =
+      publicationStatus === "approved" && MATERIAL_FIELDS.some((field) => field in payload);
+    if (sendsToReview && !window.confirm(REVIEW_CONFIRM_MESSAGE)) {
+      return;
+    }
+
     setSaving(true);
     try {
       const { data } = await updateStoreRoom(id as string, payload);
       setSuccessMessage(data?.message || SUCCESS_MESSAGE);
       if (data?.notice) setNoticeMessage(data.notice);
+      if (data?.requires_review) {
+        setPublicationStatus("pending");
+        if (data.review_notice) setReviewNotice(data.review_notice);
+      }
       setErrors({});
       setInitialForm({ ...form });
     } catch (error) {
@@ -340,6 +358,15 @@ const EditarBodega = () => {
                 className="rounded-lg border border-blue-200 bg-blue-50 px-4 py-3 text-sm text-blue-700"
               >
                 {noticeMessage}
+              </div>
+            )}
+
+            {reviewNotice && (
+              <div
+                role="status"
+                className="rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800"
+              >
+                {reviewNotice}
               </div>
             )}
 
