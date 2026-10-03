@@ -44,7 +44,8 @@ npm test
 
 - **Token storage**: a PWA has no native keystore, so the token lives in
   `localStorage` (same as the web). The compensating control for risk R-02 is
-  short-lived tokens + centralized revocation on the backend.
+  centralized revocation on the backend. Tokens do not expire on their own, so
+  logout, revocation (e.g. an account block) or a 401 ends the session.
 - **`device_name: 'leodeguita_mobile'`** is sent on login for forward
   compatibility; the backend currently issues every token as `auth_token`
   (`AuthService::issueTokenFor`) — labelling mobile sessions is a later backend
