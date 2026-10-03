@@ -40,11 +40,6 @@ class StoreDisponibilityController extends ApiController
         return response()->json($blocks, 200);
     }
 
-    public function show($id)
-    {
-        return $this->showModel(StoreDisponibility::class, $id);
-    }
-
     /**
      * Ownership-scoped block creation (obs #263/#264): resolves the target
      * StoreRooms from the validated store_room_id, authorizes via

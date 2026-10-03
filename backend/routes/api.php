@@ -128,7 +128,6 @@ Route::middleware('auth.api:sanctum')->group(function () {
 // /favorites was removed on purpose: the generic CRUD let any caller read, forge
 // or delete any user's favorites; ownership would derive from favorites.user_id.
 
-Route::get('/storeDisponibility/{id}', [StoreDisponibilityController::class, 'show']);
 Route::middleware('auth.api:sanctum')->group(function () {
     // index() is scoped to the authenticated landlord's own storerooms
     // (obs #263), so it needs the same guard as the write actions below.
