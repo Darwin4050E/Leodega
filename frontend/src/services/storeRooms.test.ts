@@ -21,6 +21,8 @@ import {
   deleteStoreRoom,
   getPendingStoreRooms,
   downloadStoreRoomPermit,
+  replaceStoreRoomPermit,
+  resubmitStoreRoom,
   type StoreRoomDetail,
 } from './storeRooms';
 
@@ -189,5 +191,38 @@ describe('storeRooms service', () => {
 
     expect(detailWithCoordinates.rating_avg).toBe(4.2);
     expect(detailWithoutCoordinates.latitude).toBeNull();
+  });
+
+  it('replaceStoreRoomPermit posts the PDF as firefighter_permit with multipart headers', () => {
+    const file = new File(['%PDF'], 'permiso.pdf', { type: 'application/pdf' });
+    replaceStoreRoomPermit(4, file);
+
+    expect(mockApi.post).toHaveBeenCalledWith('/store-rooms/4/permit', expect.any(FormData), {
+      headers: { 'Content-Type': 'multipart/form-data' },
+    });
+    const sent = mockApi.post.mock.calls[0][1] as FormData;
+    expect(sent.get('firefighter_permit')).toBe(file);
+  });
+
+  it('replaceStoreRoomPermit rejects on 422 with the firefighter_permit errors intact', async () => {
+    const error = {
+      response: {
+        status: 422,
+        data: { message: 'Validation Error', errors: { firefighter_permit: ['El permiso debe ser un archivo PDF.'] } },
+      },
+    };
+    mockApi.post.mockRejectedValue(error);
+    await expect(replaceStoreRoomPermit(4, new File([''], 'x.pdf'))).rejects.toBe(error);
+  });
+
+  it('resubmitStoreRoom posts an empty body to /storeRooms/:id/resubmit', () => {
+    resubmitStoreRoom(9);
+    expect(mockApi.post).toHaveBeenCalledWith('/storeRooms/9/resubmit');
+  });
+
+  it('resubmitStoreRoom rejects on 409 (room is not rejected)', async () => {
+    const error = { response: { status: 409, data: { message: 'La bodega no está rechazada.' } } };
+    mockApi.post.mockRejectedValue(error);
+    await expect(resubmitStoreRoom(9)).rejects.toBe(error);
   });
 });

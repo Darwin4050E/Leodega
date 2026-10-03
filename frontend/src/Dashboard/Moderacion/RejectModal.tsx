@@ -1,24 +1,6 @@
 import React, { useState } from "react";
 import { REASON_CODE, type ReasonCode } from "../../services/storeRooms";
-
-const REASON_LABEL: Record<ReasonCode, { label: string; hint: string }> = {
-  [REASON_CODE.FOTOS]: {
-    label: "Fotos incorrectas",
-    hint: "Imágenes borrosas, no corresponden o insuficientes.",
-  },
-  [REASON_CODE.INFO]: {
-    label: "Información incoherente",
-    hint: "Dimensiones, dirección o tarifa no coinciden.",
-  },
-  [REASON_CODE.PERMISO]: {
-    label: "Permiso inválido",
-    hint: "Permiso de bomberos ausente, ilegible o vencido.",
-  },
-  [REASON_CODE.OTRO]: {
-    label: "Otro motivo",
-    hint: "Especifica el motivo en el comentario.",
-  },
-};
+import { REASON_LABEL } from "../../utils/storeRoomLabels";
 
 interface RejectModalProps {
   isOpen: boolean;

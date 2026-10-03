@@ -129,3 +129,36 @@ describe('BodegaCard delete action', () => {
     await waitFor(() => expect(onDeleted).toHaveBeenCalledWith(1, 'not_found'));
   });
 });
+
+describe('BodegaCard publication status', () => {
+  it.each([
+    ['pending', 'Pendiente'],
+    ['approved', 'Aprobada'],
+    ['rejected', 'Rechazada'],
+  ])('renders the %s status as the "%s" badge', (status, label) => {
+    renderCard({ publication_status: status });
+    expect(screen.getByText(label)).toBeInTheDocument();
+  });
+
+  it('shows the rejection reason label and the free-text reason for a rejected room', () => {
+    renderCard({
+      publication_status: 'rejected',
+      rejection: { reason_code: 'permiso', reason: 'El permiso está vencido' },
+    });
+    expect(screen.getByText('Motivo: Permiso inválido')).toBeInTheDocument();
+    expect(screen.getByText('El permiso está vencido')).toBeInTheDocument();
+  });
+
+  it('shows only the reason label when the free-text reason is null', () => {
+    renderCard({
+      publication_status: 'rejected',
+      rejection: { reason_code: 'fotos', reason: null },
+    });
+    expect(screen.getByText('Motivo: Fotos incorrectas')).toBeInTheDocument();
+  });
+
+  it('shows no rejection reason for a non-rejected room', () => {
+    renderCard({ publication_status: 'approved', rejection: null });
+    expect(screen.queryByText(/^Motivo:/)).not.toBeInTheDocument();
+  });
+});
