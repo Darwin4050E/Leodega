@@ -4,7 +4,7 @@ namespace App\Http\Requests;
 
 /**
  * Bolsa de reglas, no FormRequest — mismo motivo que UpdateUserRequest /
- * StoreAdminRequest: AccountModerationController valida con
+ * StoreUserRequest: AccountModerationController valida con
  * $request->validate((new BlockUserRequest)->rules()) para conservar el
  * contrato 422 estándar de Laravel.
  *

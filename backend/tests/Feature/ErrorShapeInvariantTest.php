@@ -26,11 +26,7 @@ class ErrorShapeInvariantTest extends TestCase
 
     public function test_api_controller_generic_validation_error_has_no_status_key()
     {
-        $admin = User::factory()->create(['role' => 'admin']);
-
-        $response = $this->actingAs($admin, 'sanctum')->postJson('/api/admin', [
-            'user_id' => 999999,
-        ]);
+        $response = $this->postJson('/api/user', []);
 
         $response->assertStatus(422);
         $response->assertJsonMissingPath('status');

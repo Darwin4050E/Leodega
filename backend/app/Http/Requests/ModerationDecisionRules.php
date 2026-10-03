@@ -7,7 +7,7 @@ namespace App\Http\Requests;
  * (StoreRoomsController::update() y StoreModerationController::store()),
  * para eliminar el riesgo de drift entre dos implementaciones separadas de
  * la misma regla (decisión #172.4). No es un FormRequest — ver
- * StoreAdminRequest para la explicación completa de por qué no se inyecta
+ * StoreUserRequest para la explicación completa de por qué no se inyecta
  * como type-hint.
  */
 class ModerationDecisionRules

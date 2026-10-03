@@ -41,8 +41,9 @@ class UserController extends ApiController
     {
         $rules = (new StoreUserRequest)->rules();
 
-        // Endpoint público (alta de cuenta en Decision.tsx). Los administradores
-        // se crean solo por POST /admin, por eso role=admin se rechaza siempre.
+        // Endpoint público (alta de cuenta en Decision.tsx). Ninguna ruta HTTP crea
+        // administradores (los provisiona AdminUserSeeder), por eso role=admin se
+        // rechaza siempre.
         if ($request->input('role') === 'admin') {
             return response()->json([
                 'message' => 'No autorizado para crear un usuario con rol admin',
