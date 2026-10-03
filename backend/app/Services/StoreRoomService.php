@@ -176,15 +176,16 @@ class StoreRoomService
      * @throws ValidationException when `price`/`disponibility` is sent but
      *                             the room has no mode='month' price row
      */
-    public function updateListing(StoreRooms $room, array $data): StoreRooms
+    public function updateListing(StoreRooms $room, array $data, int $actingUserId): StoreRooms
     {
-        return DB::transaction(function () use ($room, $data) {
-            $scalars = Arr::only($data, ['title', 'description', 'size']);
-            if (! empty($scalars)) {
-                $room->update($scalars);
-            }
+        $wasApproved = $room->publication_status === 'approved';
+        $requeued = false;
 
+        $updated = DB::transaction(function () use ($room, $data, $wasApproved, &$requeued) {
+            $scalars = Arr::only($data, ['title', 'description', 'size']);
             $priceChanges = Arr::only($data, ['price', 'disponibility']);
+
+            $monthlyPrice = null;
             if (! empty($priceChanges)) {
                 $monthlyPrice = $room->storePrices()->where('mode', 'month')->first();
 
@@ -193,12 +194,55 @@ class StoreRoomService
                         'price' => 'La bodega no tiene una tarifa mensual configurada que se pueda actualizar.',
                     ]);
                 }
-
-                $monthlyPrice->update($priceChanges);
             }
+
+            $materialChanged = $this->scalarsChanged($room, $scalars)
+                || ($monthlyPrice !== null
+                    && array_key_exists('price', $priceChanges)
+                    && ! $this->sameAmount($priceChanges['price'], $monthlyPrice->price));
+
+            if ($wasApproved && $materialChanged) {
+                $scalars['publication_status'] = 'pending';
+                $requeued = true;
+            }
+
+            if (! empty($scalars)) {
+                $room->update($scalars);
+            }
+
+            $monthlyPrice?->update($priceChanges);
 
             return $room->fresh(['storePrices']);
         });
+
+        // Post-commit, best-effort: same rule as replacePermit(). Only a room
+        // that actually re-entered the queue gives admins something to review.
+        if ($requeued) {
+            $this->notifyAdmins($actingUserId, $updated, NotificationType::STORE_EDITED, 'Bodega editada, pendiente de verificación');
+        }
+
+        return $updated;
+    }
+
+    /**
+     * Compares the incoming values with the stored ones by value, not by
+     * representation: the decimal columns come back as "20.00" while a client
+     * may resend 20, so a plain dirty check would flag a resent value.
+     */
+    private function scalarsChanged(StoreRooms $room, array $scalars): bool
+    {
+        foreach (['title', 'description'] as $field) {
+            if (array_key_exists($field, $scalars) && $scalars[$field] !== $room->{$field}) {
+                return true;
+            }
+        }
+
+        return array_key_exists('size', $scalars) && ! $this->sameAmount($scalars['size'], $room->size);
+    }
+
+    private function sameAmount(mixed $incoming, mixed $stored): bool
+    {
+        return round((float) $incoming, 2) === round((float) $stored, 2);
     }
 
     /**

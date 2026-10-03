@@ -237,7 +237,7 @@ class StoreRoomServiceTest extends TestCase
     {
         $room = StoreRooms::factory()->create(['title' => 'Viejo', 'description' => 'Vieja', 'size' => 10]);
 
-        $fresh = (new StoreRoomService)->updateListing($room, ['title' => 'Nuevo', 'size' => 42.5]);
+        $fresh = (new StoreRoomService)->updateListing($room, ['title' => 'Nuevo', 'size' => 42.5], $room->landlord->user_id);
 
         $this->assertSame('Nuevo', $fresh->title);
         $this->assertEquals(42.5, $fresh->size);
@@ -251,7 +251,7 @@ class StoreRoomServiceTest extends TestCase
         $month = StorePrices::factory()->create(['store_room_id' => $room->id, 'mode' => 'month', 'price' => 1000, 'disponibility' => true]);
         $year = StorePrices::factory()->create(['store_room_id' => $room->id, 'mode' => 'year', 'price' => 9000, 'disponibility' => true]);
 
-        (new StoreRoomService)->updateListing($room, ['price' => 1234.5, 'disponibility' => false]);
+        (new StoreRoomService)->updateListing($room, ['price' => 1234.5, 'disponibility' => false], $room->landlord->user_id);
 
         // same row, updated in place — never delete + recreate
         $this->assertDatabaseHas('store_prices', ['id' => $month->id, 'price' => 1234.5, 'disponibility' => false]);
@@ -264,7 +264,7 @@ class StoreRoomServiceTest extends TestCase
         $room = StoreRooms::factory()->create();
         $month = StorePrices::factory()->create(['store_room_id' => $room->id, 'mode' => 'month', 'price' => 1000]);
 
-        (new StoreRoomService)->updateListing($room, ['description' => 'Solo texto']);
+        (new StoreRoomService)->updateListing($room, ['description' => 'Solo texto'], $room->landlord->user_id);
 
         $this->assertDatabaseHas('store_prices', ['id' => $month->id, 'price' => 1000]);
         $this->assertDatabaseCount('store_prices', 1);
@@ -276,7 +276,7 @@ class StoreRoomServiceTest extends TestCase
         StorePrices::factory()->create(['store_room_id' => $room->id, 'mode' => 'day', 'price' => 30]);
 
         try {
-            (new StoreRoomService)->updateListing($room, ['title' => 'Cambiado', 'price' => 500]);
+            (new StoreRoomService)->updateListing($room, ['title' => 'Cambiado', 'price' => 500], $room->landlord->user_id);
             $this->fail('Expected a ValidationException.');
         } catch (ValidationException $e) {
             $this->assertArrayHasKey('price', $e->errors());
@@ -292,9 +292,81 @@ class StoreRoomServiceTest extends TestCase
         $room = StoreRooms::factory()->create();
         StorePrices::factory()->create(['store_room_id' => $room->id, 'mode' => 'month', 'price' => 1000]);
 
-        $fresh = (new StoreRoomService)->updateListing($room, ['price' => 1100]);
+        $fresh = (new StoreRoomService)->updateListing($room, ['price' => 1100], $room->landlord->user_id);
 
         $this->assertTrue($fresh->relationLoaded('storePrices'));
         $this->assertEquals(1100, $fresh->storePrices->firstWhere('mode', 'month')->price);
+    }
+
+    // --- updateListing: re-moderation of approved rooms -------------------------
+
+    public function test_update_listing_sends_an_approved_room_back_to_pending_and_notifies_admins_once()
+    {
+        $admin = User::factory()->create(['role' => 'admin']);
+        $room = StoreRooms::factory()->approved()->create(['title' => 'Viejo']);
+
+        $fresh = (new StoreRoomService)->updateListing($room, ['title' => 'Nuevo'], $room->landlord->user_id);
+
+        $this->assertSame('pending', $fresh->publication_status);
+        $this->assertDatabaseHas('storeRooms', ['id' => $room->id, 'publication_status' => 'pending']);
+        $this->assertDatabaseHas('notifications', [
+            'sender_id' => $room->landlord->user_id,
+            'receiver_id' => $admin->id,
+            'type' => 'store_edited',
+        ]);
+        $this->assertDatabaseCount('notifications', 1);
+    }
+
+    public function test_update_listing_with_the_same_values_keeps_an_approved_room_approved()
+    {
+        User::factory()->create(['role' => 'admin']);
+        $room = StoreRooms::factory()->approved()->create(['title' => 'Igual', 'description' => 'Texto', 'size' => 20]);
+        StorePrices::factory()->create(['store_room_id' => $room->id, 'mode' => 'month', 'price' => 100]);
+
+        $fresh = (new StoreRoomService)->updateListing(
+            $room,
+            ['title' => 'Igual', 'description' => 'Texto', 'size' => '20.00', 'price' => '100.00'],
+            $room->landlord->user_id
+        );
+
+        $this->assertSame('approved', $fresh->publication_status);
+        $this->assertDatabaseCount('notifications', 0);
+    }
+
+    public function test_update_listing_requeues_when_only_the_month_price_changes_numerically()
+    {
+        User::factory()->create(['role' => 'admin']);
+        $room = StoreRooms::factory()->approved()->create();
+        StorePrices::factory()->create(['store_room_id' => $room->id, 'mode' => 'month', 'price' => 100]);
+
+        $fresh = (new StoreRoomService)->updateListing($room, ['price' => '100.50'], $room->landlord->user_id);
+
+        $this->assertSame('pending', $fresh->publication_status);
+        $this->assertDatabaseCount('notifications', 1);
+    }
+
+    public function test_update_listing_does_not_notify_when_a_pending_room_is_edited()
+    {
+        User::factory()->create(['role' => 'admin']);
+        $room = StoreRooms::factory()->create(['title' => 'Viejo']);
+
+        $fresh = (new StoreRoomService)->updateListing($room, ['title' => 'Nuevo'], $room->landlord->user_id);
+
+        $this->assertSame('pending', $fresh->publication_status);
+        $this->assertDatabaseCount('notifications', 0);
+    }
+
+    public function test_update_listing_persists_the_requeue_even_if_notification_dispatch_throws()
+    {
+        User::factory()->create(['role' => 'admin']);
+        $room = StoreRooms::factory()->approved()->create(['title' => 'Viejo']);
+
+        // sender_id has a real FK to `user`: an unknown acting user id makes
+        // every notification insert throw, exercising the post-commit catch.
+        $fresh = (new StoreRoomService)->updateListing($room, ['title' => 'Nuevo'], 999999);
+
+        $this->assertSame('pending', $fresh->publication_status);
+        $this->assertDatabaseHas('storeRooms', ['id' => $room->id, 'title' => 'Nuevo', 'publication_status' => 'pending']);
+        $this->assertDatabaseCount('notifications', 0);
     }
 }
