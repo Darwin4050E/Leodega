@@ -21,6 +21,12 @@ use Illuminate\Validation\Rules\Unique;
  */
 class StoreStoreRoomRequest extends FormRequest
 {
+    /**
+     * Shared with StorePermitController::replace so a replaced permit is
+     * held to exactly the same constraints as the one sent at registration.
+     */
+    public const PERMIT_RULE = 'required|file|mimes:pdf|max:5120';
+
     public function authorize(): bool
     {
         return true;
@@ -37,7 +43,7 @@ class StoreStoreRoomRequest extends FormRequest
             'title' => ['required', 'string', $this->uniqueTitlePerLandlord()],
             'description' => 'required|string',
             'security' => 'required|string',
-            'firefighter_permit' => 'required|file|mimes:pdf|max:5120',
+            'firefighter_permit' => self::PERMIT_RULE,
             'cancellation_policy_tier' => 'required|in:flexible,moderada,estricta',
             'latitude' => 'nullable|numeric|between:-90,90',
             'longitude' => 'nullable|numeric|between:-180,180',

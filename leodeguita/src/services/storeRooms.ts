@@ -129,6 +129,14 @@ export interface StorePrice {
   [key: string]: unknown
 }
 
+export type RejectionReasonCode = 'fotos' | 'info' | 'permiso' | 'otro'
+
+/** Latest rejection of a rejected room; `null` for any other status. */
+export interface StoreRoomRejection {
+  reason_code: RejectionReasonCode | null
+  reason: string | null
+}
+
 export interface MyStoreRoom {
   id: number
   title: string
@@ -141,6 +149,7 @@ export interface MyStoreRoom {
   active_reservations_count: number
   image: string | null
   storePrices: StorePrice[]
+  rejection: StoreRoomRejection | null
 }
 
 export async function listMyStoreRooms(

@@ -2,7 +2,7 @@ import { useState } from 'react'
 import StatusChip from '../../components/StatusChip'
 import { ROOM_TYPES } from '../../lib/storeRoomLabels'
 import type { MyStoreRoom } from '../../services/storeRooms'
-import { STATUS_META, deriveStatus } from './model'
+import { STATUS_META, deriveStatus, rejectionDetail } from './model'
 
 /**
  * HUL-04: presentational card for one owned store room. No fetching, no
@@ -28,6 +28,7 @@ export default function StoreRoomCard({ room }: { room: MyStoreRoom }) {
   const meta = STATUS_META[deriveStatus(room)]
   const price = monthlyPrice(room)
   const showImage = Boolean(room.image) && !imageFailed
+  const rejection = rejectionDetail(room)
 
   return (
     <article className="overflow-hidden rounded-2xl border border-lg-line bg-white">
@@ -55,6 +56,14 @@ export default function StoreRoomCard({ room }: { room: MyStoreRoom }) {
         <p className="m-0 text-xs text-lg-t3">
           {roomTypeLabel(room.room_type)} · {room.size} m²
         </p>
+        {rejection && (
+          <div className="rounded-lg bg-red-50 px-3 py-2 text-xs text-red-700">
+            {rejection.label && (
+              <p className="m-0 font-semibold">Motivo: {rejection.label}</p>
+            )}
+            {rejection.reason && <p className="m-0">{rejection.reason}</p>}
+          </div>
+        )}
         {price && (
           <p className="m-0 text-sm font-semibold text-lg-ink">{price} /mes</p>
         )}

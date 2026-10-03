@@ -124,6 +124,24 @@ export function uploadStoreRoomPhotos(storeRoomId: number | string, formData: Fo
   });
 }
 
+/**
+ * The owning gestor replaces the fire-department permit PDF. An approved
+ * room goes back to `pending`; a rejected one stays rejected until
+ * resubmitStoreRoom() is called explicitly.
+ */
+export function replaceStoreRoomPermit(storeRoomId: number | string, file: File) {
+  const formData = new FormData();
+  formData.append("firefighter_permit", file);
+  return api.post<{ message: string; status: number }>(`/store-rooms/${storeRoomId}/permit`, formData, {
+    headers: { "Content-Type": "multipart/form-data" },
+  });
+}
+
+/** Empty-body transition of a rejected room back to the moderation queue (409 otherwise). */
+export function resubmitStoreRoom(id: number | string) {
+  return api.post<{ message: string; status: number }>(`/storeRooms/${id}/resubmit`);
+}
+
 export function deleteStoreRoom(id: number | string) {
   return api.delete(`/storeRooms/${id}`);
 }
@@ -147,6 +165,12 @@ export const REASON_CODE = {
   OTRO: "otro",
 } as const;
 export type ReasonCode = (typeof REASON_CODE)[keyof typeof REASON_CODE];
+
+/** Latest rejection of a rejected room, as returned by GET /landlords/{id}/storeRooms. */
+export interface StoreRoomRejection {
+  reason_code: ReasonCode | null;
+  reason: string | null;
+}
 
 export interface ModerationHistoryEntry {
   status: "approved" | "pending" | "rejected";

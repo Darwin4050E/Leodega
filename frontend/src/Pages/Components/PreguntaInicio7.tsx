@@ -8,10 +8,8 @@ import { useWizard } from "../../context/WizardContext";
 import ModalConfirmacion from "../../Components/ModalConfirmacion";
 import { asApiError } from "../../api/errors";
 import leodegalogo from '../../img/LOGO_LEODEGAISO.png';
+import { validatePermitFile } from "../../utils/permitFile";
 
-// Fire-department permit: PDF only, 5 MB. Must match the backend rule in
-// StoreStoreRoomRequest (`mimes:pdf|max:5120`) and the mobile app.
-const PERMIT_MAX_BYTES = 5 * 1024 * 1024;
 
 const PreguntaInicio7 = () => {
   const navigate = useNavigate();
@@ -45,17 +43,11 @@ const PreguntaInicio7 = () => {
   const handlePermitFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0] ?? null;
 
-    if (file) {
-      if (file.type !== "application/pdf") {
-        setPermitError("El permiso debe ser un archivo PDF.");
-        e.target.value = "";
-        return;
-      }
-      if (file.size > PERMIT_MAX_BYTES) {
-        setPermitError("El permiso no debe superar los 5 MB.");
-        e.target.value = "";
-        return;
-      }
+    const error = file ? validatePermitFile(file) : null;
+    if (error) {
+      setPermitError(error);
+      e.target.value = "";
+      return;
     }
 
     setPermitError(null);

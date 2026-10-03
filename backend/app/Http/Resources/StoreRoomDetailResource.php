@@ -46,6 +46,9 @@ class StoreRoomDetailResource extends JsonResource
             'security' => $this->getRawOriginal('security'),
             'room_type' => $this->room_type,
             'storage_type' => $this->storage_type,
+            // Non-approved rooms only reach this payload for their owner or
+            // an admin (viewableById), so this never leaks moderation state.
+            'publication_status' => $this->publication_status,
             'active_reservations_count' => $this->active_reservations_count,
 
             'prices' => $this->storePrices,

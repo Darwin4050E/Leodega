@@ -123,6 +123,9 @@ Route::get('/store-rooms/{storeRoom}/photos', [StorePhotoController::class, 'ind
 Route::middleware('auth.api:sanctum')->group(function () {
     Route::post('/store-rooms/{storeRoom}/photos', [StorePhotoController::class, 'store']);
     Route::delete('/store-rooms/{storeRoom}/photos/{photo}', [StorePhotoController::class, 'destroy']);
+    // Owner-only permit replacement (ownership enforced in the controller,
+    // same as photos); the admin download lives in the role:admin group.
+    Route::post('/store-rooms/{storeRoom}/permit', [StorePermitController::class, 'replace']);
 });
 
 // /favorites was removed on purpose: the generic CRUD let any caller read, forge

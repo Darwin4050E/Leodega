@@ -4,11 +4,15 @@ import { MemoryRouter } from 'react-router-dom';
 
 const mockGetStoreRoomDetail = vi.hoisted(() => vi.fn());
 const mockUpdateStoreRoom = vi.hoisted(() => vi.fn());
+const mockReplaceStoreRoomPermit = vi.hoisted(() => vi.fn());
+const mockResubmitStoreRoom = vi.hoisted(() => vi.fn());
 const mockNavigate = vi.hoisted(() => vi.fn());
 
 vi.mock('../services/storeRooms', () => ({
   getStoreRoomDetail: mockGetStoreRoomDetail,
   updateStoreRoom: mockUpdateStoreRoom,
+  replaceStoreRoomPermit: mockReplaceStoreRoomPermit,
+  resubmitStoreRoom: mockResubmitStoreRoom,
 }));
 
 vi.mock('react-router-dom', async (importOriginal) => {
@@ -146,5 +150,117 @@ describe('EditarBodega', () => {
     expect(
       await screen.findByText('No tienes permiso para editar esta bodega.')
     ).toBeInTheDocument();
+  });
+});
+
+function pdfFile(name = 'permiso.pdf', type = 'application/pdf', size?: number) {
+  const file = new File(['%PDF'], name, { type });
+  if (size !== undefined) Object.defineProperty(file, 'size', { value: size });
+  return file;
+}
+
+describe('EditarBodega fire permit replacement', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mockGetStoreRoomDetail.mockResolvedValue(detailResponse);
+  });
+
+  it('keeps the permit submit disabled until a PDF is chosen', async () => {
+    renderPage();
+    expect(await screen.findByRole('button', { name: 'Reemplazar permiso' })).toBeDisabled();
+  });
+
+  it('rejects a non-PDF file client-side without calling the API', async () => {
+    renderPage();
+    const input = await screen.findByLabelText('Permiso de bomberos (PDF)');
+    fireEvent.change(input, { target: { files: [pdfFile('foto.png', 'image/png')] } });
+
+    expect(await screen.findByText('El permiso debe ser un archivo PDF.')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Reemplazar permiso' })).toBeDisabled();
+    expect(mockReplaceStoreRoomPermit).not.toHaveBeenCalled();
+  });
+
+  it('rejects a PDF over 5 MB client-side', async () => {
+    renderPage();
+    const input = await screen.findByLabelText('Permiso de bomberos (PDF)');
+    fireEvent.change(input, { target: { files: [pdfFile('grande.pdf', 'application/pdf', 5 * 1024 * 1024 + 1)] } });
+
+    expect(await screen.findByText('El permiso no debe superar los 5 MB.')).toBeInTheDocument();
+  });
+
+  it('uploads the chosen PDF and shows the server success message', async () => {
+    mockReplaceStoreRoomPermit.mockResolvedValue({
+      data: { message: 'El permiso de bomberos se reemplazó correctamente.', status: 200 },
+    });
+    renderPage();
+    const file = pdfFile();
+    fireEvent.change(await screen.findByLabelText('Permiso de bomberos (PDF)'), { target: { files: [file] } });
+    fireEvent.click(screen.getByRole('button', { name: 'Reemplazar permiso' }));
+
+    await waitFor(() => expect(mockReplaceStoreRoomPermit).toHaveBeenCalledWith('7', file));
+    expect(
+      await screen.findByText('El permiso de bomberos se reemplazó correctamente.')
+    ).toBeInTheDocument();
+    expect(mockUpdateStoreRoom).not.toHaveBeenCalled();
+  });
+
+  it('maps a 422 firefighter_permit error under the permit field', async () => {
+    mockReplaceStoreRoomPermit.mockRejectedValue({
+      response: {
+        status: 422,
+        data: { message: 'Validation Error', errors: { firefighter_permit: ['El permiso debe ser un archivo PDF.'] } },
+      },
+    });
+    renderPage();
+    fireEvent.change(await screen.findByLabelText('Permiso de bomberos (PDF)'), { target: { files: [pdfFile()] } });
+    fireEvent.click(screen.getByRole('button', { name: 'Reemplazar permiso' }));
+
+    expect(await screen.findByText('El permiso debe ser un archivo PDF.')).toBeInTheDocument();
+  });
+});
+
+describe('EditarBodega resubmission', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it('does not offer resubmission for a room that is not rejected', async () => {
+    mockGetStoreRoomDetail.mockResolvedValue({
+      data: { ...detailResponse.data, publication_status: 'approved' },
+    });
+    renderPage();
+    await screen.findByLabelText('Título');
+    expect(screen.queryByRole('button', { name: 'Reenviar a revisión' })).not.toBeInTheDocument();
+  });
+
+  it('resubmits a rejected room, shows the success message and hides the button', async () => {
+    mockGetStoreRoomDetail.mockResolvedValue({
+      data: { ...detailResponse.data, publication_status: 'rejected' },
+    });
+    mockResubmitStoreRoom.mockResolvedValue({
+      data: { message: 'La bodega fue reenviada a revisión.', status: 200 },
+    });
+    renderPage();
+    fireEvent.click(await screen.findByRole('button', { name: 'Reenviar a revisión' }));
+
+    await waitFor(() => expect(mockResubmitStoreRoom).toHaveBeenCalledWith('7'));
+    expect(await screen.findByText('La bodega fue reenviada a revisión.')).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Reenviar a revisión' })).not.toBeInTheDocument();
+  });
+
+  it('shows the server message on 409 and keeps the button', async () => {
+    mockGetStoreRoomDetail.mockResolvedValue({
+      data: { ...detailResponse.data, publication_status: 'rejected' },
+    });
+    mockResubmitStoreRoom.mockRejectedValue({
+      response: { status: 409, data: { message: 'Solo una bodega rechazada puede reenviarse a revisión.' } },
+    });
+    renderPage();
+    fireEvent.click(await screen.findByRole('button', { name: 'Reenviar a revisión' }));
+
+    expect(
+      await screen.findByText('Solo una bodega rechazada puede reenviarse a revisión.')
+    ).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Reenviar a revisión' })).toBeInTheDocument();
   });
 });
