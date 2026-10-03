@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
 
@@ -262,5 +262,120 @@ describe('EditarBodega resubmission', () => {
       await screen.findByText('Solo una bodega rechazada puede reenviarse a revisión.')
     ).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Reenviar a revisión' })).toBeInTheDocument();
+  });
+});
+
+describe('EditarBodega re-review warning', () => {
+  const REVIEW_CONFIRM =
+    'Este cambio enviará tu bodega a revisión y dejará de estar disponible para nuevas reservas hasta ser aprobada. ¿Quieres continuar?';
+  const REVIEW_NOTICE =
+    'Tu bodega volvió a revisión y dejará de estar disponible para nuevas reservas hasta que un administrador la apruebe.';
+
+  let confirmSpy: ReturnType<typeof vi.spyOn>;
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    confirmSpy = vi.spyOn(window, 'confirm').mockReturnValue(true);
+    mockGetStoreRoomDetail.mockResolvedValue({
+      data: { ...detailResponse.data, publication_status: 'approved' },
+    });
+    mockUpdateStoreRoom.mockResolvedValue({
+      data: { message: 'Los cambios se guardaron correctamente.', status: 200, requires_review: false },
+    });
+  });
+
+  afterEach(() => {
+    confirmSpy.mockRestore();
+  });
+
+  it('asks for confirmation before saving a material change on an approved room', async () => {
+    renderPage();
+    fireEvent.change(await screen.findByLabelText('Título'), { target: { value: 'Bodega Renovada' } });
+    fireEvent.click(screen.getByRole('button', { name: /guardar cambios/i }));
+
+    await waitFor(() =>
+      expect(mockUpdateStoreRoom).toHaveBeenCalledWith('7', { title: 'Bodega Renovada' })
+    );
+    expect(confirmSpy).toHaveBeenCalledTimes(1);
+    expect(confirmSpy).toHaveBeenCalledWith(REVIEW_CONFIRM);
+  });
+
+  it.each([
+    ['description', 'Descripción', 'Otra descripción'],
+    ['size', 'Dimensiones (m²)', '40'],
+    ['price', 'Tarifa mensual (USD)', '200'],
+  ])('also asks for confirmation when only the %s changes', async (_field, label, value) => {
+    renderPage();
+    fireEvent.change(await screen.findByLabelText(label), { target: { value } });
+    fireEvent.click(screen.getByRole('button', { name: /guardar cambios/i }));
+
+    await waitFor(() => expect(mockUpdateStoreRoom).toHaveBeenCalledTimes(1));
+    expect(confirmSpy).toHaveBeenCalledWith(REVIEW_CONFIRM);
+  });
+
+  it('does not save when the gestor declines the confirmation', async () => {
+    confirmSpy.mockReturnValue(false);
+    renderPage();
+    fireEvent.change(await screen.findByLabelText('Título'), { target: { value: 'Bodega Renovada' } });
+    fireEvent.click(screen.getByRole('button', { name: /guardar cambios/i }));
+
+    await waitFor(() => expect(confirmSpy).toHaveBeenCalledTimes(1));
+    expect(mockUpdateStoreRoom).not.toHaveBeenCalled();
+    expect(screen.getByLabelText('Título')).toHaveValue('Bodega Renovada');
+  });
+
+  it('skips the confirmation when only the disponibility changes', async () => {
+    renderPage();
+    fireEvent.click(await screen.findByLabelText('Disponible para nuevas reservas'));
+    fireEvent.click(screen.getByRole('button', { name: /guardar cambios/i }));
+
+    await waitFor(() =>
+      expect(mockUpdateStoreRoom).toHaveBeenCalledWith('7', { disponibility: false })
+    );
+    expect(confirmSpy).not.toHaveBeenCalled();
+  });
+
+  it.each(['pending', 'rejected'])('skips the confirmation for a %s room', async (status) => {
+    mockGetStoreRoomDetail.mockResolvedValue({
+      data: { ...detailResponse.data, publication_status: status },
+    });
+    renderPage();
+    fireEvent.change(await screen.findByLabelText('Título'), { target: { value: 'Bodega Renovada' } });
+    fireEvent.click(screen.getByRole('button', { name: /guardar cambios/i }));
+
+    await waitFor(() => expect(mockUpdateStoreRoom).toHaveBeenCalledTimes(1));
+    expect(confirmSpy).not.toHaveBeenCalled();
+  });
+
+  it('shows the review notice, treats the room as pending and stops asking again', async () => {
+    mockUpdateStoreRoom.mockResolvedValue({
+      data: {
+        message: 'Los cambios se guardaron correctamente.',
+        status: 200,
+        requires_review: true,
+        review_notice: REVIEW_NOTICE,
+      },
+    });
+    renderPage();
+    fireEvent.change(await screen.findByLabelText('Título'), { target: { value: 'Primera edición' } });
+    fireEvent.click(screen.getByRole('button', { name: /guardar cambios/i }));
+
+    expect(await screen.findByText(REVIEW_NOTICE)).toBeInTheDocument();
+    expect(confirmSpy).toHaveBeenCalledTimes(1);
+
+    fireEvent.change(screen.getByLabelText('Título'), { target: { value: 'Segunda edición' } });
+    fireEvent.click(screen.getByRole('button', { name: /guardar cambios/i }));
+
+    await waitFor(() => expect(mockUpdateStoreRoom).toHaveBeenCalledTimes(2));
+    expect(confirmSpy).toHaveBeenCalledTimes(1);
+  });
+
+  it('does not show a review notice when the response does not flag one', async () => {
+    renderPage();
+    fireEvent.click(await screen.findByLabelText('Disponible para nuevas reservas'));
+    fireEvent.click(screen.getByRole('button', { name: /guardar cambios/i }));
+
+    expect(await screen.findByText('Los cambios se guardaron correctamente.')).toBeInTheDocument();
+    expect(screen.queryByText(REVIEW_NOTICE)).not.toBeInTheDocument();
   });
 });

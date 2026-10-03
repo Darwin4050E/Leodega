@@ -92,6 +92,10 @@ class StoreRoomService
             throw StoreRoomResubmissionException::conflict('La bodega no está rechazada; no hay nada que reenviar.');
         }
 
+        if (! $room->hasMinimumPhotos()) {
+            throw ValidationException::withMessages(['photos' => StoreModerationService::MIN_PHOTOS_MESSAGE]);
+        }
+
         $room = DB::transaction(function () use ($room) {
             $room->update(['publication_status' => 'pending']);
 
@@ -122,15 +126,18 @@ class StoreRoomService
     public function replacePermit(StoreRooms $room, UploadedFile $permit, int $actingUserId): StoreRooms
     {
         $oldPath = $room->firefighter_permit_path;
-        $wasApproved = $room->publication_status === 'approved';
+        $requeued = false;
 
         $path = $permit->store('firefighter_permits', 'private');
 
         try {
-            $room = DB::transaction(function () use ($room, $path, $wasApproved) {
+            $room = DB::transaction(function () use ($room, $path, &$requeued) {
+                $room = $this->lockFresh($room);
+
                 $changes = ['firefighter_permit_path' => $path];
-                if ($wasApproved) {
+                if ($room->publication_status === 'approved') {
                     $changes['publication_status'] = 'pending';
+                    $requeued = true;
                 }
 
                 $room->update($changes);
@@ -148,7 +155,7 @@ class StoreRoomService
 
         // Post-commit, best-effort: only an approved room re-enters the
         // moderation queue, so only then do admins have something new to review.
-        if ($wasApproved) {
+        if ($requeued) {
             $this->notifyAdmins($actingUserId, $room, NotificationType::STORE_PERMIT_REPLACED, 'Permiso de bomberos reemplazado, bodega pendiente de verificación');
         }
 
@@ -169,18 +176,24 @@ class StoreRoomService
      * price change requested on a room with no monthly tariff row) rolls
      * back the scalar changes too (atomicity, acceptance criterion 2).
      *
+     * The approved -> pending decision reads the row re-locked inside the
+     * transaction, so a concurrent admin decision is never overwritten.
+     * `$requeued` reports whether this call actually re-queued the room.
+     *
      * @throws ValidationException when `price`/`disponibility` is sent but
      *                             the room has no mode='month' price row
      */
-    public function updateListing(StoreRooms $room, array $data): StoreRooms
+    public function updateListing(StoreRooms $room, array $data, int $actingUserId, ?bool &$requeued = null): StoreRooms
     {
-        return DB::transaction(function () use ($room, $data) {
-            $scalars = Arr::only($data, ['title', 'description', 'size']);
-            if (! empty($scalars)) {
-                $room->update($scalars);
-            }
+        $requeued = false;
 
+        $updated = DB::transaction(function () use ($room, $data, &$requeued) {
+            $room = $this->lockFresh($room);
+
+            $scalars = Arr::only($data, ['title', 'description', 'size']);
             $priceChanges = Arr::only($data, ['price', 'disponibility']);
+
+            $monthlyPrice = null;
             if (! empty($priceChanges)) {
                 $monthlyPrice = $room->storePrices()->where('mode', 'month')->first();
 
@@ -189,12 +202,60 @@ class StoreRoomService
                         'price' => 'La bodega no tiene una tarifa mensual configurada que se pueda actualizar.',
                     ]);
                 }
-
-                $monthlyPrice->update($priceChanges);
             }
+
+            $materialChanged = $this->scalarsChanged($room, $scalars)
+                || ($monthlyPrice !== null
+                    && array_key_exists('price', $priceChanges)
+                    && ! $this->sameAmount($priceChanges['price'], $monthlyPrice->price));
+
+            if ($room->publication_status === 'approved' && $materialChanged) {
+                $scalars['publication_status'] = 'pending';
+                $requeued = true;
+            }
+
+            if (! empty($scalars)) {
+                $room->update($scalars);
+            }
+
+            $monthlyPrice?->update($priceChanges);
 
             return $room->fresh(['storePrices']);
         });
+
+        // Post-commit, best-effort: same rule as replacePermit(). Only a room
+        // that actually re-entered the queue gives admins something to review.
+        if ($requeued) {
+            $this->notifyAdmins($actingUserId, $updated, NotificationType::STORE_EDITED, 'Bodega editada, pendiente de verificación');
+        }
+
+        return $updated;
+    }
+
+    private function lockFresh(StoreRooms $room): StoreRooms
+    {
+        return StoreRooms::whereKey($room->id)->lockForUpdate()->first() ?? $room;
+    }
+
+    /**
+     * Compares the incoming values with the stored ones by value, not by
+     * representation: the decimal columns come back as "20.00" while a client
+     * may resend 20, so a plain dirty check would flag a resent value.
+     */
+    private function scalarsChanged(StoreRooms $room, array $scalars): bool
+    {
+        foreach (['title', 'description'] as $field) {
+            if (array_key_exists($field, $scalars) && $scalars[$field] !== $room->{$field}) {
+                return true;
+            }
+        }
+
+        return array_key_exists('size', $scalars) && ! $this->sameAmount($scalars['size'], $room->size);
+    }
+
+    private function sameAmount(mixed $incoming, mixed $stored): bool
+    {
+        return round((float) $incoming, 2) === round((float) $stored, 2);
     }
 
     /**
@@ -223,24 +284,33 @@ class StoreRoomService
     }
 
     /**
-     * storePrices is optional at registration (D7): when omitted, the room
-     * is still created with zero prices — this early return is a deliberate
-     * fix over the design's literal `sometimes|array|min:1` snippet, which
-     * would always fail because the key is always present in the array
-     * built below (Laravel's `sometimes` only skips a genuinely *missing*
-     * key, not an empty one).
+     * A monthly price is mandatory at registration: the listing, search and
+     * booking flows all read the mode='month' row. Other modes stay optional
+     * and are held to the child rules below.
      *
      * @throws \Illuminate\Validation\ValidationException
      */
     private function validatePrices(?array $prices): void
     {
-        if (empty($prices)) {
-            return;
-        }
-
         $childRules = Arr::except((new StoreStorePricesRequest)->rules(), ['store_room_id']);
 
-        $rules = ['storePrices' => 'required|array|min:1'];
+        $rules = [
+            'storePrices' => [
+                'bail',
+                'required',
+                'array',
+                'min:1',
+                function (string $attribute, mixed $value, \Closure $fail) {
+                    $hasMonth = collect($value)->contains(
+                        fn ($row) => is_array($row) && ($row['mode'] ?? null) === 'month'
+                    );
+
+                    if (! $hasMonth) {
+                        $fail('Debes indicar un precio mensual para la bodega.');
+                    }
+                },
+            ],
+        ];
         foreach ($childRules as $field => $rule) {
             $rules["storePrices.*.{$field}"] = $rule;
         }

@@ -39,7 +39,7 @@ class StoreStoreRoomRequest extends FormRequest
             'storage_type' => 'required|in:completa,privado,compartido',
             'direction' => 'required|string',
             'city' => 'required|string',
-            'size' => 'required|numeric',
+            'size' => 'required|numeric|gt:0|max:99999999.99',
             'title' => ['required', 'string', $this->uniqueTitlePerLandlord()],
             'description' => 'required|string',
             'security' => 'required|string',

@@ -296,6 +296,28 @@ describe('PublishStoreRoomScreen (HUL-03)', () => {
     expect(uploadMock).not.toHaveBeenCalled()
   })
 
+  it('sends the gestor back to the price step when the 422 is about storePrices', async () => {
+    const user = userEvent.setup()
+    createMock.mockRejectedValueOnce(
+      new AxiosError('unprocessable entity', undefined, undefined, undefined, {
+        status: 422,
+        data: {
+          message: 'Validation Error',
+          errors: {
+            storePrices: ['Debes indicar un precio mensual para la bodega.'],
+          },
+        },
+      } as never),
+    )
+    renderScreen()
+
+    await walkToLastStep(user)
+    await user.click(screen.getByRole('button', { name: 'Enviar a verificación' }))
+
+    expect(await screen.findByText('Precio y tamaño')).toBeInTheDocument()
+    expect(uploadMock).not.toHaveBeenCalled()
+  })
+
   it('shows a notice when the listing is created but photo upload fails', async () => {
     const user = userEvent.setup()
     createMock.mockResolvedValueOnce({
@@ -312,9 +334,69 @@ describe('PublishStoreRoomScreen (HUL-03)', () => {
     expect(
       await screen.findByText('Tu espacio quedó pendiente de verificación'),
     ).toBeInTheDocument()
+    const warning = screen.getByText(/No pudimos subir las fotos/)
+    expect(warning).toBeInTheDocument()
+    expect(warning.textContent).not.toMatch(/Mis bodegas/i)
     expect(
-      screen.getByText(/No pudimos subir las fotos/),
+      screen.getByRole('button', { name: 'Reintentar subida de fotos' }),
     ).toBeInTheDocument()
+  })
+
+  async function submitWithFailedUpload(user: ReturnType<typeof userEvent.setup>) {
+    createMock.mockResolvedValueOnce({
+      item: { id: 11, title: 'Bodega Norte', publication_status: 'pending' },
+      message: 'ok',
+      status: 201,
+    })
+    uploadMock.mockRejectedValueOnce(new Error('network'))
+    renderScreen()
+
+    await walkToLastStep(user)
+    await user.click(screen.getByRole('button', { name: 'Enviar a verificación' }))
+    await screen.findByText(/No pudimos subir las fotos/)
+  }
+
+  it('retries the photo upload against the created room without creating it again', async () => {
+    const user = userEvent.setup()
+    await submitWithFailedUpload(user)
+    uploadMock.mockResolvedValueOnce()
+
+    await user.click(
+      screen.getByRole('button', { name: 'Reintentar subida de fotos' }),
+    )
+
+    await vi.waitFor(() => {
+      expect(screen.queryByText(/No pudimos subir las fotos/)).toBeNull()
+    })
+    expect(
+      screen.queryByRole('button', { name: 'Reintentar subida de fotos' }),
+    ).toBeNull()
+    expect(createMock).toHaveBeenCalledTimes(1)
+    expect(uploadMock).toHaveBeenCalledTimes(2)
+    expect(uploadMock).toHaveBeenLastCalledWith(11, [
+      expect.any(File),
+      expect.any(File),
+      expect.any(File),
+    ])
+  })
+
+  it('keeps the notice and the retry button when the retry fails again', async () => {
+    const user = userEvent.setup()
+    await submitWithFailedUpload(user)
+    uploadMock.mockRejectedValueOnce(new Error('still down'))
+
+    await user.click(
+      screen.getByRole('button', { name: 'Reintentar subida de fotos' }),
+    )
+
+    await vi.waitFor(() => {
+      expect(uploadMock).toHaveBeenCalledTimes(2)
+    })
+    expect(screen.getByText(/No pudimos subir las fotos/)).toBeInTheDocument()
+    expect(
+      await screen.findByRole('button', { name: 'Reintentar subida de fotos' }),
+    ).toBeEnabled()
+    expect(createMock).toHaveBeenCalledTimes(1)
   })
 
   it('blocks a non-landlord from the publish flow', () => {

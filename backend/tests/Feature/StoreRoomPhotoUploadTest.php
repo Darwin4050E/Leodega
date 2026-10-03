@@ -62,4 +62,108 @@ class StoreRoomPhotoUploadTest extends TestCase
         $response->assertStatus(201);
         $this->assertSame(3, StorePhoto::where('store_room_id', $room->id)->count());
     }
+
+    /**
+     * @return array<int, UploadedFile>
+     */
+    private function jpegs(int $count): array
+    {
+        return array_map(
+            fn (int $i) => UploadedFile::fake()->create("photo-{$i}.jpg", 100, 'image/jpeg'),
+            range(1, $count),
+        );
+    }
+
+    public function test_two_photos_are_rejected_without_needing_gd(): void
+    {
+        Storage::fake('public');
+        [$owner, $room] = $this->ownerWithRoom();
+
+        $response = $this->actingAs($owner, 'sanctum')->postJson(
+            "/api/store-rooms/{$room->id}/photos",
+            ['photos' => $this->jpegs(2)],
+        );
+
+        $response->assertStatus(422);
+        $response->assertJsonPath('errors.photos.0', 'Debe adjuntar al menos 3 fotos de la bodega.');
+        $this->assertSame(0, StorePhoto::count());
+    }
+
+    public function test_three_photos_are_accepted_without_needing_gd(): void
+    {
+        Storage::fake('public');
+        [$owner, $room] = $this->ownerWithRoom();
+
+        $response = $this->actingAs($owner, 'sanctum')->postJson(
+            "/api/store-rooms/{$room->id}/photos",
+            ['photos' => $this->jpegs(3)],
+        );
+
+        $response->assertStatus(201);
+        $this->assertSame(3, StorePhoto::where('store_room_id', $room->id)->count());
+    }
+
+    public function test_the_cap_counts_photos_the_room_already_has(): void
+    {
+        Storage::fake('public');
+        [$owner, $room] = $this->ownerWithRoom();
+        StorePhoto::factory()->count(8)->create(['store_room_id' => $room->id]);
+
+        $response = $this->actingAs($owner, 'sanctum')->postJson(
+            "/api/store-rooms/{$room->id}/photos",
+            ['photos' => $this->jpegs(3)],
+        );
+
+        $response->assertStatus(422);
+        $response->assertJsonValidationErrors('photos');
+        $this->assertSame(8, StorePhoto::where('store_room_id', $room->id)->count());
+        $this->assertSame([], Storage::disk('public')->allFiles());
+    }
+
+    public function test_a_room_can_reach_exactly_ten_photos(): void
+    {
+        Storage::fake('public');
+        [$owner, $room] = $this->ownerWithRoom();
+        StorePhoto::factory()->count(7)->create(['store_room_id' => $room->id]);
+
+        $response = $this->actingAs($owner, 'sanctum')->postJson(
+            "/api/store-rooms/{$room->id}/photos",
+            ['photos' => $this->jpegs(3)],
+        );
+
+        $response->assertStatus(201);
+        $this->assertSame(10, StorePhoto::where('store_room_id', $room->id)->count());
+    }
+
+    public function test_eleven_photos_in_one_request_are_rejected(): void
+    {
+        Storage::fake('public');
+        [$owner, $room] = $this->ownerWithRoom();
+
+        $response = $this->actingAs($owner, 'sanctum')->postJson(
+            "/api/store-rooms/{$room->id}/photos",
+            ['photos' => $this->jpegs(11)],
+        );
+
+        $response->assertStatus(422);
+        $response->assertJsonValidationErrors('photos');
+        $this->assertSame(0, StorePhoto::count());
+        $this->assertSame([], Storage::disk('public')->allFiles());
+    }
+
+    public function test_the_minimum_of_three_applies_per_request_even_when_the_room_has_photos(): void
+    {
+        Storage::fake('public');
+        [$owner, $room] = $this->ownerWithRoom();
+        StorePhoto::factory()->count(3)->create(['store_room_id' => $room->id]);
+
+        $response = $this->actingAs($owner, 'sanctum')->postJson(
+            "/api/store-rooms/{$room->id}/photos",
+            ['photos' => $this->jpegs(2)],
+        );
+
+        $response->assertStatus(422);
+        $response->assertJsonPath('errors.photos.0', 'Debe adjuntar al menos 3 fotos de la bodega.');
+        $this->assertSame(3, StorePhoto::where('store_room_id', $room->id)->count());
+    }
 }

@@ -277,7 +277,7 @@ class StoreRoomsController extends ApiController
         $data = app(EditStoreRoomListingRequest::class)->validated();
 
         try {
-            $updated = $service->updateListing($storeRoom, $data);
+            $updated = $service->updateListing($storeRoom, $data, auth()->id(), $requiresReview);
         } catch (ValidationException $e) {
             return response()->json([
                 'message' => 'Validation Error',
@@ -289,7 +289,12 @@ class StoreRoomsController extends ApiController
             'data' => $updated,
             'message' => 'Los cambios se guardaron correctamente.',
             'status' => 200,
+            'requires_review' => $requiresReview,
         ];
+
+        if ($requiresReview) {
+            $payload['review_notice'] = 'Tu bodega volvió a revisión y dejará de estar disponible para nuevas reservas hasta que un administrador la apruebe.';
+        }
 
         if ($storeRoom->activeReservations()->exists()) {
             $payload['notice'] = 'Los cambios no afectan a las reservas ya confirmadas; solo aplican a nuevas reservas.';

@@ -78,7 +78,7 @@ const PreguntaInicio6 = () => {
               <span className="mr-2">$</span>
               <input
                 type="number"
-                min="0"
+                min="0.01"
                 value={precio}
                 onChange={(e) => setPrecio(e.target.value)}
                 className="w-28 text-center border-b-2 border-gray-400 focus:border-purple-500 outline-none"
@@ -89,7 +89,7 @@ const PreguntaInicio6 = () => {
             <div className="flex items-center text-4xl sm:text-5xl font-bold">
               <input
                 type="number"
-                min="0"
+                min="0.01"
                 value={tamano}
                 onChange={(e) => setTamano(e.target.value)}
                 className="w-24 text-center border-b-2 border-gray-400 focus:border-purple-500 outline-none"
@@ -122,7 +122,7 @@ const PreguntaInicio6 = () => {
             onNext={() =>{ 
               handlePrice();
               navigate('/PreguntaInicio7')}}
-            nextDisabled={!precio || !tamano}
+            nextDisabled={!(Number(precio) > 0 && Number(tamano) > 0)}
           />
         </div>
       </main>

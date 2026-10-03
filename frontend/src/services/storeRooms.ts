@@ -108,6 +108,12 @@ export interface UpdateStoreRoomResponse {
    * confirmed reservations. Absent otherwise.
    */
   notice?: string;
+  /**
+   * True when the edit sent an approved room back to review; `review_notice`
+   * carries the explanation. Both are absent or false otherwise.
+   */
+  requires_review?: boolean;
+  review_notice?: string;
 }
 
 export function updateStoreRoom(id: number | string, data: Record<string, unknown>) {

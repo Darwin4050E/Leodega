@@ -17,11 +17,11 @@ class StoreRoomResubmissionTest extends TestCase
 {
     use RefreshDatabase;
 
-    private function ownerAndRoom(string $status = 'rejected'): array
+    private function ownerAndRoom(string $status = 'rejected', int $photos = 3): array
     {
         $user = User::factory()->create(['role' => 'landlord']);
         $landlord = Landlords::factory()->create(['user_id' => $user->id]);
-        $room = StoreRooms::factory()->create([
+        $room = StoreRooms::factory()->withPhotos($photos)->create([
             'landlord_id' => $landlord->id,
             'publication_status' => $status,
         ]);
@@ -168,5 +168,47 @@ class StoreRoomResubmissionTest extends TestCase
         $response = $this->actingAs($user, 'sanctum')->postJson('/api/storeRooms/999999/resubmit');
 
         $response->assertStatus(404);
+    }
+
+    public function test_resubmitting_a_rejected_room_with_fewer_than_three_photos_fails_and_stays_rejected()
+    {
+        [$user, , $room] = $this->ownerAndRoom('rejected', 2);
+        $admin = User::factory()->create(['role' => 'admin']);
+
+        $response = $this->actingAs($user, 'sanctum')->postJson("/api/storeRooms/{$room->id}/resubmit");
+
+        $response->assertStatus(422);
+        $response->assertJsonValidationErrors('photos');
+        $response->assertJsonPath('message', 'La bodega necesita al menos 3 fotos para ser aprobada.');
+
+        $this->assertDatabaseHas('storeRooms', [
+            'id' => $room->id,
+            'publication_status' => 'rejected',
+        ]);
+        $this->assertDatabaseMissing('notifications', [
+            'receiver_id' => $admin->id,
+            'type' => 'store_resubmitted',
+        ]);
+    }
+
+    public function test_resubmitting_a_rejected_room_with_exactly_three_photos_moves_it_to_pending()
+    {
+        [$user, , $room] = $this->ownerAndRoom('rejected', 3);
+
+        $this->actingAs($user, 'sanctum')->postJson("/api/storeRooms/{$room->id}/resubmit")
+            ->assertStatus(200);
+
+        $this->assertDatabaseHas('storeRooms', [
+            'id' => $room->id,
+            'publication_status' => 'pending',
+        ]);
+    }
+
+    public function test_a_non_rejected_room_without_photos_still_gets_the_state_conflict()
+    {
+        [$user, , $room] = $this->ownerAndRoom('pending', 0);
+
+        $this->actingAs($user, 'sanctum')->postJson("/api/storeRooms/{$room->id}/resubmit")
+            ->assertStatus(409);
     }
 }

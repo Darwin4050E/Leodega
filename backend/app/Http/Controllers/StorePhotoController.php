@@ -11,6 +11,7 @@ use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Gate;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Facades\Validator;
+use Illuminate\Validation\ValidationException;
 
 class StorePhotoController extends ApiController
 {
@@ -56,6 +57,14 @@ class StorePhotoController extends ApiController
         $photosSaved = [];
 
         DB::transaction(function () use ($request, $room, &$photosSaved) {
+            $lockedRoom = StoreRooms::whereKey($room->id)->lockForUpdate()->first();
+
+            if ($lockedRoom->storePhotos()->count() + count($request->file('photos')) > StoreRooms::MAX_PHOTOS) {
+                throw ValidationException::withMessages([
+                    'photos' => 'Una bodega no puede tener más de '.StoreRooms::MAX_PHOTOS.' fotos.',
+                ]);
+            }
+
             foreach ($request->file('photos') as $photo) {
                 $path = $photo->store('store_photos', 'public');
 
@@ -91,8 +100,19 @@ class StorePhotoController extends ApiController
             ], 404);
         }
 
+        DB::transaction(function () use ($room, $photo) {
+            StoreRooms::whereKey($room->id)->lockForUpdate()->first();
+
+            if ($room->storePhotos()->count() <= StoreRooms::MIN_PHOTOS) {
+                throw ValidationException::withMessages([
+                    'photos' => 'Una bodega debe conservar al menos '.StoreRooms::MIN_PHOTOS.' fotos. Sube la nueva foto antes de eliminar la anterior.',
+                ]);
+            }
+
+            $photo->delete();
+        });
+
         Storage::disk('public')->delete($photo->photo_url);
-        $photo->delete();
 
         return response()->json([
             'message' => 'Photo deleted successfully',

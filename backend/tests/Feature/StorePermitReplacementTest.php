@@ -35,7 +35,7 @@ class StorePermitReplacementTest extends TestCase
         $landlord = Landlords::factory()->create(['user_id' => $user->id]);
 
         Storage::disk('private')->put(self::OLD_PATH, 'old pdf content');
-        $room = StoreRooms::factory()->create([
+        $room = StoreRooms::factory()->withPhotos()->create([
             'landlord_id' => $landlord->id,
             'publication_status' => $status,
             'firefighter_permit_path' => self::OLD_PATH,

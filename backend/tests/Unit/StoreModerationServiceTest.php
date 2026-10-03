@@ -8,6 +8,7 @@ use App\Models\User;
 use App\Services\ModerationDecision;
 use App\Services\StoreModerationService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Validation\ValidationException;
 use InvalidArgumentException;
 use Tests\TestCase;
 
@@ -52,7 +53,7 @@ class StoreModerationServiceTest extends TestCase
     public function test_moderate_persists_admin_id_on_approval_without_reason_code()
     {
         $admin = User::factory()->create(['role' => 'admin']);
-        $room = StoreRooms::factory()->create([
+        $room = StoreRooms::factory()->withPhotos()->create([
             'publication_status' => 'pending',
             'firefighter_permit_path' => 'firefighter_permits/permit.pdf',
         ]);
@@ -74,7 +75,7 @@ class StoreModerationServiceTest extends TestCase
     {
         $admin = User::factory()->create(['role' => 'admin']);
 
-        $waivedRoom = StoreRooms::factory()->create([
+        $waivedRoom = StoreRooms::factory()->withPhotos()->create([
             'publication_status' => 'pending',
             'firefighter_permit_path' => null,
         ]);
@@ -85,7 +86,7 @@ class StoreModerationServiceTest extends TestCase
         ));
         $this->assertNotNull($waivedModeration->fresh()->permit_waived_at);
 
-        $permittedRoom = StoreRooms::factory()->create([
+        $permittedRoom = StoreRooms::factory()->withPhotos()->create([
             'publication_status' => 'pending',
             'firefighter_permit_path' => 'firefighter_permits/permit.pdf',
         ]);
@@ -96,7 +97,7 @@ class StoreModerationServiceTest extends TestCase
         ));
         $this->assertNull($permittedModeration->fresh()->permit_waived_at);
 
-        $unacknowledgedRoom = StoreRooms::factory()->create([
+        $unacknowledgedRoom = StoreRooms::factory()->withPhotos()->create([
             'publication_status' => 'pending',
             'firefighter_permit_path' => null,
         ]);
@@ -171,5 +172,57 @@ class StoreModerationServiceTest extends TestCase
 
         $this->assertNull($historicalModeration->reason_code);
         $this->assertNull($historicalModeration->admin_id);
+    }
+
+    public function test_moderate_refuses_to_approve_a_room_with_fewer_than_three_photos()
+    {
+        $admin = User::factory()->create(['role' => 'admin']);
+        $room = StoreRooms::factory()->withPhotos(2)->create([
+            'publication_status' => 'pending',
+            'firefighter_permit_path' => 'firefighter_permits/permit.pdf',
+        ]);
+        $room->load('landlord.user');
+
+        try {
+            $this->service()->moderate($room, new ModerationDecision(decision: 'approved', adminId: $admin->id));
+            $this->fail('Expected a ValidationException for the missing photos.');
+        } catch (ValidationException $e) {
+            $this->assertSame(
+                ['La bodega necesita al menos 3 fotos para ser aprobada.'],
+                $e->errors()['photos'],
+            );
+        }
+
+        $this->assertSame('pending', $room->fresh()->publication_status);
+        $this->assertDatabaseCount('store_moderation', 0);
+        $this->assertDatabaseMissing('notifications', ['receiver_id' => $room->landlord->user->id]);
+    }
+
+    public function test_moderate_approves_a_room_with_exactly_three_photos()
+    {
+        $admin = User::factory()->create(['role' => 'admin']);
+        $room = StoreRooms::factory()->withPhotos(3)->create([
+            'publication_status' => 'pending',
+            'firefighter_permit_path' => 'firefighter_permits/permit.pdf',
+        ]);
+
+        $this->service()->moderate($room, new ModerationDecision(decision: 'approved', adminId: $admin->id));
+
+        $this->assertSame('approved', $room->fresh()->publication_status);
+    }
+
+    public function test_moderate_still_rejects_a_room_without_photos()
+    {
+        $admin = User::factory()->create(['role' => 'admin']);
+        $room = StoreRooms::factory()->create(['publication_status' => 'pending']);
+
+        $this->service()->moderate($room, new ModerationDecision(
+            decision: 'rejected',
+            reasonCode: 'fotos',
+            adminId: $admin->id,
+        ));
+
+        $this->assertSame('rejected', $room->fresh()->publication_status);
+        $this->assertDatabaseHas('store_moderation', ['store_id' => $room->id, 'status' => 'rejected']);
     }
 }
