@@ -97,6 +97,7 @@ const FIELD_STEP: Record<string, number> = {
   title: 4,
   description: 4,
   size: 5,
+  storePrices: 5,
   'storePrices.0.price': 5,
   security: 6,
   cancellation_policy_tier: 6,

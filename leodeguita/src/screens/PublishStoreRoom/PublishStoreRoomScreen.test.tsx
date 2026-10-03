@@ -296,6 +296,28 @@ describe('PublishStoreRoomScreen (HUL-03)', () => {
     expect(uploadMock).not.toHaveBeenCalled()
   })
 
+  it('sends the gestor back to the price step when the 422 is about storePrices', async () => {
+    const user = userEvent.setup()
+    createMock.mockRejectedValueOnce(
+      new AxiosError('unprocessable entity', undefined, undefined, undefined, {
+        status: 422,
+        data: {
+          message: 'Validation Error',
+          errors: {
+            storePrices: ['Debes indicar un precio mensual para la bodega.'],
+          },
+        },
+      } as never),
+    )
+    renderScreen()
+
+    await walkToLastStep(user)
+    await user.click(screen.getByRole('button', { name: 'Enviar a verificación' }))
+
+    expect(await screen.findByText('Precio y tamaño')).toBeInTheDocument()
+    expect(uploadMock).not.toHaveBeenCalled()
+  })
+
   it('shows a notice when the listing is created but photo upload fails', async () => {
     const user = userEvent.setup()
     createMock.mockResolvedValueOnce({
