@@ -35,7 +35,7 @@ class EditStoreRoomListingRequest extends FormRequest
         return [
             'title' => 'sometimes|string|max:255',
             'description' => 'sometimes|string',
-            'size' => 'sometimes|numeric|gt:0',
+            'size' => 'sometimes|numeric|gt:0|max:99999999.99',
             'price' => 'sometimes|numeric|gt:0',
             'disponibility' => 'sometimes|boolean',
         ];

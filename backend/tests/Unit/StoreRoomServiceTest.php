@@ -38,6 +38,13 @@ class StoreRoomServiceTest extends TestCase
         ];
     }
 
+    private function monthPrices(): array
+    {
+        return [
+            ['mode' => 'month', 'price' => 100, 'disponibility' => 1],
+        ];
+    }
+
     private function fakePermit(): UploadedFile
     {
         return UploadedFile::fake()->create('permiso.pdf', 100, 'application/pdf');
@@ -48,7 +55,7 @@ class StoreRoomServiceTest extends TestCase
         $landlord = Landlords::factory()->create();
         $data = $this->validData() + ['publication_status' => 'approved'];
 
-        $room = (new StoreRoomService)->register($landlord, $data, null, $this->fakePermit(), $landlord->user_id);
+        $room = (new StoreRoomService)->register($landlord, $data, $this->monthPrices(), $this->fakePermit(), $landlord->user_id);
 
         $this->assertSame('pending', $room->fresh()->publication_status);
     }
@@ -57,7 +64,7 @@ class StoreRoomServiceTest extends TestCase
     {
         $landlord = Landlords::factory()->create();
 
-        $room = (new StoreRoomService)->register($landlord, $this->validData(), null, $this->fakePermit(), $landlord->user_id);
+        $room = (new StoreRoomService)->register($landlord, $this->validData(), $this->monthPrices(), $this->fakePermit(), $landlord->user_id);
 
         $this->assertSame($landlord->id, $room->fresh()->landlord_id);
     }
@@ -114,7 +121,7 @@ class StoreRoomServiceTest extends TestCase
     {
         $landlord = Landlords::factory()->create();
 
-        $room = (new StoreRoomService)->register($landlord, $this->validData(), null, $this->fakePermit(), $landlord->user_id);
+        $room = (new StoreRoomService)->register($landlord, $this->validData(), $this->monthPrices(), $this->fakePermit(), $landlord->user_id);
 
         $this->assertNotNull($room->firefighter_permit_path);
         Storage::disk('private')->assertExists($room->firefighter_permit_path);
@@ -132,7 +139,7 @@ class StoreRoomServiceTest extends TestCase
         $capturedPath = null;
 
         try {
-            (new StoreRoomService)->register($landlord, $this->validData(), null, $this->fakePermit(), 1);
+            (new StoreRoomService)->register($landlord, $this->validData(), $this->monthPrices(), $this->fakePermit(), 1);
             $this->fail('Expected a database exception to be thrown.');
         } catch (\Throwable $e) {
             $files = Storage::disk('private')->allFiles('firefighter_permits');
@@ -158,15 +165,37 @@ class StoreRoomServiceTest extends TestCase
         ]);
     }
 
-    public function test_register_with_store_prices_omitted_creates_one_room_and_no_prices()
+    public function test_register_with_store_prices_omitted_is_rejected_and_creates_nothing()
     {
         $landlord = Landlords::factory()->create();
 
-        $room = (new StoreRoomService)->register($landlord, $this->validData(), null, $this->fakePermit(), $landlord->user_id);
+        try {
+            (new StoreRoomService)->register($landlord, $this->validData(), null, $this->fakePermit(), $landlord->user_id);
+            $this->fail('Expected a ValidationException when prices are omitted.');
+        } catch (ValidationException $e) {
+            $this->assertArrayHasKey('storePrices', $e->errors());
+        }
 
-        $this->assertDatabaseCount('storeRooms', 1);
+        $this->assertDatabaseCount('storeRooms', 0);
         $this->assertDatabaseCount('store_prices', 0);
-        $this->assertCount(0, $room->storePrices);
+        Storage::disk('private')->assertDirectoryEmpty('firefighter_permits');
+    }
+
+    public function test_register_without_a_month_price_is_rejected()
+    {
+        $landlord = Landlords::factory()->create();
+        $prices = [
+            ['mode' => 'day', 'price' => 10, 'disponibility' => 1],
+        ];
+
+        try {
+            (new StoreRoomService)->register($landlord, $this->validData(), $prices, $this->fakePermit(), $landlord->user_id);
+            $this->fail('Expected a ValidationException when no month price is sent.');
+        } catch (ValidationException $e) {
+            $this->assertArrayHasKey('storePrices', $e->errors());
+        }
+
+        $this->assertDatabaseCount('storeRooms', 0);
     }
 
     public function test_register_notifies_every_admin()
@@ -174,7 +203,7 @@ class StoreRoomServiceTest extends TestCase
         $admins = User::factory()->count(2)->create(['role' => 'admin']);
         $landlord = Landlords::factory()->create();
 
-        $room = (new StoreRoomService)->register($landlord, $this->validData(), null, $this->fakePermit(), $landlord->user_id);
+        $room = (new StoreRoomService)->register($landlord, $this->validData(), $this->monthPrices(), $this->fakePermit(), $landlord->user_id);
 
         foreach ($admins as $admin) {
             $this->assertDatabaseHas('notifications', [
@@ -195,7 +224,7 @@ class StoreRoomServiceTest extends TestCase
         // id that does not exist forces NotificationService::send to throw
         // for every admin, exercising the post-commit catch without mocking
         // the notification service (D5).
-        $room = (new StoreRoomService)->register($landlord, $this->validData(), null, $this->fakePermit(), 999999);
+        $room = (new StoreRoomService)->register($landlord, $this->validData(), $this->monthPrices(), $this->fakePermit(), 999999);
 
         $this->assertDatabaseHas('storeRooms', ['id' => $room->id]);
         Storage::disk('private')->assertExists($room->firefighter_permit_path);

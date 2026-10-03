@@ -220,6 +220,30 @@ class StoreRoomUpdateTest extends TestCase
         $this->assertDatabaseHas('storeRooms', ['id' => $room->id, 'size' => 30]);
     }
 
+    public function test_size_above_the_column_limit_is_rejected_and_nothing_is_saved()
+    {
+        [$user, $landlord] = $this->makeLandlordUser();
+        $room = $this->ownedRoom($landlord, ['size' => 30]);
+
+        $response = $this->actingAs($user, 'sanctum')->putJson("/api/storeRooms/{$room->id}", [
+            'size' => 100000000,
+        ]);
+
+        $response->assertStatus(422);
+        $response->assertJsonValidationErrors(['size']);
+        $this->assertDatabaseHas('storeRooms', ['id' => $room->id, 'size' => 30]);
+    }
+
+    public function test_size_at_the_column_limit_is_accepted_on_edit()
+    {
+        [$user, $landlord] = $this->makeLandlordUser();
+        $room = $this->ownedRoom($landlord, ['size' => 30]);
+
+        $this->actingAs($user, 'sanctum')->putJson("/api/storeRooms/{$room->id}", [
+            'size' => 99999999.99,
+        ])->assertStatus(200);
+    }
+
     public function test_price_change_on_room_without_monthly_tariff_row_is_a_clear_error()
     {
         [$user, $landlord] = $this->makeLandlordUser();

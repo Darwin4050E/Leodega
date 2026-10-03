@@ -35,6 +35,9 @@ class StoreRoomTest extends TestCase
             'security' => 'Alta',
             'firefighter_permit' => $this->fakePermit(),
             'cancellation_policy_tier' => 'flexible',
+            'storePrices' => [
+                ['mode' => 'month', 'price' => 100, 'disponibility' => 'true'],
+            ],
         ], $overrides);
     }
 
@@ -85,6 +88,130 @@ class StoreRoomTest extends TestCase
 
         $response->assertStatus(422);
         $response->assertJsonValidationErrors(['size']);
+    }
+
+    public function test_create_store_room_rejects_non_positive_size()
+    {
+        $user = User::factory()->create(['role' => 'landlord']);
+        Landlords::factory()->create(['user_id' => $user->id]);
+
+        foreach ([0, -1] as $size) {
+            $response = $this->actingAs($user, 'sanctum')
+                ->post('/api/storeRooms', $this->validPayload(['size' => $size]));
+
+            $response->assertStatus(422);
+            $response->assertJsonValidationErrors(['size']);
+        }
+
+        $this->assertDatabaseCount('storeRooms', 0);
+    }
+
+    public function test_create_store_room_rejects_size_above_the_column_limit()
+    {
+        $user = User::factory()->create(['role' => 'landlord']);
+        Landlords::factory()->create(['user_id' => $user->id]);
+
+        $response = $this->actingAs($user, 'sanctum')
+            ->post('/api/storeRooms', $this->validPayload(['size' => 100000000]));
+
+        $response->assertStatus(422);
+        $response->assertJsonValidationErrors(['size']);
+        $this->assertDatabaseCount('storeRooms', 0);
+    }
+
+    public function test_create_store_room_accepts_the_maximum_size()
+    {
+        $user = User::factory()->create(['role' => 'landlord']);
+        Landlords::factory()->create(['user_id' => $user->id]);
+
+        $response = $this->actingAs($user, 'sanctum')
+            ->post('/api/storeRooms', $this->validPayload(['size' => 99999999.99]));
+
+        $response->assertStatus(201);
+        $this->assertDatabaseCount('storeRooms', 1);
+    }
+
+    public function test_create_store_room_without_store_prices_is_rejected()
+    {
+        $user = User::factory()->create(['role' => 'landlord']);
+        Landlords::factory()->create(['user_id' => $user->id]);
+
+        $payload = $this->validPayload();
+        unset($payload['storePrices']);
+
+        $response = $this->actingAs($user, 'sanctum')->post('/api/storeRooms', $payload);
+
+        $response->assertStatus(422);
+        $response->assertJsonValidationErrors(['storePrices']);
+        $this->assertDatabaseCount('storeRooms', 0);
+        $this->assertDatabaseCount('store_prices', 0);
+    }
+
+    public function test_create_store_room_with_only_a_day_price_is_rejected()
+    {
+        $user = User::factory()->create(['role' => 'landlord']);
+        Landlords::factory()->create(['user_id' => $user->id]);
+
+        $response = $this->actingAs($user, 'sanctum')->post('/api/storeRooms', $this->validPayload([
+            'storePrices' => [
+                ['mode' => 'day', 'price' => 10, 'disponibility' => 1],
+            ],
+        ]));
+
+        $response->assertStatus(422);
+        $response->assertJsonValidationErrors(['storePrices']);
+        $this->assertDatabaseCount('storeRooms', 0);
+    }
+
+    public function test_create_store_room_rejects_a_month_price_below_the_minimum()
+    {
+        $user = User::factory()->create(['role' => 'landlord']);
+        Landlords::factory()->create(['user_id' => $user->id]);
+
+        $response = $this->actingAs($user, 'sanctum')->post('/api/storeRooms', $this->validPayload([
+            'storePrices' => [
+                ['mode' => 'month', 'price' => 0.49, 'disponibility' => 1],
+            ],
+        ]));
+
+        $response->assertStatus(422);
+        $response->assertJsonValidationErrors(['storePrices.0.price']);
+        $this->assertDatabaseCount('storeRooms', 0);
+    }
+
+    public function test_create_store_room_accepts_the_minimum_month_price()
+    {
+        $user = User::factory()->create(['role' => 'landlord']);
+        Landlords::factory()->create(['user_id' => $user->id]);
+
+        $response = $this->actingAs($user, 'sanctum')->post('/api/storeRooms', $this->validPayload([
+            'storePrices' => [
+                ['mode' => 'month', 'price' => 0.5, 'disponibility' => 1],
+            ],
+        ]));
+
+        $response->assertStatus(201);
+        $this->assertDatabaseHas('store_prices', [
+            'store_room_id' => $response->json('item.id'),
+            'mode' => 'month',
+            'price' => 0.5,
+        ]);
+    }
+
+    public function test_create_store_room_accepts_a_day_price_next_to_the_month_price()
+    {
+        $user = User::factory()->create(['role' => 'landlord']);
+        Landlords::factory()->create(['user_id' => $user->id]);
+
+        $response = $this->actingAs($user, 'sanctum')->post('/api/storeRooms', $this->validPayload([
+            'storePrices' => [
+                ['mode' => 'month', 'price' => 100, 'disponibility' => 1],
+                ['mode' => 'day', 'price' => 5, 'disponibility' => 1],
+            ],
+        ]));
+
+        $response->assertStatus(201);
+        $this->assertDatabaseCount('store_prices', 2);
     }
 
     /**

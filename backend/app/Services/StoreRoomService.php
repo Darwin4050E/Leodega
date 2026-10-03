@@ -223,24 +223,33 @@ class StoreRoomService
     }
 
     /**
-     * storePrices is optional at registration (D7): when omitted, the room
-     * is still created with zero prices — this early return is a deliberate
-     * fix over the design's literal `sometimes|array|min:1` snippet, which
-     * would always fail because the key is always present in the array
-     * built below (Laravel's `sometimes` only skips a genuinely *missing*
-     * key, not an empty one).
+     * A monthly price is mandatory at registration: the listing, search and
+     * booking flows all read the mode='month' row. Other modes stay optional
+     * and are held to the child rules below.
      *
      * @throws \Illuminate\Validation\ValidationException
      */
     private function validatePrices(?array $prices): void
     {
-        if (empty($prices)) {
-            return;
-        }
-
         $childRules = Arr::except((new StoreStorePricesRequest)->rules(), ['store_room_id']);
 
-        $rules = ['storePrices' => 'required|array|min:1'];
+        $rules = [
+            'storePrices' => [
+                'bail',
+                'required',
+                'array',
+                'min:1',
+                function (string $attribute, mixed $value, \Closure $fail) {
+                    $hasMonth = collect($value)->contains(
+                        fn ($row) => is_array($row) && ($row['mode'] ?? null) === 'month'
+                    );
+
+                    if (! $hasMonth) {
+                        $fail('Debes indicar un precio mensual para la bodega.');
+                    }
+                },
+            ],
+        ];
         foreach ($childRules as $field => $rule) {
             $rules["storePrices.*.{$field}"] = $rule;
         }
