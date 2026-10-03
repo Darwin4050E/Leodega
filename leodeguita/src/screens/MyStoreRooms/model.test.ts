@@ -1,6 +1,11 @@
 import { describe, it, expect } from 'vitest'
 import type { MyStoreRoom, PublicationStatus } from '../../services/storeRooms'
-import { countByStatus, deriveStatus, filterRooms } from './model'
+import {
+  countByStatus,
+  deriveStatus,
+  filterRooms,
+  rejectionDetail,
+} from './model'
 
 function room(overrides: Partial<MyStoreRoom> = {}): MyStoreRoom {
   return {
@@ -15,6 +20,7 @@ function room(overrides: Partial<MyStoreRoom> = {}): MyStoreRoom {
     active_reservations_count: 0,
     image: null,
     storePrices: [],
+    rejection: null,
     ...overrides,
   }
 }
@@ -101,5 +107,53 @@ describe('filterRooms', () => {
 
   it('returns an empty array when nothing matches', () => {
     expect(filterRooms(rooms, 'rechazada')).toEqual([])
+  })
+})
+
+describe('rejectionDetail', () => {
+  it('labels the reason code and keeps the free-text reason of a rejected room', () => {
+    expect(
+      rejectionDetail(
+        room({
+          publication_status: 'rejected',
+          rejection: { reason_code: 'permiso', reason: 'Permiso vencido' },
+        }),
+      ),
+    ).toEqual({ label: 'Permiso inválido', reason: 'Permiso vencido' })
+  })
+
+  it('maps every reason code to its Spanish label', () => {
+    const labels = (['fotos', 'info', 'permiso', 'otro'] as const).map(
+      (code) =>
+        rejectionDetail(
+          room({
+            publication_status: 'rejected',
+            rejection: { reason_code: code, reason: null },
+          }),
+        )?.label,
+    )
+    expect(labels).toEqual([
+      'Fotos incorrectas',
+      'Información incoherente',
+      'Permiso inválido',
+      'Otro motivo',
+    ])
+  })
+
+  it('returns null for a rejected room without rejection data', () => {
+    expect(
+      rejectionDetail(room({ publication_status: 'rejected', rejection: null })),
+    ).toBeNull()
+  })
+
+  it('returns null for a room that is not rejected', () => {
+    expect(
+      rejectionDetail(
+        room({
+          publication_status: 'pending',
+          rejection: { reason_code: 'fotos', reason: 'x' },
+        }),
+      ),
+    ).toBeNull()
   })
 })

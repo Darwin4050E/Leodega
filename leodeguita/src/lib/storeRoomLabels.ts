@@ -1,4 +1,8 @@
-import type { RoomType, StorageType } from '../services/storeRooms'
+import type {
+  RejectionReasonCode,
+  RoomType,
+  StorageType,
+} from '../services/storeRooms'
 
 /**
  * Shared label maps for store-room enums. Extracted from
@@ -49,3 +53,11 @@ export const SECURITY_OPTIONS: { key: string; label: string }[] = [
   { key: 'control', label: 'Control de plagas y humedad' },
   { key: 'acceso', label: 'Acceso restringido 24/7' },
 ]
+
+/** Admin rejection reason codes, labelled with the web moderation copy. */
+export const REJECTION_REASON_LABELS: Record<RejectionReasonCode, string> = {
+  fotos: 'Fotos incorrectas',
+  info: 'Información incoherente',
+  permiso: 'Permiso inválido',
+  otro: 'Otro motivo',
+}

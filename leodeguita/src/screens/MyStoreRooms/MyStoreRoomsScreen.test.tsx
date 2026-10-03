@@ -40,6 +40,7 @@ function room(overrides: Partial<MyStoreRoom> = {}): MyStoreRoom {
     active_reservations_count: 0,
     image: null,
     storePrices: [{ mode: 'month', price: 150, disponibility: true }],
+    rejection: null,
     ...overrides,
   }
 }
@@ -164,5 +165,28 @@ describe('MyStoreRoomsScreen (HUL-04)', () => {
       expect(screen.getByText('Recuperada')).toBeInTheDocument(),
     )
     expect(listMock).toHaveBeenCalledTimes(2)
+  })
+
+  it('shows the rejection reason on a rejected room card', async () => {
+    listMock.mockResolvedValueOnce([
+      room({
+        publication_status: 'rejected',
+        rejection: { reason_code: 'fotos', reason: 'Las fotos están borrosas' },
+      }),
+    ])
+    renderScreen()
+
+    expect(
+      await screen.findByText('Motivo: Fotos incorrectas'),
+    ).toBeInTheDocument()
+    expect(screen.getByText('Las fotos están borrosas')).toBeInTheDocument()
+  })
+
+  it('shows no rejection reason on an approved room card', async () => {
+    listMock.mockResolvedValueOnce([room()])
+    renderScreen()
+
+    expect(await screen.findByText('Bodega Norte')).toBeInTheDocument()
+    expect(screen.queryByText(/^Motivo:/)).not.toBeInTheDocument()
   })
 })
