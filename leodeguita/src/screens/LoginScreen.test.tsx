@@ -201,3 +201,58 @@ describe('LoginScreen session expiry and return route', () => {
     expect(screen.queryByText('Pantalla principal')).not.toBeInTheDocument()
   })
 })
+
+describe('LoginScreen suspended account (403)', () => {
+  const SUSPENDED_MESSAGE = 'Tu cuenta ha sido suspendida. Contacta al administrador.'
+
+  function forbidden(data: unknown) {
+    return new AxiosError('forbidden', undefined, undefined, undefined, {
+      status: 403,
+      data,
+    } as never)
+  }
+
+  beforeEach(() => {
+    loginMock.mockReset()
+    localStorage.clear()
+  })
+
+  it('shows the backend suspension message and stores no session on a login 403', async () => {
+    loginMock.mockRejectedValueOnce(forbidden({ message: SUSPENDED_MESSAGE }))
+    renderLogin()
+
+    await submitCredentials()
+
+    expect(await screen.findByRole('alert')).toHaveTextContent(SUSPENDED_MESSAGE)
+    expect(localStorage.getItem('leodeguita_token')).toBeNull()
+    expect(localStorage.getItem('leodeguita_user')).toBeNull()
+    expect(screen.queryByText('Pantalla principal')).not.toBeInTheDocument()
+  })
+
+  it('does not navigate to the return route on a login 403', async () => {
+    loginMock.mockRejectedValueOnce(forbidden({ message: SUSPENDED_MESSAGE }))
+    renderLogin({ from: '/mis-bodegas', reason: 'session-expired' })
+
+    await submitCredentials()
+
+    expect(await screen.findByRole('alert')).toHaveTextContent(SUSPENDED_MESSAGE)
+    expect(screen.queryByText('Destino: /mis-bodegas')).not.toBeInTheDocument()
+    expect(localStorage.getItem('leodeguita_token')).toBeNull()
+  })
+
+  it.each([
+    ['an empty body', {}],
+    ['no body', undefined],
+  ])('falls back to the generic message on a login 403 with %s', async (_label, data) => {
+    loginMock.mockRejectedValueOnce(forbidden(data))
+    renderLogin()
+
+    await submitCredentials()
+
+    expect(await screen.findByRole('alert')).toHaveTextContent(
+      'Esta cuenta no puede iniciar sesión.',
+    )
+    expect(localStorage.getItem('leodeguita_token')).toBeNull()
+    expect(screen.queryByText('Pantalla principal')).not.toBeInTheDocument()
+  })
+})
