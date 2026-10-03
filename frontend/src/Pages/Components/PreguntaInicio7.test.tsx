@@ -23,8 +23,10 @@ import type { WizardContextValue } from '../../context/WizardContext';
 
 // Mocks -----------------------------------------------------------------
 
+const mockNavigate = vi.fn();
+
 vi.mock('react-router-dom', () => ({
-  useNavigate: () => vi.fn(),
+  useNavigate: () => mockNavigate,
 }));
 
 vi.mock('./ProgressBar', () => ({ default: () => null }));
@@ -50,7 +52,8 @@ vi.mock('./FooterNav', () => ({
 }));
 
 vi.mock('../../Components/ModalConfirmacion', () => ({
-  default: () => null,
+  default: ({ isOpen }: { isOpen: boolean }) =>
+    isOpen ? <div data-testid="success-modal" /> : null,
 }));
 
 const mockCreateStoreRoom = vi.fn();
@@ -346,5 +349,108 @@ describe('PreguntaInicio7 — security features payload', () => {
       acceso: true,
     });
     expect(security).not.toHaveProperty('objetos');
+  });
+});
+
+describe('PreguntaInicio7 — photo upload failure and retry', () => {
+  beforeEach(() => {
+    localStorage.clear();
+    vi.clearAllMocks();
+  });
+
+  const photos = [makeFile('a.jpg'), makeFile('b.jpg'), makeFile('c.jpg')];
+
+  const submitWithPhotoFailure = async () => {
+    const user = userEvent.setup();
+    const resetMock = vi.fn();
+
+    mockCreateStoreRoom.mockResolvedValue({ status: 201, data: { item: { id: 42 } } });
+    mockUploadPhotos.mockRejectedValueOnce(new Error('network'));
+
+    const wrapper = WizardWrapper({
+      photos,
+      permit: makeFile('permit.pdf', 'application/pdf'),
+      reset: resetMock,
+    });
+
+    localStorage.setItem('optionData', JSON.stringify({
+      step1Data: { selectedOption: 'bodega' },
+      step2Data: { selectedOption: 'completa' },
+      location: { direction: 'Av. Test', city: 'Quito' },
+      priceData: { tamano: 30, precio: 150 },
+      titleData: { titulo: 'Bodega A', descripcion: 'Desc' },
+    }));
+
+    render(<PreguntaInicio7 />, { wrapper });
+
+    fireEvent.change(screen.getByRole('combobox'), { target: { value: 'flexible' } });
+    await user.click(screen.getByTestId('submit-btn'));
+
+    await screen.findByRole('alert');
+
+    return { user, resetMock };
+  };
+
+  it('keeps the wizard and offers retry when the photo upload fails', async () => {
+    const { resetMock } = await submitWithPhotoFailure();
+
+    expect(screen.getByRole('alert')).toHaveTextContent(/No pudimos subir las fotos/);
+    expect(screen.getByRole('button', { name: 'Reintentar subida de fotos' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Volver a mis bodegas' })).toBeInTheDocument();
+    expect(resetMock).not.toHaveBeenCalled();
+    expect(localStorage.getItem('optionData')).not.toBeNull();
+    expect(screen.queryByTestId('success-modal')).not.toBeInTheDocument();
+  });
+
+  it('retries only the photo upload against the created room and then finishes', async () => {
+    const { user, resetMock } = await submitWithPhotoFailure();
+    mockUploadPhotos.mockResolvedValueOnce(undefined);
+
+    await user.click(screen.getByRole('button', { name: 'Reintentar subida de fotos' }));
+
+    await screen.findByTestId('success-modal', {}, { timeout: 4000 });
+
+    expect(mockCreateStoreRoom).toHaveBeenCalledTimes(1);
+    expect(mockUploadPhotos).toHaveBeenCalledTimes(2);
+    expect(mockUploadPhotos).toHaveBeenLastCalledWith(42, expect.any(FormData));
+    expect(resetMock).toHaveBeenCalledTimes(1);
+    expect(localStorage.getItem('optionData')).toBeNull();
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument();
+  });
+
+  it('keeps offering retry when the retry fails again', async () => {
+    const { user, resetMock } = await submitWithPhotoFailure();
+    mockUploadPhotos.mockRejectedValueOnce(new Error('still down'));
+
+    await user.click(screen.getByRole('button', { name: 'Reintentar subida de fotos' }));
+
+    await vi.waitFor(() => {
+      expect(mockUploadPhotos).toHaveBeenCalledTimes(2);
+    });
+    expect(
+      await screen.findByRole('button', { name: 'Reintentar subida de fotos' }),
+    ).toBeInTheDocument();
+    expect(resetMock).not.toHaveBeenCalled();
+    expect(mockCreateStoreRoom).toHaveBeenCalledTimes(1);
+  });
+
+  it('sends the gestor back to their rooms from the failure notice', async () => {
+    const { user } = await submitWithPhotoFailure();
+
+    await user.click(screen.getByRole('button', { name: 'Volver a mis bodegas' }));
+
+    expect(mockNavigate).toHaveBeenCalledWith('/arrendador/bodegas');
+  });
+
+  it('never creates a second room when Enviar is pressed again after the failure', async () => {
+    const { user } = await submitWithPhotoFailure();
+    mockUploadPhotos.mockResolvedValueOnce(undefined);
+
+    await user.click(screen.getByTestId('submit-btn'));
+
+    await vi.waitFor(() => {
+      expect(mockUploadPhotos).toHaveBeenCalledTimes(2);
+    });
+    expect(mockCreateStoreRoom).toHaveBeenCalledTimes(1);
   });
 });

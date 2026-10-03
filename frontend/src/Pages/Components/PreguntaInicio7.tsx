@@ -33,6 +33,8 @@ const PreguntaInicio7 = () => {
   const [permitError, setPermitError] = useState<string | null>(null);
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [isProcessing, setIsProcessing] = useState(false);
+  const [createdRoomId, setCreatedRoomId] = useState<number | null>(null);
+  const [photoUploadFailed, setPhotoUploadFailed] = useState(false);
 
   type SeguridadKey = keyof typeof seguridad;
 
@@ -65,10 +67,37 @@ const PreguntaInicio7 = () => {
     await uploadStoreRoomPhotos(storeRoomId, formData);
   };
 
+  const finishWithPhotos = async (storeRoomId: number) => {
+    setPhotoUploadFailed(false);
+    setIsProcessing(true);
+
+    try {
+      await uploadPhotos(storeRoomId);
+    } catch (e) {
+      console.error("Error subiendo fotos", e);
+      setPhotoUploadFailed(true);
+      setIsProcessing(false);
+      return;
+    }
+
+    wizardCtx.reset();
+    localStorage.removeItem("optionData");
+
+    setTimeout(() => {
+      setIsProcessing(false);
+      setIsModalOpen(true);
+    }, 1500);
+  };
+
   // Submit is gated: both a permit and a cancellation policy tier are required.
   const nextDisabled = !cancellationPolicyTier || !wizardCtx.permit;
 
   const handleEnviar = async () => {
+    if (createdRoomId !== null) {
+      await finishWithPhotos(createdRoomId);
+      return;
+    }
+
     if (!user?.landlord?.id) {
       alert("No se encontró tu perfil de arrendador. Vuelve a iniciar sesión e intenta de nuevo.");
       return;
@@ -122,20 +151,9 @@ const PreguntaInicio7 = () => {
 
       if (response.status === 201 || response.status === 200) {
         const storeRoomId = response.data.item?.id ?? response.data.id;
+        setCreatedRoomId(storeRoomId);
 
-        try {
-          await uploadPhotos(storeRoomId);
-        } catch (e) {
-          console.error("Error subiendo fotos", e);
-        }
-
-        wizardCtx.reset();
-        localStorage.removeItem("optionData");
-
-        setTimeout(() => {
-          setIsProcessing(false);
-          setIsModalOpen(true);
-        }, 1500);
+        await finishWithPhotos(storeRoomId);
       }
     } catch (error: unknown) {
       console.error("Error al crear la bodega:", error);
@@ -300,6 +318,30 @@ const PreguntaInicio7 = () => {
               <option value="estricta">Estricta</option>
             </select>
           </div>
+
+          {photoUploadFailed && createdRoomId !== null && (
+            <div role="alert" className="mb-6 rounded-lg border border-red-300 bg-red-50 p-4">
+              <p className="text-sm text-red-700">
+                No pudimos subir las fotos. Tu bodega ya fue creada, pero no podrá aprobarse hasta que tenga al menos 3 fotos.
+              </p>
+              <div className="mt-3 flex flex-wrap gap-3">
+                <button
+                  type="button"
+                  onClick={() => finishWithPhotos(createdRoomId)}
+                  className="rounded-lg bg-purple-600 px-4 py-2 text-sm text-white hover:bg-purple-700"
+                >
+                  Reintentar subida de fotos
+                </button>
+                <button
+                  type="button"
+                  onClick={() => navigate("/arrendador/bodegas")}
+                  className="rounded-lg border border-gray-300 px-4 py-2 text-sm text-gray-700 hover:bg-gray-50"
+                >
+                  Volver a mis bodegas
+                </button>
+              </div>
+            </div>
+          )}
 
           <ProgressBar totalSteps={7} activeIndex={6} />
 
