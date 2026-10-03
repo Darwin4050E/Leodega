@@ -360,13 +360,25 @@ class StoreRoomsController extends ApiController
         // never bare auth()->user() — see the comment there.
         $viewer = auth('sanctum')->user();
 
-        $storeRooms = StoreRooms::with(['storePrices', 'storePhotos', 'storeDisponibility'])
+        $storeRooms = StoreRooms::with([
+            'storePrices',
+            'storePhotos',
+            'storeDisponibility',
+            // Only rejections, newest first (same ordering as the moderation
+            // queue), so the latest one is ->first() without an N+1.
+            'moderations' => fn ($query) => $query->where('status', 'rejected')
+                ->orderByDesc('moderation_date')
+                ->orderByDesc('id'),
+        ])
             ->withCount('activeReservations')
             ->where('landlord_id', $landlordId)
             ->visibleTo($viewer, (int) $landlordId)
             ->get()
             ->map(function ($room) {
                 $firstPhoto = $room->storePhotos->first();
+                $latestRejection = $room->publication_status === 'rejected'
+                    ? $room->moderations->first()
+                    : null;
 
                 return [
                     'id' => $room->id,
@@ -380,6 +392,10 @@ class StoreRoomsController extends ApiController
                     'store_prices' => $room->storePrices,
                     'active_reservations_count' => $room->active_reservations_count,
                     'image' => $firstPhoto ? asset('storage/'.$firstPhoto->photo_url) : null,
+                    'rejection' => $latestRejection ? [
+                        'reason_code' => $latestRejection->reason_code,
+                        'reason' => $latestRejection->reason_rejected !== '' ? $latestRejection->reason_rejected : null,
+                    ] : null,
                 ];
             });
 

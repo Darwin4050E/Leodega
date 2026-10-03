@@ -282,15 +282,16 @@ class StoreRoomResponseShapeTest extends TestCase
         $response->assertJsonPath('landlord.phone', '');
     }
 
-    public function test_detail_omits_publication_status(): void
+    public function test_detail_exposes_publication_status_but_not_image(): void
     {
         [$room] = $this->seedFullRoom();
 
         $response = $this->getJson("/api/store-rooms/{$room->id}/detail");
 
-        // Current behaviour: the other two endpoints return it, this one
-        // does not. Pinned, not endorsed.
-        $this->assertArrayNotHasKey('publication_status', $response->json());
+        // publication_status was added so the gestor's edit screen can offer
+        // "Reenviar a revisión" for a rejected room; `image` stays absent
+        // (this endpoint returns the full `photos` array instead).
+        $response->assertJsonPath('publication_status', $room->publication_status);
         $this->assertArrayNotHasKey('image', $response->json());
     }
 
