@@ -20,6 +20,8 @@ export interface AuthUser {
 export interface AuthContextValue {
   token: string | null
   user: AuthUser | null
+  /** True after the backend rejected the session (401), until the next login. */
+  sessionExpired: boolean
   setSession: (token: string, user: AuthUser) => void
   clear: () => void
 }

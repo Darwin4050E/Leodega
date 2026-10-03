@@ -1,8 +1,10 @@
 import { useState, type FormEvent } from 'react'
-import { useNavigate } from 'react-router-dom'
+import { useLocation, useNavigate } from 'react-router-dom'
 import axios from 'axios'
 import { useAuth } from '../auth/useAuth'
 import { login } from '../services/auth'
+import { safeReturnPath } from '../auth/returnPath'
+import { SESSION_EXPIRED_MESSAGE, SESSION_EXPIRED_REASON } from '../auth/sessionExpiry'
 import PhoneFrame from '../components/PhoneFrame'
 
 interface FieldErrors {
@@ -12,7 +14,12 @@ interface FieldErrors {
 
 export default function LoginScreen() {
   const navigate = useNavigate()
+  const location = useLocation()
   const { setSession } = useAuth()
+
+  // Router state is set by <Protected>; it is untrusted until sanitized below.
+  const state = location.state as { from?: unknown; reason?: unknown } | null
+  const sessionExpired = state?.reason === SESSION_EXPIRED_REASON
 
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
@@ -40,8 +47,8 @@ export default function LoginScreen() {
     try {
       const { user, token } = await login(email.trim(), password)
       setSession(token, user)
-      // AC-1: authenticated -> go to the role's home screen.
-      navigate('/', { replace: true })
+      // AC-1: authenticated -> back to where the session ended, else the role's home.
+      navigate(safeReturnPath(state?.from) ?? '/', { replace: true })
     } catch (error) {
       // AC-2: wrong credentials -> error message, no access.
       if (axios.isAxiosError(error) && error.response?.status === 401) {
@@ -68,6 +75,12 @@ export default function LoginScreen() {
             Inicia sesión con tu cuenta de Leodega
           </p>
         </header>
+
+        {sessionExpired && (
+          <p role="status" className="mb-4 text-center text-sm text-amber-700">
+            {SESSION_EXPIRED_MESSAGE}
+          </p>
+        )}
 
         <form onSubmit={handleSubmit} noValidate className="space-y-4">
           <div>
