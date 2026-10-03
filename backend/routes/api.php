@@ -118,11 +118,8 @@ Route::middleware('auth.api:sanctum')->group(function () {
 
 Route::get('/storePrices', [StorePricesController::class, 'index']);
 Route::get('/storePrices/{id}', [StorePricesController::class, 'show']);
-Route::middleware('auth.api:sanctum')->group(function () {
-    Route::post('/storePrices', [StorePricesController::class, 'store']);
-    Route::put('/storePrices/{id}', [StorePricesController::class, 'update']);
-    Route::delete('/storePrices/{id}', [StorePricesController::class, 'destroy']);
-});
+// storePrices writes were removed on purpose: ownership would derive from the
+// room's landlord, and price rows are created over HTTP only by StoreRoomService.
 
 // Las fotos no estaban en la tabla original de la Fase 0.5: se detectaron sin
 // protección al reescribir este archivo y se cierran aquí mismo por ser el
