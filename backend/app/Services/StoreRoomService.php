@@ -126,15 +126,18 @@ class StoreRoomService
     public function replacePermit(StoreRooms $room, UploadedFile $permit, int $actingUserId): StoreRooms
     {
         $oldPath = $room->firefighter_permit_path;
-        $wasApproved = $room->publication_status === 'approved';
+        $requeued = false;
 
         $path = $permit->store('firefighter_permits', 'private');
 
         try {
-            $room = DB::transaction(function () use ($room, $path, $wasApproved) {
+            $room = DB::transaction(function () use ($room, $path, &$requeued) {
+                $room = $this->lockFresh($room);
+
                 $changes = ['firefighter_permit_path' => $path];
-                if ($wasApproved) {
+                if ($room->publication_status === 'approved') {
                     $changes['publication_status'] = 'pending';
+                    $requeued = true;
                 }
 
                 $room->update($changes);
@@ -152,7 +155,7 @@ class StoreRoomService
 
         // Post-commit, best-effort: only an approved room re-enters the
         // moderation queue, so only then do admins have something new to review.
-        if ($wasApproved) {
+        if ($requeued) {
             $this->notifyAdmins($actingUserId, $room, NotificationType::STORE_PERMIT_REPLACED, 'Permiso de bomberos reemplazado, bodega pendiente de verificación');
         }
 
@@ -173,15 +176,20 @@ class StoreRoomService
      * price change requested on a room with no monthly tariff row) rolls
      * back the scalar changes too (atomicity, acceptance criterion 2).
      *
+     * The approved -> pending decision reads the row re-locked inside the
+     * transaction, so a concurrent admin decision is never overwritten.
+     * `$requeued` reports whether this call actually re-queued the room.
+     *
      * @throws ValidationException when `price`/`disponibility` is sent but
      *                             the room has no mode='month' price row
      */
-    public function updateListing(StoreRooms $room, array $data, int $actingUserId): StoreRooms
+    public function updateListing(StoreRooms $room, array $data, int $actingUserId, ?bool &$requeued = null): StoreRooms
     {
-        $wasApproved = $room->publication_status === 'approved';
         $requeued = false;
 
-        $updated = DB::transaction(function () use ($room, $data, $wasApproved, &$requeued) {
+        $updated = DB::transaction(function () use ($room, $data, &$requeued) {
+            $room = $this->lockFresh($room);
+
             $scalars = Arr::only($data, ['title', 'description', 'size']);
             $priceChanges = Arr::only($data, ['price', 'disponibility']);
 
@@ -201,7 +209,7 @@ class StoreRoomService
                     && array_key_exists('price', $priceChanges)
                     && ! $this->sameAmount($priceChanges['price'], $monthlyPrice->price));
 
-            if ($wasApproved && $materialChanged) {
+            if ($room->publication_status === 'approved' && $materialChanged) {
                 $scalars['publication_status'] = 'pending';
                 $requeued = true;
             }
@@ -222,6 +230,11 @@ class StoreRoomService
         }
 
         return $updated;
+    }
+
+    private function lockFresh(StoreRooms $room): StoreRooms
+    {
+        return StoreRooms::whereKey($room->id)->lockForUpdate()->first() ?? $room;
     }
 
     /**

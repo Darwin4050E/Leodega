@@ -275,18 +275,15 @@ class StoreRoomsController extends ApiController
         Gate::authorize('update', [$storeRoom, $landlord]);
 
         $data = app(EditStoreRoomListingRequest::class)->validated();
-        $wasApproved = $storeRoom->publication_status === 'approved';
 
         try {
-            $updated = $service->updateListing($storeRoom, $data, auth()->id());
+            $updated = $service->updateListing($storeRoom, $data, auth()->id(), $requiresReview);
         } catch (ValidationException $e) {
             return response()->json([
                 'message' => 'Validation Error',
                 'errors' => $e->errors(),
             ], 422);
         }
-
-        $requiresReview = $wasApproved && $updated->publication_status === 'pending';
 
         $payload = [
             'data' => $updated,

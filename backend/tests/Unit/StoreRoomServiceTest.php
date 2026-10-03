@@ -369,4 +369,66 @@ class StoreRoomServiceTest extends TestCase
         $this->assertDatabaseHas('storeRooms', ['id' => $room->id, 'title' => 'Nuevo', 'publication_status' => 'pending']);
         $this->assertDatabaseCount('notifications', 0);
     }
+
+    // --- re-moderation decision uses the in-transaction state --------------------
+
+    private function setStatusBehindTheModel(StoreRooms $room, string $status): void
+    {
+        StoreRooms::whereKey($room->id)->update(['publication_status' => $status]);
+    }
+
+    public function test_update_listing_does_not_flip_a_concurrently_rejected_room_back_to_pending()
+    {
+        User::factory()->create(['role' => 'admin']);
+        $room = StoreRooms::factory()->approved()->create(['title' => 'Viejo']);
+        $this->setStatusBehindTheModel($room, 'rejected');
+
+        $requeued = null;
+        $fresh = (new StoreRoomService)->updateListing($room, ['title' => 'Nuevo'], $room->landlord->user_id, $requeued);
+
+        $this->assertSame('rejected', $fresh->publication_status);
+        $this->assertDatabaseHas('storeRooms', ['id' => $room->id, 'title' => 'Nuevo', 'publication_status' => 'rejected']);
+        $this->assertFalse($requeued);
+        $this->assertDatabaseCount('notifications', 0);
+    }
+
+    public function test_update_listing_requeues_a_room_that_was_concurrently_approved()
+    {
+        $admin = User::factory()->create(['role' => 'admin']);
+        $room = StoreRooms::factory()->create(['title' => 'Viejo']);
+        $this->setStatusBehindTheModel($room, 'approved');
+
+        $requeued = null;
+        $fresh = (new StoreRoomService)->updateListing($room, ['title' => 'Nuevo'], $room->landlord->user_id, $requeued);
+
+        $this->assertSame('pending', $fresh->publication_status);
+        $this->assertDatabaseHas('storeRooms', ['id' => $room->id, 'publication_status' => 'pending']);
+        $this->assertTrue($requeued);
+        $this->assertDatabaseHas('notifications', ['receiver_id' => $admin->id, 'type' => 'store_edited']);
+    }
+
+    public function test_replace_permit_does_not_flip_a_concurrently_rejected_room_back_to_pending()
+    {
+        User::factory()->create(['role' => 'admin']);
+        $room = StoreRooms::factory()->approved()->create();
+        $this->setStatusBehindTheModel($room, 'rejected');
+
+        $fresh = (new StoreRoomService)->replacePermit($room, $this->fakePermit(), $room->landlord->user_id);
+
+        $this->assertSame('rejected', $fresh->publication_status);
+        $this->assertDatabaseHas('storeRooms', ['id' => $room->id, 'publication_status' => 'rejected']);
+        $this->assertDatabaseCount('notifications', 0);
+    }
+
+    public function test_replace_permit_requeues_a_room_that_was_concurrently_approved()
+    {
+        $admin = User::factory()->create(['role' => 'admin']);
+        $room = StoreRooms::factory()->create();
+        $this->setStatusBehindTheModel($room, 'approved');
+
+        $fresh = (new StoreRoomService)->replacePermit($room, $this->fakePermit(), $room->landlord->user_id);
+
+        $this->assertSame('pending', $fresh->publication_status);
+        $this->assertDatabaseHas('notifications', ['receiver_id' => $admin->id, 'type' => 'store_permit_replaced']);
+    }
 }
