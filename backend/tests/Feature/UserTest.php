@@ -13,35 +13,14 @@ class UserTest extends TestCase
 {
     use RefreshDatabase;
 
-    // --- Fase 0.5: GET /user ahora requiere sesión (lo consumen tanto admin
-    // como la mensajería de landlord/tenant, por eso no se restringe a role:admin).
+    // --- GET /user requires a session. Admins get the full row; every other
+    // caller only gets the messaging-contact fields (id, name, lastname).
 
     public function test_index_requires_authentication()
     {
         $response = $this->getJson('/api/user');
 
         $response->assertStatus(401);
-    }
-
-    public function test_index_returns_404_when_no_users_exist_besides_the_caller()
-    {
-        $caller = User::factory()->create();
-
-        $response = $this->actingAs($caller, 'sanctum')->getJson('/api/user');
-
-        $response->assertStatus(200);
-        $response->assertJsonCount(1);
-    }
-
-    public function test_index_returns_users_when_authenticated()
-    {
-        $caller = User::factory()->create();
-        User::factory()->count(2)->create();
-
-        $response = $this->actingAs($caller, 'sanctum')->getJson('/api/user');
-
-        $response->assertStatus(200);
-        $response->assertJsonCount(3);
     }
 
     public function test_show_requires_authentication()
@@ -53,24 +32,131 @@ class UserTest extends TestCase
         $response->assertStatus(401);
     }
 
-    public function test_show_returns_existing_user_when_authenticated()
+    public function test_admin_index_returns_the_full_rows()
     {
-        $caller = User::factory()->create();
-        $user = User::factory()->create();
+        $admin = User::factory()->create(['role' => 'admin']);
+        User::factory()->count(2)->create();
 
-        $response = $this->actingAs($caller, 'sanctum')->getJson("/api/user/{$user->id}");
+        $response = $this->bearerAs($admin)->getJson('/api/user');
 
         $response->assertStatus(200);
-        $response->assertJsonPath('id', $user->id);
+        $response->assertJsonCount(3);
+        $response->assertJsonStructure(['*' => ['id', 'name', 'lastname', 'email', 'phone', 'role', 'state']]);
     }
 
-    public function test_show_returns_404_for_missing_user()
+    public function test_admin_show_returns_the_full_row()
     {
-        $caller = User::factory()->create();
+        $admin = User::factory()->create(['role' => 'admin']);
+        $target = User::factory()->create(['role' => 'tenant']);
 
-        $response = $this->actingAs($caller, 'sanctum')->getJson('/api/user/999999');
+        $response = $this->bearerAs($admin)->getJson("/api/user/{$target->id}");
+
+        $response->assertStatus(200);
+        $response->assertJsonStructure(['id', 'name', 'lastname', 'email', 'phone', 'role', 'state']);
+        $response->assertJsonPath('id', $target->id);
+        $response->assertJsonPath('email', $target->email);
+        $response->assertJsonPath('phone', $target->phone);
+        $response->assertJsonPath('role', 'tenant');
+        $response->assertJsonMissingPath('password');
+    }
+
+    #[DataProvider('adminAndTenantProvider')]
+    public function test_show_returns_404_for_missing_user(string $role)
+    {
+        $caller = User::factory()->create(['role' => $role]);
+
+        $response = $this->bearerAs($caller)->getJson('/api/user/999999');
 
         $response->assertStatus(404);
+    }
+
+    public function test_tenant_cannot_update_another_user()
+    {
+        $caller = User::factory()->create(['role' => 'tenant']);
+        $target = User::factory()->create(['name' => 'Antiguo']);
+
+        $response = $this->bearerAs($caller)->putJson("/api/user/{$target->id}", ['name' => 'Nuevo']);
+
+        $this->assertSame('Antiguo', $target->fresh()->name);
+        $response->assertStatus(403);
+    }
+
+    public function test_index_with_only_the_caller_returns_one_item()
+    {
+        $caller = User::factory()->create(['role' => 'tenant']);
+
+        $response = $this->bearerAs($caller)->getJson('/api/user');
+
+        $response->assertStatus(200);
+        $response->assertJsonCount(1);
+    }
+
+    public function test_non_admin_index_returns_only_id_name_and_lastname()
+    {
+        $caller = User::factory()->create(['role' => 'tenant']);
+        User::factory()->count(2)->create();
+
+        $response = $this->bearerAs($caller)->getJson('/api/user');
+
+        $response->assertStatus(200);
+        $response->assertJsonCount(3);
+        foreach ($response->json() as $item) {
+            $keys = array_keys($item);
+            sort($keys);
+            $this->assertSame(['id', 'lastname', 'name'], $keys);
+        }
+    }
+
+    public function test_non_admin_show_returns_only_id_name_and_lastname()
+    {
+        $caller = User::factory()->create(['role' => 'tenant']);
+        $target = User::factory()->create(['role' => 'landlord']);
+
+        $response = $this->bearerAs($caller)->getJson("/api/user/{$target->id}");
+
+        $response->assertStatus(200);
+        $keys = array_keys($response->json());
+        sort($keys);
+        $this->assertSame(['id', 'lastname', 'name'], $keys);
+        $response->assertJsonPath('id', $target->id);
+        $response->assertJsonPath('name', $target->name);
+        $response->assertJsonPath('lastname', $target->lastname);
+    }
+
+    #[DataProvider('projectionEndpointProvider')]
+    public function test_non_admin_response_never_contains_email_or_phone(bool $listing)
+    {
+        $caller = User::factory()->create(['role' => 'tenant']);
+        $target = User::factory()->create(['email' => 'secreto@leodega.com', 'phone' => '0998887776']);
+
+        $response = $this->bearerAs($caller)->getJson($listing ? '/api/user' : "/api/user/{$target->id}");
+
+        $response->assertStatus(200);
+        $this->assertStringNotContainsString('secreto@leodega.com', $response->getContent());
+        $this->assertStringNotContainsString('0998887776', $response->getContent());
+    }
+
+    public static function adminAndTenantProvider(): array
+    {
+        return [
+            'admin' => ['admin'],
+            'tenant' => ['tenant'],
+        ];
+    }
+
+    public static function projectionEndpointProvider(): array
+    {
+        return [
+            'index' => [true],
+            'show' => [false],
+        ];
+    }
+
+    private function bearerAs(User $user): static
+    {
+        $this->app['auth']->forgetGuards();
+
+        return $this->withToken($user->createToken('auth_token')->plainTextToken);
     }
 
     // --- POST /user se mantiene público a propósito: es el alta de cuenta real

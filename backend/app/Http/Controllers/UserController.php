@@ -12,14 +12,28 @@ use Illuminate\Support\Facades\DB;
 
 class UserController extends ApiController
 {
-    public function index()
+    // Admins get the full row; every other caller only gets the messaging-contact fields.
+    public function index(Request $request)
     {
-        return $this->indexModel(User::class);
+        if ($request->user()->role === 'admin') {
+            return $this->indexModel(User::class);
+        }
+
+        return response()->json(User::query()->get(['id', 'name', 'lastname']), 200);
     }
 
-    public function show($id)
+    public function show(Request $request, $id)
     {
-        return $this->showModel(User::class, $id);
+        if ($request->user()->role === 'admin') {
+            return $this->showModel(User::class, $id);
+        }
+
+        $item = User::select(['id', 'name', 'lastname'])->find($id);
+        if (! $item) {
+            return response()->json(['message' => 'Item not found'], 404);
+        }
+
+        return response()->json($item, 200);
     }
 
     public function store(Request $request, UserRegistrationService $registrationService)
