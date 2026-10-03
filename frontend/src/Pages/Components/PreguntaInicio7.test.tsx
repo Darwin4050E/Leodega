@@ -220,11 +220,72 @@ describe('PreguntaInicio7 — submit gate and permit requirement', () => {
     expect(formData.get('firefighter_permit')).toBe(permitFile);
     expect(formData.get('storePrices[0][mode]')).toBe('month');
     expect(formData.get('storePrices[0][price]')).toBe('150');
+    expect(formData.get('size')).toBe('30');
 
     // Photos are still uploaded via the separate endpoint, after registration.
     expect(mockUploadPhotos).toHaveBeenCalledWith(42, expect.any(FormData));
 
     expect(resetMock).toHaveBeenCalled();
+  });
+});
+
+describe('PreguntaInicio7 — no zero fallbacks for size and price', () => {
+  beforeEach(() => {
+    localStorage.clear();
+    vi.clearAllMocks();
+  });
+
+  const submitWith = async (priceData: Record<string, unknown> | undefined) => {
+    const user = userEvent.setup();
+    const alertSpy = vi.spyOn(window, 'alert').mockImplementation(() => {});
+
+    const wrapper = WizardWrapper({
+      photos: [],
+      permit: makeFile('permit.pdf', 'application/pdf'),
+      reset: vi.fn(),
+    });
+
+    localStorage.setItem('optionData', JSON.stringify({
+      step1Data: { selectedOption: 'bodega' },
+      step2Data: { selectedOption: 'completa' },
+      location: { direction: 'Av. Test', city: 'Quito' },
+      ...(priceData ? { priceData } : {}),
+      titleData: { titulo: 'Bodega A', descripcion: 'Desc' },
+    }));
+
+    render(<PreguntaInicio7 />, { wrapper });
+
+    fireEvent.change(screen.getByRole('combobox'), { target: { value: 'flexible' } });
+    await user.click(screen.getByTestId('submit-btn'));
+
+    return alertSpy;
+  };
+
+  it.each([
+    ['size is zero', { tamano: 0, precio: 150 }],
+    ['price is zero', { tamano: 30, precio: 0 }],
+    ['size is an empty string', { tamano: '', precio: 150 }],
+    ['price is an empty string', { tamano: 30, precio: '' }],
+    ['the price step data is missing', undefined],
+  ])('alerts and sends no request when %s', async (_label, priceData) => {
+    const alertSpy = await submitWith(priceData);
+
+    expect(alertSpy).toHaveBeenCalledTimes(1);
+    expect(mockCreateStoreRoom).not.toHaveBeenCalled();
+  });
+
+  it('sends the entered size and price without any fallback', async () => {
+    mockCreateStoreRoom.mockResolvedValue({ status: 201, data: { item: { id: 9 } } });
+    const alertSpy = await submitWith({ tamano: '12.5', precio: '80.25' });
+
+    await vi.waitFor(() => {
+      expect(mockCreateStoreRoom).toHaveBeenCalledTimes(1);
+    });
+
+    const [formData] = mockCreateStoreRoom.mock.calls[0];
+    expect(formData.get('size')).toBe('12.5');
+    expect(formData.get('storePrices[0][price]')).toBe('80.25');
+    expect(alertSpy).not.toHaveBeenCalled();
   });
 });
 

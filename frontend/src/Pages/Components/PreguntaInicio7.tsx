@@ -79,18 +79,25 @@ const PreguntaInicio7 = () => {
       return;
     }
 
+    const data = JSON.parse(localStorage.getItem("optionData") || "{}");
+    const size = Number(data.priceData?.tamano);
+    const price = Number(data.priceData?.precio);
+
+    if (!(size > 0) || !(price > 0)) {
+      alert("Indica un tamaño y un precio mayores a cero para continuar.");
+      return;
+    }
+
     try {
       setIsModalOpen(false);
       setIsProcessing(true);
-
-      const data = JSON.parse(localStorage.getItem("optionData") || "{}");
 
       const formData = new FormData();
       formData.append("room_type", data.step1Data?.selectedOption || "");
       formData.append("storage_type", data.step2Data?.selectedOption || "");
       formData.append("direction", data.location?.direction || "");
       formData.append("city", data.location?.city || "");
-      formData.append("size", String(Number(data.priceData?.tamano) || 0));
+      formData.append("size", String(size));
       formData.append("title", data.titleData?.titulo || "");
       formData.append("description", data.titleData?.descripcion || "");
       formData.append("security", JSON.stringify(seguridad));
@@ -108,7 +115,7 @@ const PreguntaInicio7 = () => {
       }
 
       formData.append("storePrices[0][mode]", "month");
-      formData.append("storePrices[0][price]", String(Number(data.priceData?.precio) || 0));
+      formData.append("storePrices[0][price]", String(price));
       formData.append("storePrices[0][disponibility]", "true");
 
       const response = await createStoreRoom(formData);
