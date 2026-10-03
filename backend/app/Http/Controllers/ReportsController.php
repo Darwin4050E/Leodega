@@ -62,9 +62,4 @@ class ReportsController extends ApiController
             'report' => $report->load(['user', 'store', 'evidences']),
         ]);
     }
-
-    public function destroy($id)
-    {
-        return $this->destroyModel(Reports::class, $id);
-    }
 }

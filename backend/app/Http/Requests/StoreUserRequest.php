@@ -3,8 +3,13 @@
 namespace App\Http\Requests;
 
 /**
- * Bolsa de reglas, no FormRequest — ver StoreAdminRequest para la explicación
- * completa de por qué no se inyecta como type-hint.
+ * Rule bag, deliberately NOT a Laravel FormRequest: UserController passes these
+ * rules to ApiController::storeModel(), which validates manually and answers
+ * with its own validation error body. Injecting this class as a controller
+ * type-hint would make Laravel resolve and validate it in the pipeline and
+ * return its standard validation response instead, changing the API contract.
+ * Use it only as a rule bag: (new StoreUserRequest)->rules(). The other
+ * rule-bag classes in this namespace refer here for the full explanation.
  */
 class StoreUserRequest
 {

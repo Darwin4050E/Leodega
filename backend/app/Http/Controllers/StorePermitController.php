@@ -14,9 +14,8 @@ class StorePermitController extends ApiController
      * The permit is written during atomic room registration
      * (StoreRoomService::register) and never uploaded through a separate
      * endpoint. Access is restricted to the admin role via the route
-     * middleware (role:admin, same as StoreModerationController and
-     * AdminController routes). A landlord MUST NOT be able to download
-     * another room's permit.
+     * middleware (role:admin, same as StoreModerationController routes).
+     * A landlord MUST NOT be able to download another room's permit.
      */
     public function download(Request $request, $storeRoomId)
     {

@@ -2,6 +2,7 @@
 
 namespace Tests\Feature;
 
+use App\Models\Landlords;
 use App\Models\StorePhoto;
 use App\Models\StoreRooms;
 use App\Models\User;
@@ -18,17 +19,23 @@ class StoreRoomPhotoUploadTest extends TestCase
 {
     use RefreshDatabase;
 
-    private function landlord(): User
+    /**
+     * @return array{0: User, 1: StoreRooms}
+     */
+    private function ownerWithRoom(): array
     {
-        return User::factory()->create(['role' => 'landlord']);
+        $user = User::factory()->create(['role' => 'landlord']);
+        $landlord = Landlords::factory()->create(['user_id' => $user->id]);
+
+        return [$user, StoreRooms::factory()->create(['landlord_id' => $landlord->id])];
     }
 
     public function test_fewer_than_three_photos_is_rejected(): void
     {
         Storage::fake('public');
-        $room = StoreRooms::factory()->create();
+        [$owner, $room] = $this->ownerWithRoom();
 
-        $response = $this->actingAs($this->landlord(), 'sanctum')->postJson(
+        $response = $this->actingAs($owner, 'sanctum')->postJson(
             "/api/store-rooms/{$room->id}/photos",
             ['photos' => [UploadedFile::fake()->image('a.jpg'), UploadedFile::fake()->image('b.jpg')]],
         );
@@ -41,9 +48,9 @@ class StoreRoomPhotoUploadTest extends TestCase
     public function test_three_photos_are_accepted(): void
     {
         Storage::fake('public');
-        $room = StoreRooms::factory()->create();
+        [$owner, $room] = $this->ownerWithRoom();
 
-        $response = $this->actingAs($this->landlord(), 'sanctum')->postJson(
+        $response = $this->actingAs($owner, 'sanctum')->postJson(
             "/api/store-rooms/{$room->id}/photos",
             ['photos' => [
                 UploadedFile::fake()->image('a.jpg'),

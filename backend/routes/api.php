@@ -1,7 +1,6 @@
 <?php
 
 use App\Http\Controllers\AccountModerationController;
-use App\Http\Controllers\AdminController;
 use App\Http\Controllers\AuthController;
 use App\Http\Controllers\CancelationsPolicesController;
 use App\Http\Controllers\ConversationController;
@@ -58,7 +57,8 @@ Route::middleware('auth.api:sanctum')->group(function () {
 });
 // POST se mantiene público: es el mecanismo real de alta de cuenta que usa
 // Decision.tsx tras el flujo de "¿cuál es tu rol?". UserController::store
-// rechaza role=admin para cualquier llamador; los admins se crean por POST /admin.
+// rechaza role=admin para cualquier llamador; no hay ruta HTTP que cree admins
+// (los provisiona AdminUserSeeder).
 Route::post('/user', [UserController::class, 'store']);
 Route::middleware(['auth.api:sanctum', 'role:admin'])->group(function () {
     Route::put('/user/{id}', [UserController::class, 'update']);
@@ -79,13 +79,8 @@ Route::get('/landlords/{id}', [LandlordsController::class, 'show']);
 // from landlords.user_id.
 Route::get('/landlords/{id}/storeRooms', [StoreRoomsController::class, 'getByLandlord']);
 
-Route::middleware(['auth.api:sanctum', 'role:admin'])->group(function () {
-    Route::get('/admin', [AdminController::class, 'index']);
-    Route::get('/admin/{id}', [AdminController::class, 'show']);
-    Route::post('/admin', [AdminController::class, 'store']);
-    Route::put('/admin/{id}', [AdminController::class, 'update']);
-    Route::delete('/admin/{id}', [AdminController::class, 'destroy']);
-});
+// /admin was removed on purpose: it wrote the unused Admin profile model, never
+// user accounts; admin accounts are provisioned by AdminUserSeeder.
 
 // /tenants was removed on purpose: tenants rows are created over HTTP only by
 // UserRegistrationService (POST /user) and ownership derives from tenants.user_id.
@@ -118,11 +113,8 @@ Route::middleware('auth.api:sanctum')->group(function () {
 
 Route::get('/storePrices', [StorePricesController::class, 'index']);
 Route::get('/storePrices/{id}', [StorePricesController::class, 'show']);
-Route::middleware('auth.api:sanctum')->group(function () {
-    Route::post('/storePrices', [StorePricesController::class, 'store']);
-    Route::put('/storePrices/{id}', [StorePricesController::class, 'update']);
-    Route::delete('/storePrices/{id}', [StorePricesController::class, 'destroy']);
-});
+// storePrices writes were removed on purpose: ownership would derive from the
+// room's landlord, and price rows are created over HTTP only by StoreRoomService.
 
 // Las fotos no estaban en la tabla original de la Fase 0.5: se detectaron sin
 // protección al reescribir este archivo y se cierran aquí mismo por ser el
@@ -136,7 +128,6 @@ Route::middleware('auth.api:sanctum')->group(function () {
 // /favorites was removed on purpose: the generic CRUD let any caller read, forge
 // or delete any user's favorites; ownership would derive from favorites.user_id.
 
-Route::get('/storeDisponibility/{id}', [StoreDisponibilityController::class, 'show']);
 Route::middleware('auth.api:sanctum')->group(function () {
     // index() is scoped to the authenticated landlord's own storerooms
     // (obs #263), so it needs the same guard as the write actions below.

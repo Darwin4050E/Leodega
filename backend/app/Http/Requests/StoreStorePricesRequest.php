@@ -3,7 +3,7 @@
 namespace App\Http\Requests;
 
 /**
- * Bolsa de reglas, no FormRequest — ver StoreAdminRequest para la explicación
+ * Bolsa de reglas, no FormRequest — ver StoreUserRequest para la explicación
  * completa de por qué no se inyecta como type-hint.
  */
 class StoreStorePricesRequest

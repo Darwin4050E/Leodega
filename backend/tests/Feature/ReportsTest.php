@@ -209,6 +209,10 @@ class ReportsTest extends TestCase
         $this->assertNotContains('role:admin', $create->first()->gatherMiddleware());
 
         $this->assertFalse(method_exists(ReportsController::class, 'update'));
+        $this->assertFalse(method_exists(ReportsController::class, 'destroy'));
+        foreach (['index', 'show', 'store', 'updateStatus'] as $method) {
+            $this->assertTrue(method_exists(ReportsController::class, $method), $method);
+        }
         $this->assertFileDoesNotExist(app_path('Http/Requests/UpdateReportRequest.php'));
     }
 
