@@ -1,5 +1,11 @@
 <?php
 
+use App\Exceptions\AccountBlockedException;
+use App\Exceptions\AccountModerationException;
+use App\Exceptions\DuplicateRatingException;
+use App\Exceptions\ReservationConflictException;
+use App\Exceptions\ReservationPricingException;
+use App\Exceptions\StoreRoomResubmissionException;
 use App\Http\Middleware\ApiAuthenticate;
 use App\Http\Middleware\EnsureUserHasRole;
 use Illuminate\Foundation\Application;
@@ -29,5 +35,12 @@ return Application::configure(basePath: dirname(__DIR__))
         ]);
     })
     ->withExceptions(function (Exceptions $exceptions): void {
-        //
+        $exceptions->dontReport([
+            AccountBlockedException::class,
+            AccountModerationException::class,
+            DuplicateRatingException::class,
+            ReservationConflictException::class,
+            ReservationPricingException::class,
+            StoreRoomResubmissionException::class,
+        ]);
     })->create();

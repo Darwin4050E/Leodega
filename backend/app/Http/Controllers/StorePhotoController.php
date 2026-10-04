@@ -3,11 +3,15 @@
 namespace App\Http\Controllers;
 
 use App\Http\Requests\StoreStorePhotoRequest;
+use App\Models\Landlords;
 use App\Models\StorePhoto;
+use App\Models\StoreRooms;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Gate;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Facades\Validator;
+use Illuminate\Validation\ValidationException;
 
 class StorePhotoController extends ApiController
 {
@@ -21,8 +25,24 @@ class StorePhotoController extends ApiController
         return $this->showModel(StorePhoto::class, $id);
     }
 
+    /**
+     * 404 for a missing/soft-deleted room or a caller without a Landlord profile,
+     * 403 when the caller does not own the room. Runs before any validation or
+     * file work; there is no admin override (same rule as StoreRoomsPolicy::update).
+     */
+    private function authorizeOwnedRoom($roomId): StoreRooms
+    {
+        $room = StoreRooms::find($roomId) ?? abort(404, 'Bodega no encontrada');
+        $landlord = Landlords::where('user_id', auth()->id())->firstOrFail();
+
+        Gate::authorize('update', [$room, $landlord]);
+
+        return $room;
+    }
+
     public function store(Request $request, $storeRoomId)
     {
+        $room = $this->authorizeOwnedRoom($storeRoomId);
 
         $rules = new StoreStorePhotoRequest;
         $validator = Validator::make($request->all(), $rules->rules(), $rules->messages());
@@ -31,17 +51,25 @@ class StorePhotoController extends ApiController
             return response()->json([
                 'message' => 'Validation Error',
                 'errors' => $validator->errors(),
-            ], 400);
+            ], 422);
         }
 
         $photosSaved = [];
 
-        DB::transaction(function () use ($request, $storeRoomId, &$photosSaved) {
+        DB::transaction(function () use ($request, $room, &$photosSaved) {
+            $lockedRoom = StoreRooms::whereKey($room->id)->lockForUpdate()->first();
+
+            if ($lockedRoom->storePhotos()->count() + count($request->file('photos')) > StoreRooms::MAX_PHOTOS) {
+                throw ValidationException::withMessages([
+                    'photos' => 'Una bodega no puede tener más de '.StoreRooms::MAX_PHOTOS.' fotos.',
+                ]);
+            }
+
             foreach ($request->file('photos') as $photo) {
                 $path = $photo->store('store_photos', 'public');
 
                 $photosSaved[] = StorePhoto::create([
-                    'store_room_id' => $storeRoomId,
+                    'store_room_id' => $room->id,
                     'photo_url' => $path,
                 ]);
             }
@@ -60,9 +88,11 @@ class StorePhotoController extends ApiController
         ], 405);
     }
 
-    public function destroy($id)
+    public function destroy($storeRoomId, $photoId)
     {
-        $photo = StorePhoto::find($id);
+        $room = $this->authorizeOwnedRoom($storeRoomId);
+
+        $photo = $room->storePhotos()->whereKey($photoId)->first();
 
         if (! $photo) {
             return response()->json([
@@ -70,8 +100,19 @@ class StorePhotoController extends ApiController
             ], 404);
         }
 
+        DB::transaction(function () use ($room, $photo) {
+            StoreRooms::whereKey($room->id)->lockForUpdate()->first();
+
+            if ($room->storePhotos()->count() <= StoreRooms::MIN_PHOTOS) {
+                throw ValidationException::withMessages([
+                    'photos' => 'Una bodega debe conservar al menos '.StoreRooms::MIN_PHOTOS.' fotos. Sube la nueva foto antes de eliminar la anterior.',
+                ]);
+            }
+
+            $photo->delete();
+        });
+
         Storage::disk('public')->delete($photo->photo_url);
-        $photo->delete();
 
         return response()->json([
             'message' => 'Photo deleted successfully',

@@ -51,4 +51,38 @@ class RatingsServiceTest extends TestCase
             'comment' => 'Otra vez',
         ]);
     }
+
+    public function test_summary_for_returns_average_and_count_when_ratings_exist()
+    {
+        $storeRoom = StoreRooms::factory()->create();
+
+        Ratings::factory()->create(['store_id' => $storeRoom->id, 'stars' => 4]);
+        Ratings::factory()->create(['store_id' => $storeRoom->id, 'stars' => 2]);
+
+        $summary = (new RatingsService)->summaryFor($storeRoom->id);
+
+        $this->assertSame(3.0, $summary['avg']);
+        $this->assertSame(2, $summary['count']);
+    }
+
+    /**
+     * Eloquent's avg() returns NULL with zero matching rows, and PHP 8.1+
+     * deprecates round(null, ...). summaryFor() must guard against this so
+     * the notice never resurfaces (see Engram obs #221).
+     */
+    public function test_summary_for_returns_zero_avg_and_count_without_deprecation_notice()
+    {
+        $storeRoom = StoreRooms::factory()->create();
+
+        $errorLevel = error_reporting(E_ALL);
+
+        try {
+            $summary = (new RatingsService)->summaryFor($storeRoom->id);
+        } finally {
+            error_reporting($errorLevel);
+        }
+
+        $this->assertSame(0.0, $summary['avg']);
+        $this->assertSame(0, $summary['count']);
+    }
 }

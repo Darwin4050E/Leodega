@@ -21,7 +21,7 @@ class ReservationCancellationObligationFactory extends Factory
         return [
             'reservation_id' => Reservations::factory(),
             'landlord_id' => Landlords::factory(),
-            'refund_amount' => 4180,
+            'refund_amount' => 4000,
             'penalty_amount' => 450,
             'penalty_rate' => 0.15,
             'reason' => 'El almacen sufrio un incendio',

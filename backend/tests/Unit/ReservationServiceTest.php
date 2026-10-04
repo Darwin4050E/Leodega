@@ -12,6 +12,7 @@ use App\Models\Tenants;
 use App\Models\User;
 use App\Services\ReservationPricingService;
 use App\Services\ReservationService;
+use Carbon\Carbon;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Tests\TestCase;
 
@@ -53,7 +54,8 @@ class ReservationServiceTest extends TestCase
             'tenant_id' => $tenant->id,
             'status' => 'pending',
             'rent_subtotal' => '3000.00',
-            'total_mount' => '4180.00',
+            // Rent only: the deposit is zero, so the total is the rent.
+            'total_mount' => '3000.00',
         ]);
     }
 
@@ -75,6 +77,29 @@ class ReservationServiceTest extends TestCase
         ], $tenant->user_id);
 
         $this->assertDatabaseCount('notifications', 0);
+    }
+
+    /**
+     * sdd/tenant-self-cancel decision #339: the tier is snapshotted at
+     * booking time so a later change to the storeroom's tier never affects
+     * an already-paying tenant's refund. Persisted here, read only by
+     * CancellationRefundCalculator later.
+     */
+    public function test_create_snapshots_the_room_current_cancellation_policy_tier()
+    {
+        $room = StoreRooms::factory()->create(['cancellation_policy_tier' => 'moderada']);
+        $this->monthPriceFor($room);
+        $tenant = Tenants::factory()->create();
+
+        $reservation = $this->service()->create($tenant, $room, [
+            'start_date' => '2026-02-01',
+            'end_date' => '2026-05-01',
+        ], $tenant->user_id);
+
+        $this->assertDatabaseHas('reservations', [
+            'id' => $reservation->id,
+            'cancellation_policy_tier' => 'moderada',
+        ]);
     }
 
     public function test_create_throws_when_dates_overlap_a_confirmed_reservation()
@@ -173,6 +198,45 @@ class ReservationServiceTest extends TestCase
         ]);
     }
 
+    /**
+     * sdd/hug02-paid-notification-chat S1: the landlord notification `data`
+     * must carry enough structured info for the dropdown to render the
+     * customer/store/amount/dates without a follow-up request.
+     */
+    public function test_confirm_enriches_the_paid_booking_notification_data()
+    {
+        $tenantUser = User::factory()->create(['name' => 'Ana', 'lastname' => 'Torres']);
+        $tenant = Tenants::factory()->create(['user_id' => $tenantUser->id]);
+        $landlordUser = User::factory()->create(['role' => 'landlord']);
+        $landlord = Landlords::factory()->create(['user_id' => $landlordUser->id]);
+        $room = StoreRooms::factory()->create(['landlord_id' => $landlord->id, 'title' => 'Bodega Norte']);
+        $this->monthPriceFor($room);
+
+        $reservation = $this->service()->create($tenant, $room, [
+            'start_date' => '2026-02-01',
+            'end_date' => '2026-05-01',
+        ], $tenant->user_id);
+        $reservation->load('storeRooms');
+
+        $this->service()->confirm($reservation, $tenantUser->id);
+
+        $notification = \App\Models\Notifications::where('receiver_id', $landlordUser->id)
+            ->where('type', 'reservation_booked_and_paid')
+            ->firstOrFail();
+
+        $this->assertSame($reservation->id, $notification->data['reservation_id']);
+        $this->assertSame($room->id, $notification->data['store_room_id']);
+        $this->assertSame('Ana Torres', $notification->data['customer_name']);
+        $this->assertSame('Bodega Norte', $notification->data['store_room_title']);
+        // total_mount has no Eloquent cast; assert the raw stored value
+        // (sqlite in tests returns a native number, MySQL in production
+        // returns a decimal string — both represent the same stored value).
+        $this->assertEquals($reservation->total_mount, $notification->data['amount']);
+        $this->assertEquals(3000, $notification->data['amount']);
+        $this->assertSame('2026-02-01', $notification->data['start_date']);
+        $this->assertSame('2026-05-01', $notification->data['end_date']);
+    }
+
     public function test_confirm_throws_when_another_confirmed_reservation_overlaps()
     {
         $tenant = Tenants::factory()->create();
@@ -199,6 +263,86 @@ class ReservationServiceTest extends TestCase
         $this->service()->confirm($pending, $tenant->user_id);
     }
 
+    /**
+     * sdd/payment-integrity (Slice C1): confirm() must reject a
+     * confirmed -> confirmed self-transition. This guard is pure
+     * defense-in-depth -- confirm() has exactly ONE production caller
+     * (PaymentService::process()'s paid branch), which already filters
+     * out non-pending reservations before ever calling confirm(). It
+     * never fires on the live path today; it protects any future caller.
+     */
+    public function test_confirm_rejects_transition_from_confirmed_status()
+    {
+        $tenant = Tenants::factory()->create();
+        $room = StoreRooms::factory()->create();
+
+        $reservation = Reservations::factory()->create([
+            'store_room_id' => $room->id,
+            'tenant_id' => $tenant->id,
+            'status' => 'confirmed',
+        ]);
+        $reservation->load('storeRooms');
+
+        $this->expectException(ReservationConflictException::class);
+
+        $this->service()->confirm($reservation, $tenant->user_id);
+    }
+
+    /**
+     * sdd/payment-integrity (Slice C1): confirm() must reject a
+     * canceled -> confirmed transition. This is the guard that closes
+     * the resurrection bug from discovery #361 -- a canceled (and
+     * possibly refunded) reservation must never be re-confirmed.
+     */
+    public function test_confirm_rejects_transition_from_canceled_status()
+    {
+        $tenant = Tenants::factory()->create();
+        $room = StoreRooms::factory()->create();
+
+        $reservation = Reservations::factory()->create([
+            'store_room_id' => $room->id,
+            'tenant_id' => $tenant->id,
+            'status' => 'canceled',
+        ]);
+        $reservation->load('storeRooms');
+
+        $this->expectException(ReservationConflictException::class);
+
+        $this->service()->confirm($reservation, $tenant->user_id);
+    }
+
+    /**
+     * Mirrors test_cancel_by_tenant_re_validates_against_the_locked_row_not_the_stale_instance:
+     * confirm() must re-validate against the LOCKED row it re-fetches
+     * inside its own transaction, never trust the $reservation instance
+     * the caller passed in. Simulates a competing status mutation that
+     * landed between the caller's read and this call by mutating the DB
+     * row directly while the in-memory $reservation still reflects the
+     * pre-mutation, eligible ("pending") state.
+     */
+    public function test_confirm_re_validates_against_the_locked_row_not_the_stale_instance()
+    {
+        $tenant = Tenants::factory()->create();
+        $room = StoreRooms::factory()->create();
+
+        $reservation = Reservations::factory()->create([
+            'store_room_id' => $room->id,
+            'tenant_id' => $tenant->id,
+            'status' => 'pending',
+        ]);
+        $reservation->load('storeRooms');
+
+        // A concurrent operation wins the race and cancels the row first.
+        Reservations::where('id', $reservation->id)->update(['status' => 'canceled']);
+
+        try {
+            $this->service()->confirm($reservation, $tenant->user_id);
+            $this->fail('Expected ReservationConflictException');
+        } catch (ReservationConflictException $e) {
+            $this->assertDatabaseCount('notifications', 0);
+        }
+    }
+
     public function test_cancel_by_landlord_creates_obligation_and_notifies_tenant_leaving_payment_untouched()
     {
         $tenantUser = User::factory()->create();
@@ -214,7 +358,7 @@ class ReservationServiceTest extends TestCase
             'start_date' => now()->addDays(5)->toDateString(),
             'end_date' => now()->addDays(35)->toDateString(),
             'rent_subtotal' => 3000,
-            'total_mount' => 4180,
+            'total_mount' => 4000,
         ]);
 
         \App\Models\Payments::factory()->create([
@@ -232,7 +376,7 @@ class ReservationServiceTest extends TestCase
         $this->assertDatabaseHas('reservation_cancellation_obligations', [
             'reservation_id' => $reservation->id,
             'landlord_id' => $landlord->id,
-            'refund_amount' => '4180.00',
+            'refund_amount' => '4000.00',
             'penalty_amount' => '450.00',
             'penalty_rate' => '0.1500',
             'settlement_status' => 'pending_settlement',
@@ -267,7 +411,7 @@ class ReservationServiceTest extends TestCase
             'start_date' => now()->addDays(5)->toDateString(),
             'end_date' => now()->addDays(35)->toDateString(),
             'rent_subtotal' => 3000,
-            'total_mount' => 4180,
+            'total_mount' => 4000,
         ]);
 
         $this->service()->cancelByLandlord($reservation, 'El almacen sufrio un incendio', $landlordUser->id);
@@ -295,7 +439,7 @@ class ReservationServiceTest extends TestCase
             'start_date' => today()->toDateString(),
             'end_date' => today()->addDays(30)->toDateString(),
             'rent_subtotal' => 3000,
-            'total_mount' => 4180,
+            'total_mount' => 4000,
         ]);
 
         try {
@@ -318,7 +462,7 @@ class ReservationServiceTest extends TestCase
             'start_date' => today()->subDays(2)->toDateString(),
             'end_date' => today()->addDays(30)->toDateString(),
             'rent_subtotal' => 3000,
-            'total_mount' => 4180,
+            'total_mount' => 4000,
         ]);
 
         try {
@@ -341,7 +485,7 @@ class ReservationServiceTest extends TestCase
             'start_date' => now()->addDays(5)->toDateString(),
             'end_date' => now()->addDays(35)->toDateString(),
             'rent_subtotal' => 3000,
-            'total_mount' => 4180,
+            'total_mount' => 4000,
         ]);
 
         try {
@@ -364,7 +508,7 @@ class ReservationServiceTest extends TestCase
             'start_date' => now()->addDays(5)->toDateString(),
             'end_date' => now()->addDays(35)->toDateString(),
             'rent_subtotal' => 3000,
-            'total_mount' => 4180,
+            'total_mount' => 4000,
         ]);
 
         try {
@@ -373,6 +517,408 @@ class ReservationServiceTest extends TestCase
         } catch (ReservationConflictException $e) {
             $this->assertDatabaseCount('reservation_cancellation_obligations', 0);
         }
+    }
+
+    // -- sdd/hug02-payment-hold-expiry: create() lock/supersede/block -----
+
+    protected function tearDown(): void
+    {
+        Carbon::setTestNow();
+        parent::tearDown();
+    }
+
+    public function test_create_supersedes_tenants_own_overlapping_active_hold_without_notifying()
+    {
+        $room = StoreRooms::factory()->create();
+        $this->monthPriceFor($room);
+        $tenant = Tenants::factory()->create();
+
+        $firstHold = $this->service()->create($tenant, $room, [
+            'start_date' => '2026-07-01',
+            'end_date' => '2026-07-10',
+        ], $tenant->user_id);
+
+        $secondHold = $this->service()->create($tenant, $room, [
+            'start_date' => '2026-07-05',
+            'end_date' => '2026-07-15',
+        ], $tenant->user_id);
+
+        $this->assertDatabaseHas('reservations', [
+            'id' => $firstHold->id,
+            'status' => 'canceled',
+            'cancelation_reason' => 'Superseded by a newer hold',
+        ]);
+        $this->assertDatabaseHas('reservations', [
+            'id' => $secondHold->id,
+            'status' => 'pending',
+        ]);
+        $this->assertDatabaseCount('notifications', 0);
+    }
+
+    public function test_create_does_not_supersede_a_non_overlapping_own_hold()
+    {
+        $room = StoreRooms::factory()->create();
+        $this->monthPriceFor($room);
+        $tenant = Tenants::factory()->create();
+
+        $firstHold = $this->service()->create($tenant, $room, [
+            'start_date' => '2026-07-01',
+            'end_date' => '2026-07-10',
+        ], $tenant->user_id);
+
+        $this->service()->create($tenant, $room, [
+            'start_date' => '2026-08-01',
+            'end_date' => '2026-08-10',
+        ], $tenant->user_id);
+
+        $this->assertDatabaseHas('reservations', [
+            'id' => $firstHold->id,
+            'status' => 'pending',
+        ]);
+    }
+
+    public function test_create_blocks_when_another_tenant_has_an_active_hold()
+    {
+        $room = StoreRooms::factory()->create();
+        $this->monthPriceFor($room);
+        $tenantA = Tenants::factory()->create();
+        $tenantB = Tenants::factory()->create();
+
+        $this->service()->create($tenantA, $room, [
+            'start_date' => '2026-07-01',
+            'end_date' => '2026-07-10',
+        ], $tenantA->user_id);
+
+        $this->expectException(ReservationConflictException::class);
+
+        $this->service()->create($tenantB, $room, [
+            'start_date' => '2026-07-05',
+            'end_date' => '2026-07-15',
+        ], $tenantB->user_id);
+    }
+
+    public function test_create_allows_a_new_hold_once_the_blocking_hold_has_expired()
+    {
+        $room = StoreRooms::factory()->create();
+        $this->monthPriceFor($room);
+        $tenantA = Tenants::factory()->create();
+        $tenantB = Tenants::factory()->create();
+
+        config(['reservations.payment_hold_minutes' => 15]);
+        Carbon::setTestNow(now()->subMinutes(20));
+        $this->service()->create($tenantA, $room, [
+            'start_date' => '2026-07-01',
+            'end_date' => '2026-07-10',
+        ], $tenantA->user_id);
+        Carbon::setTestNow();
+
+        $secondHold = $this->service()->create($tenantB, $room, [
+            'start_date' => '2026-07-05',
+            'end_date' => '2026-07-15',
+        ], $tenantB->user_id);
+
+        $this->assertDatabaseHas('reservations', [
+            'id' => $secondHold->id,
+            'status' => 'pending',
+        ]);
+    }
+
+    // -- sdd/hug02-payment-hold-expiry: expireElapsedHolds() --------------
+
+    public function test_expire_elapsed_holds_transitions_and_notifies_within_recency_window()
+    {
+        Carbon::setTestNow('2026-01-01 12:00:00');
+        config(['reservations.payment_hold_minutes' => 15, 'reservations.payment_hold_notify_recency_hours' => 24]);
+
+        $landlordUser = User::factory()->create(['role' => 'landlord']);
+        $landlord = Landlords::factory()->create(['user_id' => $landlordUser->id]);
+        $room = StoreRooms::factory()->create(['landlord_id' => $landlord->id]);
+        $tenantUser = User::factory()->create();
+        $tenant = Tenants::factory()->create(['user_id' => $tenantUser->id]);
+
+        $reservation = Reservations::factory()->create([
+            'store_room_id' => $room->id,
+            'tenant_id' => $tenant->id,
+            'status' => 'pending',
+            'created_at' => Carbon::parse('2026-01-01 09:45:00'), // elapsed 2h15m ago, within 24h
+        ]);
+
+        $this->service()->expireElapsedHolds(Reservations::where('store_room_id', $room->id));
+
+        $this->assertDatabaseHas('reservations', [
+            'id' => $reservation->id,
+            'status' => 'canceled',
+            'cancelation_reason' => 'Expired: payment hold elapsed',
+        ]);
+        $this->assertDatabaseHas('notifications', [
+            'sender_id' => $tenantUser->id,
+            'receiver_id' => $landlordUser->id,
+            'type' => 'reservation_expired',
+            'title' => 'Reserva expirada',
+            'body' => 'El cliente no completó el pago a tiempo; la bodega volvió a estar disponible.',
+        ]);
+    }
+
+    public function test_expire_elapsed_holds_is_idempotent_on_a_second_call()
+    {
+        Carbon::setTestNow('2026-01-01 12:00:00');
+        config(['reservations.payment_hold_minutes' => 15, 'reservations.payment_hold_notify_recency_hours' => 24]);
+
+        $room = StoreRooms::factory()->create();
+        $tenant = Tenants::factory()->create();
+
+        $reservation = Reservations::factory()->create([
+            'store_room_id' => $room->id,
+            'tenant_id' => $tenant->id,
+            'status' => 'pending',
+            'created_at' => Carbon::parse('2026-01-01 09:45:00'),
+        ]);
+
+        $this->service()->expireElapsedHolds(Reservations::where('store_room_id', $room->id));
+        $this->assertDatabaseCount('notifications', 1);
+
+        $this->service()->expireElapsedHolds(Reservations::where('store_room_id', $room->id));
+
+        $this->assertDatabaseCount('notifications', 1);
+        $this->assertDatabaseHas('reservations', ['id' => $reservation->id, 'status' => 'canceled']);
+    }
+
+    public function test_expire_elapsed_holds_releases_stale_row_beyond_recency_window_with_no_notification()
+    {
+        Carbon::setTestNow('2026-01-01 12:00:00');
+        config(['reservations.payment_hold_minutes' => 15, 'reservations.payment_hold_notify_recency_hours' => 24]);
+
+        $room = StoreRooms::factory()->create();
+        $tenant = Tenants::factory()->create();
+
+        $reservation = Reservations::factory()->create([
+            'store_room_id' => $room->id,
+            'tenant_id' => $tenant->id,
+            'status' => 'pending',
+            'created_at' => Carbon::parse('2025-12-30 00:00:00'), // ~48h before now, well past the 24h window
+        ]);
+
+        $this->service()->expireElapsedHolds(Reservations::where('store_room_id', $room->id));
+
+        $this->assertDatabaseHas('reservations', [
+            'id' => $reservation->id,
+            'status' => 'canceled',
+            'cancelation_reason' => 'Expired: payment hold elapsed',
+        ]);
+        $this->assertDatabaseCount('notifications', 0);
+    }
+
+    public function test_expire_elapsed_holds_never_touches_an_already_superseded_row()
+    {
+        Carbon::setTestNow('2026-01-01 12:00:00');
+        config(['reservations.payment_hold_minutes' => 15]);
+
+        $room = StoreRooms::factory()->create();
+        $tenant = Tenants::factory()->create();
+
+        $superseded = Reservations::factory()->create([
+            'store_room_id' => $room->id,
+            'tenant_id' => $tenant->id,
+            'status' => 'canceled',
+            'cancelation_reason' => 'Superseded by a newer hold',
+            'created_at' => Carbon::parse('2026-01-01 09:00:00'),
+        ]);
+
+        $this->service()->expireElapsedHolds(Reservations::where('store_room_id', $room->id));
+
+        $this->assertDatabaseHas('reservations', [
+            'id' => $superseded->id,
+            'status' => 'canceled',
+            'cancelation_reason' => 'Superseded by a newer hold',
+        ]);
+        $this->assertDatabaseCount('notifications', 0);
+    }
+
+    // -- sdd/tenant-self-cancel: cancelByTenant() -------------------------
+
+    public function test_cancel_by_tenant_computes_refund_from_snapshotted_tier_and_cancels_confirmed_reservation()
+    {
+        $tenantUser = User::factory()->create();
+        $tenant = Tenants::factory()->create(['user_id' => $tenantUser->id]);
+        $landlordUser = User::factory()->create(['role' => 'landlord']);
+        $landlord = Landlords::factory()->create(['user_id' => $landlordUser->id]);
+        $room = StoreRooms::factory()->create([
+            'landlord_id' => $landlord->id,
+            // Room's LIVE tier differs from the reservation's snapshot on
+            // purpose: the refund MUST be computed from the snapshot below,
+            // never from this current value (decision #339).
+            'cancellation_policy_tier' => 'estricta',
+        ]);
+
+        $reservation = Reservations::factory()->create([
+            'store_room_id' => $room->id,
+            'tenant_id' => $tenant->id,
+            'status' => 'confirmed',
+            'start_date' => now()->addDays(10)->toDateString(),
+            'end_date' => now()->addDays(20)->toDateString(),
+            'total_mount' => 100,
+            'rent_subtotal' => 80,
+            'cancellation_policy_tier' => 'flexible',
+        ]);
+
+        $result = $this->service()->cancelByTenant($reservation, null, $tenantUser->id);
+
+        $this->assertSame('canceled', $result->status);
+        $this->assertDatabaseHas('reservations', [
+            'id' => $reservation->id,
+            'status' => 'canceled',
+            'refund_amount' => '100.00',
+        ]);
+    }
+
+    public function test_cancel_by_tenant_records_zero_refund_for_a_pending_reservation()
+    {
+        $tenantUser = User::factory()->create();
+        $tenant = Tenants::factory()->create(['user_id' => $tenantUser->id]);
+        $room = StoreRooms::factory()->create(['cancellation_policy_tier' => 'flexible']);
+
+        $reservation = Reservations::factory()->create([
+            'store_room_id' => $room->id,
+            'tenant_id' => $tenant->id,
+            'status' => 'pending',
+            'start_date' => now()->addDays(10)->toDateString(),
+            'end_date' => now()->addDays(20)->toDateString(),
+            'total_mount' => 100,
+            'rent_subtotal' => 80,
+            'cancellation_policy_tier' => 'flexible',
+        ]);
+
+        $result = $this->service()->cancelByTenant($reservation, null, $tenantUser->id);
+
+        $this->assertSame('canceled', $result->status);
+        $this->assertDatabaseHas('reservations', [
+            'id' => $reservation->id,
+            'status' => 'canceled',
+            'refund_amount' => '0.00',
+        ]);
+    }
+
+    public function test_cancel_by_tenant_rejects_a_reservation_whose_start_date_has_passed()
+    {
+        $tenant = Tenants::factory()->create();
+        $room = StoreRooms::factory()->create();
+
+        $reservation = Reservations::factory()->create([
+            'store_room_id' => $room->id,
+            'tenant_id' => $tenant->id,
+            'status' => 'confirmed',
+            'start_date' => today()->toDateString(),
+            'end_date' => today()->addDays(10)->toDateString(),
+            'cancellation_policy_tier' => 'flexible',
+        ]);
+
+        try {
+            $this->service()->cancelByTenant($reservation, null, $tenant->user_id);
+            $this->fail('Expected ReservationConflictException');
+        } catch (ReservationConflictException $e) {
+            $this->assertDatabaseHas('reservations', ['id' => $reservation->id, 'status' => 'confirmed']);
+        }
+    }
+
+    /**
+     * Proves cancelByTenant() re-validates against the row it locks INSIDE
+     * the transaction, never trusting the $reservation instance the caller
+     * passed in. Simulates a competing status mutation that landed between
+     * the caller's read and this call (e.g. the landlord canceling first)
+     * by mutating the DB row directly while the in-memory $reservation
+     * still reflects the pre-mutation, eligible state.
+     */
+    public function test_cancel_by_tenant_re_validates_against_the_locked_row_not_the_stale_instance()
+    {
+        $tenant = Tenants::factory()->create();
+        $room = StoreRooms::factory()->create();
+
+        $reservation = Reservations::factory()->create([
+            'store_room_id' => $room->id,
+            'tenant_id' => $tenant->id,
+            'status' => 'confirmed',
+            'start_date' => now()->addDays(10)->toDateString(),
+            'end_date' => now()->addDays(20)->toDateString(),
+            'total_mount' => 100,
+            'rent_subtotal' => 80,
+            'cancellation_policy_tier' => 'flexible',
+        ]);
+
+        // A concurrent operation wins the race and cancels the row first.
+        Reservations::where('id', $reservation->id)->update(['status' => 'canceled']);
+
+        try {
+            $this->service()->cancelByTenant($reservation, null, $tenant->user_id);
+            $this->fail('Expected ReservationConflictException');
+        } catch (ReservationConflictException $e) {
+            $this->assertDatabaseCount('notifications', 0);
+        }
+    }
+
+    public function test_cancel_by_tenant_is_idempotent_on_a_second_call()
+    {
+        $tenantUser = User::factory()->create();
+        $tenant = Tenants::factory()->create(['user_id' => $tenantUser->id]);
+        $room = StoreRooms::factory()->create(['cancellation_policy_tier' => 'flexible']);
+
+        $reservation = Reservations::factory()->create([
+            'store_room_id' => $room->id,
+            'tenant_id' => $tenant->id,
+            'status' => 'confirmed',
+            'start_date' => now()->addDays(10)->toDateString(),
+            'end_date' => now()->addDays(20)->toDateString(),
+            'total_mount' => 100,
+            'rent_subtotal' => 80,
+            'cancellation_policy_tier' => 'flexible',
+        ]);
+
+        $this->service()->cancelByTenant($reservation, null, $tenantUser->id);
+        $this->assertDatabaseCount('notifications', 1);
+
+        try {
+            $this->service()->cancelByTenant($reservation->fresh(), null, $tenantUser->id);
+            $this->fail('Expected ReservationConflictException on the second cancel');
+        } catch (ReservationConflictException $e) {
+            $this->assertDatabaseHas('reservations', [
+                'id' => $reservation->id,
+                'refund_amount' => '100.00',
+            ]);
+            $this->assertDatabaseCount('notifications', 1);
+        }
+    }
+
+    /**
+     * [SPANISH COPY] The landlord notification is user-facing product text
+     * (spec #341): neutral, professional Spanish, no voseo/slang.
+     */
+    public function test_cancel_by_tenant_notifies_the_landlord_with_the_exact_spanish_copy()
+    {
+        $tenantUser = User::factory()->create();
+        $tenant = Tenants::factory()->create(['user_id' => $tenantUser->id]);
+        $landlordUser = User::factory()->create(['role' => 'landlord']);
+        $landlord = Landlords::factory()->create(['user_id' => $landlordUser->id]);
+        $room = StoreRooms::factory()->create([
+            'landlord_id' => $landlord->id,
+            'cancellation_policy_tier' => 'flexible',
+        ]);
+
+        $reservation = Reservations::factory()->create([
+            'store_room_id' => $room->id,
+            'tenant_id' => $tenant->id,
+            'status' => 'confirmed',
+            'start_date' => now()->addDays(10)->toDateString(),
+            'end_date' => now()->addDays(20)->toDateString(),
+            'cancellation_policy_tier' => 'flexible',
+        ]);
+
+        $this->service()->cancelByTenant($reservation, null, $tenantUser->id);
+
+        $this->assertDatabaseHas('notifications', [
+            'receiver_id' => $landlordUser->id,
+            'type' => 'reservation_canceled',
+            'title' => 'Reserva cancelada por el cliente',
+            'body' => 'El cliente canceló su reserva. Revisa el reembolso correspondiente.',
+        ]);
     }
 
     public function test_cancel_by_landlord_rejects_reservation_with_no_rent_subtotal_snapshot()
@@ -387,7 +933,7 @@ class ReservationServiceTest extends TestCase
             'start_date' => now()->addDays(5)->toDateString(),
             'end_date' => now()->addDays(35)->toDateString(),
             'rent_subtotal' => null,
-            'total_mount' => 4180,
+            'total_mount' => 4000,
         ]);
 
         try {

@@ -1,31 +1,42 @@
-import { useParams, useNavigate } from "react-router-dom";
+import { useParams, useNavigate, useLocation } from "react-router-dom";
 import { useEffect, useMemo, useState } from "react";
 import { getStoreRoomDetail, type StoreRoomDetail } from "../services/storeRooms";
-import { getReservedDates, createReservation } from "../services/reservations";
+import {
+  getReservedDates,
+  createReservation,
+  type ReservedRange,
+  type LandlordReservation,
+} from "../services/reservations";
 import { useAuth } from "../context/useAuth";
 import { asApiError } from "../api/errors";
-import { formatUSD } from "../utils/money";
+import { toDateOnlyISO, isDateBetween, formatMemberSince } from "../utils/dates";
+import { parseSecurityFeatures, SECURITY_LABELS, type ParsedSecurityFeatures } from "../utils/security";
+import { RESERVATION_OVERLAP_MESSAGE, upcomingOccupiedRanges } from "../utils/reservationFlow";
+import DetailStatusScreen from "./DetailStatusScreen";
+import RatingStars from "./RatingStars";
+import MiniMap from "../Dashboard/Moderacion/MiniMap";
+import AvailabilityCalendar from "./AvailabilityCalendar";
+import PriceBreakdownPanel from "./PriceBreakdownPanel";
+import BookingStepHeader, { type BookingStep } from "./BookingStepHeader";
+import BookingCheckout from "./BookingCheckout";
+import BookingReceipt from "./BookingReceipt";
 
-type ReservedRange = { start_date: string; end_date: string };
-
-// calendario
-function toDateOnlyISO(d: Date) {
-  const year = d.getFullYear();
-  const month = String(d.getMonth() + 1).padStart(2, "0");
-  const day = String(d.getDate()).padStart(2, "0");
-  return `${year}-${month}-${day}`;
-}
-
-function isDateBetween(target: string, start: string, end: string) {
-  return target >= start && target <= end;
-}
+const DETAIL_STATUS = {
+  LOADING: "loading",
+  READY: "ready",
+  NOT_FOUND: "not-found",
+  ERROR: "error",
+} as const;
+type DetailStatus = (typeof DETAIL_STATUS)[keyof typeof DETAIL_STATUS];
 
 export default function LeodegaUI() {
   const navigate = useNavigate();
+  const location = useLocation();
   const { id } = useParams();
   const { user } = useAuth();
 
   const [data, setData] = useState<StoreRoomDetail | null>(null);
+  const [status, setStatus] = useState<DetailStatus>(DETAIL_STATUS.LOADING);
   const [openReserve, setOpenReserve] = useState(false);
   const [startDate, setStartDate] = useState("");
   const [endDate, setEndDate] = useState("");
@@ -36,14 +47,27 @@ export default function LeodegaUI() {
   const [sending, setSending] = useState(false);
   const [error, setError] = useState<string>("");
 
+  // Local step machine (design decision: `useState`, no new routes — the
+  // prototype's own `BookingFlow` orchestrator is itself state-driven, not
+  // routed). `reservation` carries the server response forward so the
+  // payment and receipt steps never re-fetch it.
+  const [step, setStep] = useState<BookingStep>("detail");
+  const [reservation, setReservation] = useState<LandlordReservation | null>(null);
+
   useEffect(() => {
     getStoreRoomDetail(id as string)
-      .then((res) => setData(res.data))
-      .catch(console.error);
+      .then((res) => {
+        setData(res.data);
+        setStatus(DETAIL_STATUS.READY);
+      })
+      .catch((e: unknown) => {
+        const err = asApiError(e);
+        setStatus(err.response?.status === 404 ? DETAIL_STATUS.NOT_FOUND : DETAIL_STATUS.ERROR);
+      });
   }, [id]);
 
   useEffect(() => {
-    if (!openReserve || !id) return;
+    if (!id) return;
 
     setLoadingRanges(true);
     setError("");
@@ -52,7 +76,7 @@ export default function LeodegaUI() {
       .then((res) => setReservedRanges(res.data || []))
       .catch(() => setReservedRanges([]))
       .finally(() => setLoadingRanges(false));
-  }, [openReserve, id]);
+  }, [id]);
 
   const priceMonthly = useMemo(() => {
     const p = Number(data?.prices?.[0]?.price ?? 0);
@@ -76,6 +100,25 @@ export default function LeodegaUI() {
     return reservedRanges.some((r) => startDate <= r.end_date && endDate >= r.start_date);
   }, [startDate, endDate, reservedRanges]);
 
+  const upcomingRanges = useMemo(
+    () => upcomingOccupiedRanges(reservedRanges, todayISO),
+    [reservedRanges, todayISO]
+  );
+
+  const hasOverlap = startDisabled || endDisabled || rangeHasOverlap;
+  // One message slot: a live overlap always wins over a stale submit error.
+  const modalMessage = hasOverlap ? RESERVATION_OVERLAP_MESSAGE : error;
+
+  // Visitors (and a session the server rejects with 401) are sent to /login
+  // with the room path so a tenant can come back to it (HUC-03 S3).
+  const goToLoginForReserve = () =>
+    navigate("/login", { state: { from: location.pathname, reason: "reserve" } });
+
+  const handleReservar = () => {
+    if (!user) goToLoginForReserve();
+    else setOpenReserve(true);
+  };
+
   const sendReservation = async () => {
     if (!id) return;
 
@@ -96,8 +139,8 @@ export default function LeodegaUI() {
       return;
     }
 
-    if (startDisabled || endDisabled || rangeHasOverlap) {
-      setError("Ese rango se cruza con una reserva ya confirmada. Elige otras fechas.");
+    if (hasOverlap) {
+      setError(RESERVATION_OVERLAP_MESSAGE);
       return;
     }
 
@@ -114,32 +157,40 @@ export default function LeodegaUI() {
       setStartDate("");
       setEndDate("");
 
-      const serverTotal = response.data?.reservation?.total_mount;
-      alert(
-        serverTotal != null
-          ? `Solicitud enviada. Total: ${formatUSD(serverTotal, { suffix: true })}`
-          : "Solicitud enviada"
-      );
+      setReservation(response.data.reservation);
+      setStep("pago");
     } catch (e: unknown) {
       const err = asApiError(e);
       const status = err.response?.status;
 
-      if (status === 401) setError("Debes iniciar sesión para reservar.");
-      else if (status === 409) setError(err.response?.data?.message || "Fechas no disponibles.");
-      else if (status === 422) setError("Revisa las fechas ingresadas.");
+      if (status === 401) goToLoginForReserve();
+      else if (status === 409) setError(RESERVATION_OVERLAP_MESSAGE);
+      else if (status === 422 && err.response?.data?.errors?.start_date) {
+        setError("La fecha de inicio no puede ser anterior a hoy.");
+      } else if (status === 422) setError("Revisa las fechas ingresadas.");
       else setError("Ocurrió un error enviando la solicitud.");
     } finally {
       setSending(false);
     }
   };
 
-  if (!data) {
+  const role = user?.role ?? null;
+
+  // The catalog is public, so it is a safe landing for every role (a visitor
+  // must never be bounced to /login just for leaving a room page).
+  const goCatalog = () => navigate("/storage");
+
+  const handleVolver = () => {
+    if (role === "landlord") navigate("/arrendador/bodegas");
+    else goCatalog();
+  };
+
+  if (status !== DETAIL_STATUS.READY || !data) {
     return (
-      <div className="min-h-screen bg-[#f5f6fa] flex items-center justify-center">
-        <div className="bg-white border border-gray-200 rounded-xl px-6 py-4 shadow-sm text-gray-700">
-          Cargando...
-        </div>
-      </div>
+      <DetailStatusScreen
+        variant={status === DETAIL_STATUS.READY ? "loading" : status}
+        onBack={status === DETAIL_STATUS.NOT_FOUND ? goCatalog : handleVolver}
+      />
     );
   }
 
@@ -147,21 +198,66 @@ export default function LeodegaUI() {
     (data.landlord?.name?.charAt(0) || "L") +
     ((data.landlord?.name?.charAt(1) || "").toUpperCase());
 
+  const memberSince = formatMemberSince(data.landlord?.start_date);
+
+  // Gate the price panel on OWNERSHIP, not role: a landlord browsing a
+  // storeroom that belongs to a DIFFERENT landlord is a legitimate customer
+  // and must still see the price. Unauthenticated visitors (user is null)
+  // are the primary audience and must always see it too.
+  const isOwner = Boolean(user?.id && data.landlord?.user_id === user.id);
 
   const handleContactar = async () => {
     navigate("/arrendador/mensajes");
 
   };
 
-  const role = user?.role ?? null;
+  const handleExitBooking = () => setStep("detail");
 
-  const handleVolver = () => {
-    if (role === "landlord") navigate("/arrendador/bodegas");
-    else if (role === "tenant") navigate("/storage");
-    //else if (role === "admin") navigate("/admin/bodegas");
-    else navigate("/login");
-  };
-
+  // 'pago' / 'comprobante' replace the detail page content entirely (fidelity:
+  // `BookingFlow.jsx`'s own orchestrator renders a full-screen overlay for
+  // these steps, not the detail screen underneath it). No second fetch —
+  // `reservation` already carries `id`, `start_date`, `end_date`,
+  // `total_mount`, `rent_subtotal` from `POST /reservations`.
+  if (step !== "detail" && reservation) {
+    return (
+      <div className="w-full min-h-screen bg-[#f5f6fa] text-gray-800">
+        <BookingStepHeader step={step} onClose={handleExitBooking} />
+        {step === "pago" && (
+          <div className="max-w-5xl mx-auto px-6 py-8">
+            <BookingCheckout
+              storeRoom={{
+                image: data.photos?.[0] ?? null,
+                title: data.title,
+                direction: data.direction,
+                city: data.city,
+                ratingAvg: data.rating_avg,
+                ratingCount: data.rating_count,
+              }}
+              reservation={reservation}
+              pricePerMonth={priceMonthly}
+              onPaid={() => setStep("comprobante")}
+              onBack={handleExitBooking}
+            />
+          </div>
+        )}
+        {step === "comprobante" && (
+          <BookingReceipt
+            storeRoom={{
+              image: data.photos?.[0] ?? null,
+              title: data.title,
+              direction: data.direction,
+              city: data.city,
+              size: data.size,
+              gestorName: data.landlord?.name,
+            }}
+            reservation={reservation}
+            onViewReservations={() => navigate("/arrendatario/calendario")}
+            onBackToCatalog={handleExitBooking}
+          />
+        )}
+      </div>
+    );
+  }
 
   return (
     <div className="w-full min-h-screen bg-[#f5f6fa] text-gray-800">
@@ -173,6 +269,7 @@ export default function LeodegaUI() {
             <h1 className="text-lg font-semibold text-gray-900">
               {data.title ?? `Bodega #${id}`}
             </h1>
+            <RatingStars average={data.rating_avg} count={data.rating_count} />
           </div>
 
           <div className="flex gap-2">
@@ -180,14 +277,7 @@ export default function LeodegaUI() {
               onClick={handleVolver}
               className="px-4 py-2 rounded-lg border border-gray-300 text-gray-700 hover:bg-gray-50"
             >
-              ← Volver a mis bodegas
-            </button>
-
-            <button
-              onClick={() => setOpenReserve(true)}
-              className="px-4 py-2 rounded-lg bg-yellow-500 text-white hover:bg-yellow-600"
-            >
-              Reservar
+              {role === "landlord" ? "← Volver a mis bodegas" : "← Volver al catálogo"}
             </button>
           </div>
         </div>
@@ -200,72 +290,67 @@ export default function LeodegaUI() {
           <div className="col-span-2 space-y-6">
             {/* Images */}
             <div className="bg-white border border-gray-200 rounded-2xl shadow-sm p-4">
-              <div className="grid grid-cols-3 gap-2" style={{ height: "280px" }}>
-                <div className="col-span-2 overflow-hidden rounded-xl bg-gray-100">
-                  <img
-                    src={data.photos?.[0]}
-                    className="h-full w-full object-cover"
-                    alt="Foto principal"
-                  />
-                </div>
-                <div className="flex flex-col space-y-2">
-                  {data.photos?.slice(1, 3).map((img: string, i: number) => (
-                    <div
-                      key={i}
-                      className="overflow-hidden rounded-xl bg-gray-100"
-                      style={{ height: "calc(140px - 4px)" }}
-                    >
-                      <img src={img} className="h-full w-full object-cover" alt={`Foto ${i + 2}`} />
+              {data.photos && data.photos.length > 0 ? (
+                <>
+                  <div className="overflow-hidden rounded-xl bg-gray-100" style={{ height: "280px" }}>
+                    <img
+                      src={data.photos[0]}
+                      className="h-full w-full object-cover"
+                      alt="Foto principal"
+                    />
+                  </div>
+                  {data.photos.length > 1 && (
+                    <div className="flex gap-2 mt-2 overflow-x-auto">
+                      {data.photos.slice(1).map((img: string, i: number) => (
+                        <div
+                          key={i}
+                          className="flex-none overflow-hidden rounded-xl bg-gray-100"
+                          style={{ width: "140px", height: "100px" }}
+                        >
+                          <img src={img} className="h-full w-full object-cover" alt={`Foto ${i + 2}`} />
+                        </div>
+                      ))}
                     </div>
-                  ))}
+                  )}
+                </>
+              ) : (
+                <div
+                  data-testid="gallery-placeholder"
+                  className="flex items-center justify-center rounded-xl bg-gray-100 text-gray-400 text-sm"
+                  style={{ height: "280px" }}
+                >
+                  Sin fotos disponibles
                 </div>
-              </div>
-            </div>
-
-            {/* Price */}
-            <div className="bg-white border border-gray-200 rounded-2xl shadow-sm p-6">
-              <div className="flex items-start justify-between gap-4">
-                <div>
-                  <p className="text-purple-700 font-bold text-3xl leading-tight">
-                    ${data.prices?.[0]?.price}
-                    <span className="text-sm font-normal text-gray-500"> / mes</span>
-                  </p>
-                  <p className="text-gray-600 text-sm mt-2">
-                    {data.size} m² • {data.room_type}
-                  </p>
-                </div>
-
-                <div className="flex gap-2">
-                  <button
-                    onClick={() => navigate(`/reportIncident/${id}`)}
-                    className="px-4 py-2 rounded-lg bg-orange-500 text-white hover:bg-orange-600 text-sm"
-                  >
-                    Reportar
-                  </button>
-
-                  <button
-                    onClick={() => setOpenReserve(true)}
-                    className="px-4 py-2 rounded-lg bg-purple-600 text-white hover:bg-purple-700 text-sm"
-                  >
-                    Enviar solicitud
-                  </button>
-                </div>
-              </div>
+              )}
             </div>
 
             {/* Description */}
             <div className="bg-white border border-gray-200 rounded-2xl shadow-sm p-6">
-              <h3 className="font-semibold text-gray-900 mb-2">Descripción</h3>
+              <h3 className="font-semibold text-gray-900 mb-2">Sobre esta bodega</h3>
               <p className="text-sm text-gray-600 leading-relaxed">
                 {data.description}
               </p>
+            </div>
+
+            {/* Ubicación */}
+            <div className="bg-white border border-gray-200 rounded-2xl shadow-sm p-6">
+              <h3 className="font-semibold text-gray-900 mb-2">Ubicación</h3>
+              <p className="text-sm text-gray-600 mb-3">
+                {data.direction}{data.city ? `, ${data.city}` : ""}
+              </p>
+              <MiniMap latitude={data.latitude} longitude={data.longitude} />
             </div>
 
             {/* Features */}
             <div className="bg-white border border-gray-200 rounded-2xl shadow-sm p-6">
               <h3 className="font-semibold text-gray-900 mb-4">Características</h3>
               <div className="grid grid-cols-3 gap-3 text-sm">
-                {[data.size + " m²", "Estacionamiento", "24/7", "Internet", "CCTV", "Muelle de carga"].map((item, i) => (
+                {[
+                  data.size + " m²",
+                  ...Object.entries(parseSecurityFeatures(data.security))
+                    .filter(([, value]) => value)
+                    .map(([key]) => SECURITY_LABELS[key as keyof ParsedSecurityFeatures]),
+                ].map((item, i) => (
                   <div
                     key={i}
                     className="border border-gray-200 rounded-xl p-3 text-gray-700 bg-gray-50 text-center"
@@ -276,69 +361,108 @@ export default function LeodegaUI() {
               </div>
             </div>
 
-            {/* Extra images */}
+            {/* Tu gestor — main column, matching the prototype's placement
+                (BookingFlow.jsx:536, right after "Características") and its
+                SINGLE horizontal row layout (BookingFlow.jsx:537-549):
+                avatar, name + metadata, and the contact action all in one
+                row instead of stacked. The prototype's "Verificado" badge
+                and "Responde en" metric are deliberately omitted — neither
+                has a real backing field (see StoreRoomDetailResource). The
+                prototype's separate "Enviar email" button is also dropped:
+                it called the exact same handler as "Contactar" (both just
+                navigate to /arrendador/mensajes), so it never actually sent
+                an email despite its label — collapsing to the prototype's
+                single "Contactar" action removes that mismatch. */}
             <div className="bg-white border border-gray-200 rounded-2xl shadow-sm p-6">
-              <h3 className="font-semibold text-gray-900 mb-4">Imágenes adicionales</h3>
-              <div className="grid grid-cols-3 gap-4">
-                {data.photos?.map((img: string, i: number) => (
-                  <img
-                    key={i}
-                    src={img}
-                    className="h-32 w-full object-cover rounded-xl bg-gray-100"
-                    alt={`Extra ${i + 1}`}
-                  />
-                ))}
-              </div>
-            </div>
-
-            {/* Specs */}
-            <div className="bg-white border border-gray-200 rounded-2xl shadow-sm p-6">
-              <h3 className="font-semibold text-gray-900 mb-4">Especificaciones técnicas</h3>
-              <table className="w-full text-sm text-gray-700">
-                <tbody className="[&>tr>td]:py-2">
-                  <tr><td className="text-gray-500">Dimensiones</td><td>20m x 15m</td></tr>
-                  <tr><td className="text-gray-500">Altura</td><td>6 metros</td></tr>
-                  <tr><td className="text-gray-500">Tipo de suelo</td><td>Concreto industrial</td></tr>
-                  <tr><td className="text-gray-500">Piso</td><td>2 puertas industriales</td></tr>
-                  <tr><td className="text-gray-500">Iluminación</td><td>LED industrial</td></tr>
-                  <tr><td className="text-gray-500">Ventilación</td><td>Natural y forzada</td></tr>
-                </tbody>
-              </table>
-            </div>
-          </div>
-
-          {/* Right: contact */}
-          <div className="col-span-1">
-            <div className="bg-white border border-gray-200 rounded-2xl shadow-sm p-6 sticky top-6">
-              <div className="flex flex-col items-center text-center">
-                <div className="w-16 h-16 bg-purple-600 text-white flex items-center justify-center rounded-full text-2xl font-bold">
+              <h3 className="font-semibold text-gray-900 mb-4">Tu gestor</h3>
+              <div className="flex items-center gap-3.5">
+                <div className="w-14 h-14 bg-purple-600 text-white flex items-center justify-center rounded-full text-xl font-bold shrink-0">
                   {initials}
                 </div>
-                <h2 className="font-semibold mt-3 text-gray-900">
-                  {data.landlord.name} {data.landlord.lastname}
-                </h2>
-                <p className="text-xs text-gray-500 mt-1">Arrendador</p>
+                <div className="flex-1 min-w-0">
+                  <p className="font-semibold text-gray-900">{data.landlord.name}</p>
+                  {memberSince && (
+                    <p className="text-xs text-gray-500 mt-0.5">Miembro desde {memberSince}</p>
+                  )}
+                </div>
+                <button onClick={handleContactar}
+                  className="px-4 py-2 bg-white text-purple-700 border border-purple-600 rounded-lg text-sm font-semibold hover:bg-purple-50 shrink-0">
+                  Contactar
+                </button>
+              </div>
+            </div>
 
-                <div className="w-full mt-4 space-y-2">
-                  <button onClick={handleContactar}
-                    className="px-4 py-2 bg-purple-600 text-white rounded-lg w-full text-sm hover:bg-purple-700">
-                    Contactar ahora
+            {/* Disponibilidad */}
+            <div className="bg-white border border-gray-200 rounded-2xl shadow-sm p-6">
+              <h3 className="font-semibold text-gray-900 mb-4">Disponibilidad</h3>
+              <AvailabilityCalendar reservedRanges={reservedRanges} loading={loadingRanges} />
+            </div>
+
+          </div>
+
+          {/* Right: reservation panel — hidden from the storeroom's own
+              landlord (gated on OWNERSHIP via data.landlord.user_id, never
+              on role: a landlord browsing someone ELSE's storeroom is a
+              customer and must still see it). Unauthenticated visitors
+              (user is null) always see it. */}
+          {!isOwner && (
+            <div className="col-span-1">
+              <div className="bg-white border border-gray-200 rounded-2xl shadow-sm p-6 sticky top-6">
+                <p className="text-purple-700 font-bold text-3xl leading-tight">
+                  ${data.prices?.[0]?.price}
+                  <span className="text-sm font-normal text-gray-500"> / mes</span>
+                </p>
+                <p className="text-gray-600 text-sm mt-2">
+                  {data.size} m² • {data.room_type}
+                </p>
+
+                <div className="flex gap-2 mt-4">
+                  <button
+                    onClick={() => navigate(`/reportIncident/${id}`)}
+                    className="px-4 py-2 rounded-lg bg-orange-500 text-white hover:bg-orange-600 text-sm flex-1"
+                  >
+                    Reportar
                   </button>
-                  <button onClick={handleContactar}
-                    className="px-4 py-2 border border-purple-600 text-purple-700 rounded-lg w-full text-sm hover:bg-purple-50">
-                    Enviar email a {data.landlord.email}
+
+                  <button
+                    onClick={handleReservar}
+                    className="px-4 py-2 rounded-lg bg-purple-600 text-white hover:bg-purple-700 text-sm flex-1"
+                  >
+                    Reservar
                   </button>
                 </div>
 
+                <div className="border-t border-gray-200 mt-4 pt-4">
+                  <PriceBreakdownPanel
+                    roomId={id as string}
+                    pricePerMonth={priceMonthly}
+                    startDate={startDate}
+                    endDate={endDate}
+                  />
+                </div>
+
+                {data.is_available_now && (
+                  <p className="text-center text-xs text-gray-400 mt-3 leading-relaxed">
+                    Reserva instantánea — el pago confirma el alquiler sin aprobación del gestor.
+                  </p>
+                )}
+
                 <div className="mt-5 text-xs text-gray-500 text-left w-full border-t border-gray-200 pt-4">
-                  <p className="font-semibold text-gray-700 mb-2">Horario de atención</p>
-                  <p>Lunes a Viernes: 08h00 - 17h00</p>
                   <p className="font-semibold text-gray-700 mt-3 mb-2">Disponibilidad</p>
-                  <p>Inmediata</p>
+                  {data.is_available_now ? (
+                    <p>Disponible ahora</p>
+                  ) : (
+                    <>
+                      <span className="badge inline-block px-2 py-1 rounded-full bg-[#FEE2E2] text-[#B91C1C] text-xs font-medium">
+                        Actualmente no disponible
+                      </span>
+                      <p className="mt-2">Aún puedes reservar fechas futuras.</p>
+                    </>
+                  )}
                 </div>
               </div>
             </div>
-          </div>
+          )}
         </div>
       </div>
 
@@ -348,7 +472,7 @@ export default function LeodegaUI() {
           <div className="bg-white rounded-2xl w-full max-w-md shadow-xl border border-gray-200 overflow-hidden">
             <div className="px-6 py-4 border-b border-gray-200 flex items-center justify-between">
               <div>
-                <h3 className="font-semibold text-gray-900">Solicitud de reserva</h3>
+                <h3 className="font-semibold text-gray-900">Reservar bodega</h3>
                 <p className="text-xs text-gray-500">Precio mensual: <span className="font-semibold">${priceMonthly}</span></p>
               </div>
 
@@ -368,9 +492,18 @@ export default function LeodegaUI() {
               {loadingRanges ? (
                 <div className="text-sm text-gray-500 mb-3">Cargando disponibilidad...</div>
               ) : (
-                <div className="text-xs text-gray-500 mb-3">
-                  *Fechas bloqueadas = reservas confirmadas. Si se cruza, no te deja enviar.
-                </div>
+                upcomingRanges.length > 0 && (
+                  <div className="text-xs text-gray-500 mb-3">
+                    <p className="font-semibold text-gray-700">Períodos ocupados</p>
+                    <ul className="mt-1 space-y-0.5">
+                      {upcomingRanges.map((r) => (
+                        <li key={`${r.start_date}-${r.end_date}`}>
+                          {r.start_date} al {r.end_date}
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                )
               )}
 
               <div className="space-y-3">
@@ -384,9 +517,6 @@ export default function LeodegaUI() {
                     className={`w-full border rounded-xl px-3 py-2 mt-1 outline-none focus:ring-2 focus:ring-purple-200 ${startDisabled ? "border-red-400" : "border-gray-300"
                       }`}
                   />
-                  {startDisabled && (
-                    <p className="text-xs text-red-600 mt-1">Esta fecha está dentro de un rango reservado.</p>
-                  )}
                 </div>
 
                 <div>
@@ -401,13 +531,7 @@ export default function LeodegaUI() {
                   />
                 </div>
 
-                {rangeHasOverlap && (
-                  <p className="text-sm text-red-600">
-                    Ese rango se cruza con fechas ya confirmadas.
-                  </p>
-                )}
-
-                {error && <p className="text-sm text-red-600">{error}</p>}
+                {modalMessage && <p className="text-sm text-red-600">{modalMessage}</p>}
               </div>
             </div>
 
@@ -425,7 +549,7 @@ export default function LeodegaUI() {
                 className="px-4 py-2 rounded-xl bg-purple-600 text-white hover:bg-purple-700 disabled:opacity-60"
                 disabled={sending || loadingRanges}
               >
-                {sending ? "Enviando..." : "Enviar solicitud"}
+                {sending ? "Enviando..." : "Confirmar reserva"}
               </button>
             </div>
           </div>

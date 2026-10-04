@@ -2,27 +2,44 @@
 
 namespace App\Http\Controllers;
 
-use App\Exceptions\ReservationConflictException;
-use App\Exceptions\StoreRoomResubmissionException;
 use App\Http\Requests\EditStoreRoomListingRequest;
 use App\Http\Requests\ModerationDecisionRules;
 use App\Http\Requests\StoreStoreRoomRequest;
-use App\Http\Requests\UpdateStoreRoomRequest;
+use App\Http\Resources\StoreRoomDetailResource;
 use App\Models\Landlords;
-use App\Models\Ratings;
 use App\Models\StoreRooms;
 use App\Services\ModerationDecision;
 use App\Services\StoreModerationService;
+use App\Services\RatingsService;
+use App\Services\ReservationPricingService;
 use App\Services\StoreRoomDeletionService;
 use App\Services\StoreRoomService;
+use Carbon\Carbon;
 use Illuminate\Http\Request;
 use Illuminate\Support\Arr;
 use Illuminate\Support\Facades\Gate;
+use Illuminate\Support\Facades\Validator;
 use Illuminate\Validation\ValidationException;
 
 class StoreRoomsController extends ApiController
 {
-    public function index()
+    /**
+     * HUC-01: `city`, `min_size`, `min_price`, `max_price`, `lat`, `lng` are
+     * all optional and independently combinable (spec "Filtered Storage Room
+     * Search"). A param-less call MUST stay byte-identical to the pre-change
+     * response — this is the PR's backward-compatibility contract, so every
+     * filter below is additive and only narrows the `visibleTo()` base query.
+     *
+     * `min_price`/`max_price` filter on the `month`-mode row only (design
+     * decision #3/#4): indexing `store_prices[0]` is the bug this change
+     * fixes on the frontend side, and filtering must not reintroduce it here.
+     *
+     * Distance is never SQL — Haversine runs in PHP over the already-loaded
+     * page (design decision #5), and only when both `lat`/`lng` are supplied.
+     * Rooms with null coordinates keep `distance_km: null` instead of being
+     * dropped (spec "Distance Calculation and Null-Coordinate Handling").
+     */
+    public function index(Request $request)
     {
         // Resolved explicitly via the sanctum guard, never bare auth()->user():
         // this route stays unmiddlewared (the public catalog must remain
@@ -31,20 +48,59 @@ class StoreRoomsController extends ApiController
         // Bearer token and downgrade an admin to the anonymous branch.
         $viewer = auth('sanctum')->user();
 
-        return StoreRooms::with(['storePrices', 'storePhotos', 'landlord.user'])
+        $filters = $request->validate([
+            'city' => 'sometimes|string|max:255',
+            'min_size' => 'sometimes|numeric|min:0',
+            'min_price' => 'sometimes|numeric|min:0',
+            'max_price' => 'sometimes|numeric|min:0|gte:min_price',
+            'lat' => 'sometimes|numeric|between:-90,90|required_with:lng',
+            'lng' => 'sometimes|numeric|between:-180,180|required_with:lat',
+        ]);
+
+        $query = StoreRooms::with(['storePrices', 'storePhotos', 'landlord.user'])
             ->withCount('activeReservations')
-            ->visibleTo($viewer)
-            ->get()
-            ->map(function ($room) {
-                $ratings = Ratings::where('store_id', $room->id);
-                $avg = round($ratings->avg('stars'), 1);
-                $count = $ratings->count();
+            ->visibleTo($viewer);
+
+        if (array_key_exists('city', $filters)) {
+            // Lower-case both sides in SQL so sqlite and PostgreSQL agree. Bare
+            // `city`: the table is camelCase (`storeRooms`) and input is bound.
+            $query->whereRaw('LOWER(TRIM(city)) = LOWER(?)', [trim($filters['city'])]);
+        }
+
+        if (array_key_exists('min_size', $filters)) {
+            $query->where('size', '>=', $filters['min_size']);
+        }
+
+        if (array_key_exists('min_price', $filters) || array_key_exists('max_price', $filters)) {
+            $query->whereHas('storePrices', function ($priceQuery) use ($filters) {
+                $priceQuery->where('mode', 'month');
+
+                if (array_key_exists('min_price', $filters)) {
+                    $priceQuery->where('price', '>=', $filters['min_price']);
+                }
+
+                if (array_key_exists('max_price', $filters)) {
+                    $priceQuery->where('price', '<=', $filters['max_price']);
+                }
+            });
+        }
+
+        $lat = $filters['lat'] ?? null;
+        $lng = $filters['lng'] ?? null;
+
+        return $query->get()
+            ->map(function ($room) use ($lat, $lng) {
+                $ratingSummary = (new RatingsService)->summaryFor($room->id);
+                $monthlyPrice = $room->storePrices->firstWhere('mode', 'month');
 
                 return [
                     'id' => $room->id,
                     'title' => $room->title,
+                    'direction' => $room->direction,
                     'city' => $room->city,
                     'size' => $room->size,
+                    'room_type' => $room->room_type,
+                    'storage_type' => $room->storage_type,
                     'publication_status' => $room->publication_status,
                     'landlord' => [
                         'id' => $room->landlord?->id,
@@ -56,8 +112,14 @@ class StoreRoomsController extends ApiController
                     ],
                     'user_id' => $room->landlord?->user?->id,
                     'store_prices' => $room->storePrices,
-                    'rating_avg' => $avg,
-                    'rating_count' => $count,
+                    'monthly_price' => $monthlyPrice?->price !== null ? (float) $monthlyPrice->price : null,
+                    'latitude' => $room->latitude !== null ? (float) $room->latitude : null,
+                    'longitude' => $room->longitude !== null ? (float) $room->longitude : null,
+                    'distance_km' => ($lat !== null && $lng !== null && $room->latitude !== null && $room->longitude !== null)
+                        ? $this->haversineKm((float) $lat, (float) $lng, (float) $room->latitude, (float) $room->longitude)
+                        : null,
+                    'rating_avg' => $ratingSummary['avg'],
+                    'rating_count' => $ratingSummary['count'],
                     'active_reservations_count' => $room->active_reservations_count,
                     'image' => $room->storePhotos->first()
                         ? asset('storage/'.$room->storePhotos->first()->photo_url)
@@ -66,9 +128,35 @@ class StoreRoomsController extends ApiController
             });
     }
 
+    /**
+     * Great-circle distance between two coordinate pairs, in kilometers.
+     * Post-query, PHP-side only (design decision #5) — no DB-level geo
+     * indexing or spatial functions, per proposal's out-of-scope list.
+     */
+    private function haversineKm(float $lat1, float $lng1, float $lat2, float $lng2): float
+    {
+        $earthRadiusKm = 6371;
+
+        $dLat = deg2rad($lat2 - $lat1);
+        $dLng = deg2rad($lng2 - $lng1);
+
+        $a = sin($dLat / 2) ** 2
+            + cos(deg2rad($lat1)) * cos(deg2rad($lat2)) * sin($dLng / 2) ** 2;
+        $c = 2 * atan2(sqrt($a), sqrt(1 - $a));
+
+        return round($earthRadiusKm * $c, 2);
+    }
+
     public function show($id)
     {
-        return $this->showModel(StoreRooms::class, $id);
+        $room = StoreRooms::viewableById($id, auth('sanctum')->user())->first();
+
+        // Same 404 as detail(): missing, soft-deleted and hidden rooms are indistinguishable.
+        if (! $room) {
+            return response()->json(['message' => 'Bodega no encontrada'], 404);
+        }
+
+        return response()->json($room->makeHidden('firefighter_permit_path'), 200);
     }
 
     /**
@@ -87,7 +175,6 @@ class StoreRoomsController extends ApiController
         if (! $landlord) {
             return response()->json([
                 'message' => 'No tienes un registro de landlord asociado a tu cuenta',
-                'status' => 403,
             ], 403);
         }
 
@@ -103,8 +190,7 @@ class StoreRoomsController extends ApiController
             return response()->json([
                 'message' => 'Validation Error',
                 'errors' => $e->errors(),
-                'status' => 400,
-            ], 400);
+            ], 422);
         }
 
         return response()->json([
@@ -115,54 +201,76 @@ class StoreRoomsController extends ApiController
     }
 
     /**
-     * Corrección de inconsistencia (ver PLAN_CORRECCION_INCONSISTENCIAS.md,
-     * Fase 2.1): antes, publication_status se actualizaba vía CRUD genérico
-     * sin crear el registro de auditoría StoreModeration ni notificar al
-     * landlord. Se mantiene el mismo endpoint/contrato (PUT /storeRooms/{id})
-     * para no romper a los clientes existentes: si el payload trae un cambio
-     * real de publication_status a approved/rejected, se enruta por
-     * StoreModerationService antes de delegar el resto de campos al CRUD
-     * genérico heredado.
+     * PUT /storeRooms/{id} serves two audiences. For an administrator it is a
+     * moderation endpoint ONLY: the single accepted payload is an approve or
+     * reject decision to a status different from the current one, routed
+     * through StoreModerationService (status change, audit record and landlord
+     * notification in one transaction). Anything else sent by an admin is an
+     * explicit 422, never an edit: listing data belongs to the owning gestor.
+     * For everyone else the endpoint keeps its owner edit path (editListing())
+     * and a decision is still a 403.
+     *
+     * The decision and its reason/waiver fields are read from the request
+     * BODY only ($request->post()). Request::input() also merges the query
+     * string, so a `?publication_status=` could otherwise approve a room or
+     * silently revert an approval.
      */
     public function update(Request $request, $id, StoreModerationService $moderationService, StoreRoomService $service)
     {
         $storeRoom = StoreRooms::find($id);
         if (! $storeRoom) {
-            return response()->json(['message' => 'Not found', 'status' => 404], 404);
+            return response()->json(['message' => 'Not found'], 404);
         }
 
-        $newStatus = $request->input('publication_status');
-        $isModerationDecision = $newStatus !== null
-            && in_array($newStatus, ['approved', 'rejected'], true)
+        $newStatus = $request->post('publication_status');
+        $isModerationDecision = in_array($newStatus, ['approved', 'rejected'], true)
             && $newStatus !== $storeRoom->publication_status;
 
-        if ($isModerationDecision) {
-            if (! auth()->user() || auth()->user()->role !== 'admin') {
-                return response()->json([
-                    'message' => 'Solo un administrador puede aprobar o rechazar una bodega',
-                ], 403);
+        if (auth()->user()?->role === 'admin') {
+            if (! $isModerationDecision) {
+                throw ValidationException::withMessages([
+                    'publication_status' => 'Un administrador solo puede aprobar o rechazar una bodega con un estado distinto al actual; no se admiten otros cambios.',
+                ]);
             }
 
-            $rules = (new ModerationDecisionRules)->rules($newStatus, is_null($storeRoom->firefighter_permit_path));
-            $request->validate($rules);
+            return $this->moderateRoom($request, $storeRoom, $newStatus, $moderationService);
+        }
 
-            $moderationService->moderate($storeRoom, new ModerationDecision(
-                decision: $newStatus,
-                reason: $request->input('reason_rejected'),
-                reasonCode: $request->input('reason_code'),
-                adminId: auth()->id(),
-                permitWaiverAcknowledged: filter_var($request->input('permit_waiver_acknowledged'), FILTER_VALIDATE_BOOLEAN),
-            ));
-
-            $request->request->remove('publication_status');
-            $request->request->remove('reason_rejected');
-            $request->request->remove('reason_code');
-            $request->request->remove('permit_waiver_acknowledged');
-
-            return $this->updateModel($request, StoreRooms::class, $id, (new UpdateStoreRoomRequest)->rules());
+        if ($isModerationDecision) {
+            return response()->json([
+                'message' => 'Solo un administrador puede aprobar o rechazar una bodega',
+            ], 403);
         }
 
         return $this->editListing($storeRoom, $service);
+    }
+
+    /**
+     * Validates the decision fields against the shared moderation rules BEFORE
+     * anything is written, and feeds the service from the validated values
+     * only, so nothing can fail after the moderation commit. The success body
+     * keeps the shape the admin panel already consumes.
+     */
+    private function moderateRoom(Request $request, StoreRooms $storeRoom, string $decision, StoreModerationService $moderationService)
+    {
+        $validated = Validator::make(
+            $request->post(),
+            (new ModerationDecisionRules)->rules($decision, is_null($storeRoom->firefighter_permit_path))
+        )->validate();
+
+        $moderationService->moderate($storeRoom, new ModerationDecision(
+            decision: $decision,
+            reason: $validated['reason_rejected'] ?? null,
+            reasonCode: $validated['reason_code'] ?? null,
+            adminId: auth()->id(),
+            permitWaiverAcknowledged: filter_var($validated['permit_waiver_acknowledged'] ?? null, FILTER_VALIDATE_BOOLEAN),
+        ));
+
+        return response()->json([
+            'data' => $storeRoom->fresh(),
+            'message' => 'Updated successfully',
+            'status' => 200,
+        ], 200);
     }
 
     /**
@@ -191,20 +299,24 @@ class StoreRoomsController extends ApiController
         $data = app(EditStoreRoomListingRequest::class)->validated();
 
         try {
-            $updated = $service->updateListing($storeRoom, $data);
+            $updated = $service->updateListing($storeRoom, $data, auth()->id(), $requiresReview);
         } catch (ValidationException $e) {
             return response()->json([
                 'message' => 'Validation Error',
                 'errors' => $e->errors(),
-                'status' => 400,
-            ], 400);
+            ], 422);
         }
 
         $payload = [
             'data' => $updated,
             'message' => 'Los cambios se guardaron correctamente.',
             'status' => 200,
+            'requires_review' => $requiresReview,
         ];
+
+        if ($requiresReview) {
+            $payload['review_notice'] = 'Tu bodega volvió a revisión y dejará de estar disponible para nuevas reservas hasta que un administrador la apruebe.';
+        }
 
         if ($storeRoom->activeReservations()->exists()) {
             $payload['notice'] = 'Los cambios no afectan a las reservas ya confirmadas; solo aplican a nuevas reservas.';
@@ -221,18 +333,14 @@ class StoreRoomsController extends ApiController
     {
         $room = StoreRooms::find($id);
         if (! $room) {
-            return response()->json(['message' => 'Bodega no encontrada', 'status' => 404], 404);
+            return response()->json(['message' => 'Bodega no encontrada'], 404);
         }
 
         $landlord = Landlords::where('user_id', auth()->id())->firstOrFail();
 
         Gate::authorize('delete', [$room, $landlord]);
 
-        try {
-            $deletionService->delete($room);
-        } catch (ReservationConflictException $e) {
-            return response()->json(['message' => $e->getMessage()], 409);
-        }
+        $deletionService->delete($room);
 
         return response()->json(['message' => 'Bodega eliminada correctamente', 'status' => 200], 200);
     }
@@ -252,18 +360,14 @@ class StoreRoomsController extends ApiController
     {
         $storeRoom = StoreRooms::find($id);
         if (! $storeRoom) {
-            return response()->json(['message' => 'Bodega no encontrada', 'status' => 404], 404);
+            return response()->json(['message' => 'Bodega no encontrada'], 404);
         }
 
         $landlord = Landlords::where('user_id', auth()->id())->firstOrFail();
 
         Gate::authorize('resubmit', [$storeRoom, $landlord]);
 
-        try {
-            $room = $service->resubmit($storeRoom, auth()->id());
-        } catch (StoreRoomResubmissionException $e) {
-            return response()->json(['message' => $e->getMessage()], $e->statusCode);
-        }
+        $room = $service->resubmit($storeRoom, auth()->id());
 
         return response()->json([
             'data' => $room,
@@ -283,13 +387,25 @@ class StoreRoomsController extends ApiController
         // never bare auth()->user() — see the comment there.
         $viewer = auth('sanctum')->user();
 
-        $storeRooms = StoreRooms::with(['storePrices', 'storePhotos', 'storeDisponibility'])
+        $storeRooms = StoreRooms::with([
+            'storePrices',
+            'storePhotos',
+            'storeDisponibility',
+            // Only rejections, newest first (same ordering as the moderation
+            // queue), so the latest one is ->first() without an N+1.
+            'moderations' => fn ($query) => $query->where('status', 'rejected')
+                ->orderByDesc('moderation_date')
+                ->orderByDesc('id'),
+        ])
             ->withCount('activeReservations')
             ->where('landlord_id', $landlordId)
             ->visibleTo($viewer, (int) $landlordId)
             ->get()
             ->map(function ($room) {
                 $firstPhoto = $room->storePhotos->first();
+                $latestRejection = $room->publication_status === 'rejected'
+                    ? $room->moderations->first()
+                    : null;
 
                 return [
                     'id' => $room->id,
@@ -303,50 +419,75 @@ class StoreRoomsController extends ApiController
                     'store_prices' => $room->storePrices,
                     'active_reservations_count' => $room->active_reservations_count,
                     'image' => $firstPhoto ? asset('storage/'.$firstPhoto->photo_url) : null,
+                    'rejection' => $latestRejection ? [
+                        'reason_code' => $latestRejection->reason_code,
+                        'reason' => $latestRejection->reason_rejected !== '' ? $latestRejection->reason_rejected : null,
+                    ] : null,
                 ];
             });
 
         return response()->json($storeRooms, 200);
     }
 
-    public function detail($id)
+    public function detail($id, RatingsService $ratingsService)
     {
         $room = StoreRooms::with([
             'storePrices',
             'storePhotos',
             'landlord.user',
-        ])->withCount('activeReservations')->find($id);
+        ])->withCount('activeReservations')
+            ->viewableById($id, auth('sanctum')->user())
+            ->first();
 
+        // Missing, soft-deleted and not-visible rooms share this exact 404.
         if (! $room) {
             return response()->json(['message' => 'Bodega no encontrada'], 404);
         }
 
-        return response()->json([
-            'id' => $room->id,
-            'title' => $room->title,
-            'description' => $room->description,
-            'direction' => $room->direction,
-            'city' => $room->city,
-            'size' => $room->size,
-            // Raw string, NOT the SecurityFeatures-cast array: this endpoint's
-            // contract predates the cast and BodegaDetalle.tsx JSON.parse()s
-            // this field. The typed object is served only by the new
-            // /store-rooms/{id}/moderation-detail endpoint.
-            'security' => $room->getRawOriginal('security'),
-            'room_type' => $room->room_type,
-            'storage_type' => $room->storage_type,
-            'active_reservations_count' => $room->active_reservations_count,
+        $ratingSummary = $ratingsService->summaryFor($room->id);
 
-            'prices' => $room->storePrices,
+        return response()->json((new StoreRoomDetailResource($room, $ratingSummary))->resolve(), 200);
+    }
 
-            'photos' => $room->storePhotos->map(fn ($p) => asset('storage/'.$p->photo_url)),
+    /**
+     * Public, read-only price preview (storeroom-detail-pricing). Reuses
+     * ReservationPricingService::quote() verbatim — this controller never
+     * recomputes or approximates any figure the service already owns.
+     *
+     * Visibility follows show()/detail(): a non-approved room is quoted only for
+     * its owner or an admin; anyone else gets the same 404 as a missing room,
+     * decided before the date validation below.
+     *
+     * `start_date`/`end_date` are optional together; when both are absent,
+     * the panel's default 3-month estimate is computed HERE, server-side
+     * (design decision), so the frontend never does date math. When the
+     * pricing service finds no eligible `mode='month'` price row it throws
+     * ReservationPricingException, deliberately left UNCAUGHT here — its own
+     * render() already returns the correct {message} 422 shape, matching the
+     * existing pattern in ReservationsController::store().
+     */
+    public function quote(Request $request, $id, ReservationPricingService $pricingService)
+    {
+        $room = StoreRooms::viewableById($id, $request->user('sanctum'))->first();
+        if (! $room) {
+            return response()->json(['message' => 'Bodega no encontrada'], 404);
+        }
 
-            'landlord' => [
-                'id' => $room->landlord->id,
-                'user_id' => $room->landlord->user->id,
-                'name' => $room->landlord->user->name,
-                'email' => $room->landlord->user->email,
-            ],
+        $dates = $request->validate([
+            'start_date' => 'sometimes|required_with:end_date|date',
+            'end_date' => 'sometimes|required_with:start_date|date|after_or_equal:start_date',
         ]);
+
+        if (! isset($dates['start_date'], $dates['end_date'])) {
+            $start = Carbon::now();
+            $end = $start->copy()->addMonths(3);
+        } else {
+            $start = Carbon::parse($dates['start_date']);
+            $end = Carbon::parse($dates['end_date']);
+        }
+
+        $quote = $pricingService->quote($room, $start->toDateString(), $end->toDateString());
+
+        return response()->json($quote, 200);
     }
 }

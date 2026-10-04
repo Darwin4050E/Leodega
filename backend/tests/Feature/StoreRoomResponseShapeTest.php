@@ -45,6 +45,7 @@ class StoreRoomResponseShapeTest extends TestCase
             'name' => 'Carlos Mora',
             'email' => 'c.mora@example.test',
             'phone' => '0999999999',
+            'start_date' => '2024-03-01',
         ]);
         $landlord = Landlords::factory()->create(['user_id' => $user->id]);
 
@@ -105,16 +106,33 @@ class StoreRoomResponseShapeTest extends TestCase
         $this->assertStringContainsString('photos/first.jpg', $response->json('0.image'));
     }
 
-    public function test_index_does_not_expose_fields_owned_by_the_other_endpoints(): void
+    /**
+     * HUC-01 (backend PR, spec "storage-search"): `index()` deliberately
+     * gains `direction`, `room_type`, `storage_type`, `latitude`,
+     * `longitude`, `monthly_price` and `distance_km` to power the search/
+     * filter/map catalog — this is the one intentional divergence the class
+     * doc-comment above anticipates, not a surprise regression. `description`,
+     * `security`, `photos` and `prices` stay owned by the other endpoints.
+     */
+    public function test_index_exposes_only_the_fields_this_endpoint_now_owns(): void
     {
-        $this->seedFullRoom();
+        [$room] = $this->seedFullRoom();
 
         $response = $this->getJson('/api/storeRooms');
 
-        $this->assertArrayNotHasKey('direction', $response->json('0'));
+        $response->assertJsonPath('0.direction', 'Km 11.5 Via a Daule');
+        $response->assertJsonPath('0.room_type', 'bodega');
+        $response->assertJsonPath('0.storage_type', 'completa');
+        // json_encode() drops the trailing .0 for a whole-number float, so
+        // the wire value decodes back as an int here.
+        $response->assertJsonPath('0.monthly_price', 780);
+        $response->assertJsonPath('0.distance_km', null);
+        // seedFullRoom() never sets coordinates — null-safe per spec's
+        // "Distance Calculation and Null-Coordinate Handling".
+        $response->assertJsonPath('0.latitude', null);
+        $response->assertJsonPath('0.longitude', null);
+
         $this->assertArrayNotHasKey('description', $response->json('0'));
-        $this->assertArrayNotHasKey('room_type', $response->json('0'));
-        $this->assertArrayNotHasKey('storage_type', $response->json('0'));
         $this->assertArrayNotHasKey('security', $response->json('0'));
         $this->assertArrayNotHasKey('photos', $response->json('0'));
         $this->assertArrayNotHasKey('prices', $response->json('0'));
@@ -170,14 +188,26 @@ class StoreRoomResponseShapeTest extends TestCase
         $this->assertArrayNotHasKey('rating_count', $response->json('0'));
     }
 
-    public function test_get_by_landlord_returns_404_when_the_landlord_has_no_visible_rooms(): void
+    public function test_get_by_landlord_returns_200_empty_array_when_the_landlord_has_no_visible_rooms(): void
     {
         $landlord = Landlords::factory()->create();
 
         $response = $this->getJson("/api/landlords/{$landlord->id}/storeRooms");
 
-        // Pinned as current behaviour, not endorsed: an empty result is a
-        // 404 here, while the admin queue deliberately serves `200 []`.
+        // getByLandlord() only 404s when the landlord itself does not exist
+        // (checked separately below); a landlord with zero visible rooms is
+        // not an error, so it serves `200 []`, same as the admin queue. This
+        // test previously asserted 404 here -- that never matched what the
+        // controller does (unchanged since the initial commit) and was
+        // never actually run before being committed.
+        $response->assertStatus(200);
+        $response->assertExactJson([]);
+    }
+
+    public function test_get_by_landlord_returns_404_when_the_landlord_does_not_exist(): void
+    {
+        $response = $this->getJson('/api/landlords/999999/storeRooms');
+
         $response->assertStatus(404);
     }
 
@@ -199,11 +229,20 @@ class StoreRoomResponseShapeTest extends TestCase
         $response->assertJsonPath('storage_type', 'completa');
         $response->assertJsonPath('active_reservations_count', 0);
 
-        // `landlord` is FLAT here, exposes user_id, and carries no phone.
+        // `landlord` is FLAT here and exposes user_id. `phone` was added by
+        // the mobile-storeroom-detail cycle so the mobile detail screen can
+        // show the manager's contact info in one payload.
         $response->assertJsonPath('landlord.id', $landlord->id);
         $response->assertJsonPath('landlord.user_id', $user->id);
         $response->assertJsonPath('landlord.name', 'Carlos Mora');
         $response->assertJsonPath('landlord.email', 'c.mora@example.test');
+        $response->assertJsonPath('landlord.phone', $user->phone);
+
+        // `start_date` was added by the storeroom-detail-pricing cycle to
+        // back the "Miembro desde" line on the "Tu gestor" card. `User` has
+        // no cast for the column, so it round-trips as the raw "Y-m-d"
+        // string.
+        $response->assertJsonPath('landlord.start_date', '2024-03-01');
 
         // LeodegaUI.tsx:318 renders `landlord.lastname`, which this endpoint
         // has never returned. Pinned so the dead read stays visible instead
@@ -216,18 +255,78 @@ class StoreRoomResponseShapeTest extends TestCase
         // `photos` is a full array of URLs, unlike index()'s single `image`.
         $this->assertCount(2, $response->json('photos'));
         $this->assertStringContainsString('photos/first.jpg', $response->json('photos.0'));
+
+        // Additive fields for this cycle (storeroom-detail-backend): map
+        // location, rating summary and present-tense availability.
+        $this->assertNull($response->json('latitude'));
+        $this->assertNull($response->json('longitude'));
+        $response->assertJsonPath('rating_avg', 4);
+        $response->assertJsonPath('rating_count', 1);
+        $response->assertJsonPath('is_available_now', true);
     }
 
-    public function test_detail_omits_publication_status(): void
+    /**
+     * `User.phone` is required and unique at the DB level, so there is no
+     * true null-phone case in practice. The meaningful defensive case is an
+     * empty string: the resource must serve it as-is, not choke on a falsy
+     * value.
+     */
+    public function test_detail_includes_landlord_phone_even_when_blank(): void
+    {
+        [$room, , $user] = $this->seedFullRoom();
+        $user->update(['phone' => '']);
+
+        $response = $this->getJson("/api/store-rooms/{$room->id}/detail");
+
+        $response->assertStatus(200);
+        $response->assertJsonPath('landlord.phone', '');
+    }
+
+    public function test_detail_exposes_publication_status_but_not_image(): void
     {
         [$room] = $this->seedFullRoom();
 
         $response = $this->getJson("/api/store-rooms/{$room->id}/detail");
 
-        // Current behaviour: the other two endpoints return it, this one
-        // does not. Pinned, not endorsed.
-        $this->assertArrayNotHasKey('publication_status', $response->json());
+        // publication_status was added so the gestor's edit screen can offer
+        // "Reenviar a revisión" for a rejected room; `image` stays absent
+        // (this endpoint returns the full `photos` array instead).
+        $response->assertJsonPath('publication_status', $room->publication_status);
         $this->assertArrayNotHasKey('image', $response->json());
-        $this->assertArrayNotHasKey('rating_avg', $response->json());
+    }
+
+    public function test_detail_returns_non_null_coordinates_when_set(): void
+    {
+        [$room] = $this->seedFullRoom();
+        $room->update(['latitude' => -2.118, 'longitude' => -79.955]);
+
+        $response = $this->getJson("/api/store-rooms/{$room->id}/detail");
+
+        $response->assertStatus(200);
+        $response->assertJsonPath('latitude', -2.118);
+        $response->assertJsonPath('longitude', -79.955);
+    }
+
+    public function test_detail_returns_zero_ratings_for_a_room_with_no_ratings(): void
+    {
+        $landlord = Landlords::factory()->create();
+        $room = StoreRooms::factory()->create([
+            'landlord_id' => $landlord->id,
+            'publication_status' => 'approved',
+        ]);
+
+        $response = $this->getJson("/api/store-rooms/{$room->id}/detail");
+
+        $response->assertStatus(200);
+        $response->assertJsonPath('rating_avg', 0);
+        $response->assertJsonPath('rating_count', 0);
+    }
+
+    public function test_detail_returns_404_for_a_nonexistent_room_with_unchanged_body(): void
+    {
+        $response = $this->getJson('/api/store-rooms/999999/detail');
+
+        $response->assertStatus(404);
+        $response->assertExactJson(['message' => 'Bodega no encontrada']);
     }
 }

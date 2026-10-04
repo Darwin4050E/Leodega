@@ -4,8 +4,8 @@
  * Storage note: Leodeguita is a PWA, so it runs in the browser sandbox and has
  * no native secure keystore. We use localStorage — same tradeoff the web client
  * already accepts (frontend/src/context/AuthContext.tsx). The compensating
- * control for risk R-02 shifts from "native secure storage" to short-lived
- * tokens plus centralized revocation on the backend.
+ * control for risk R-02 is centralized backend revocation, not secure storage.
+ * Tokens do not expire (Sanctum `expiration` is null): logout, revocation or 401 end the session.
  */
 import type { AuthUser } from './authContextBase'
 

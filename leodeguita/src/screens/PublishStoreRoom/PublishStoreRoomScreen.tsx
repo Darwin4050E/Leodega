@@ -43,6 +43,8 @@ export default function PublishStoreRoomScreen() {
   const [phase, setPhase] = useState<Phase>('form')
   const [photoWarning, setPhotoWarning] = useState(false)
   const [createdTitle, setCreatedTitle] = useState('')
+  const [createdId, setCreatedId] = useState<number | null>(null)
+  const [retrying, setRetrying] = useState(false)
 
   if (user?.role !== 'landlord') {
     return (
@@ -83,9 +85,20 @@ export default function PublishStoreRoomScreen() {
             <StatusChip tone="warn">Pendiente de verificación</StatusChip>
           </div>
           {photoWarning && (
-            <p className="mt-4 text-xs text-lg-err">
-              No pudimos subir las fotos. Podrás agregarlas desde «Mis bodegas».
-            </p>
+            <>
+              <p className="mt-4 text-xs text-lg-err">
+                No pudimos subir las fotos. Tu espacio no podrá aprobarse hasta
+                que tenga al menos 3 fotos.
+              </p>
+              <Button
+                variant="sec"
+                className="mt-3 w-auto px-4"
+                disabled={retrying}
+                onClick={handleRetryPhotos}
+              >
+                Reintentar subida de fotos
+              </Button>
+            </>
           )}
         </div>
         <div className="shrink-0 px-5 pb-8">
@@ -116,6 +129,19 @@ export default function PublishStoreRoomScreen() {
     else setStep((s) => s - 1)
   }
 
+  async function handleRetryPhotos() {
+    if (createdId === null) return
+    setRetrying(true)
+    try {
+      await uploadStoreRoomPhotos(createdId, values.photos)
+      setPhotoWarning(false)
+    } catch {
+      setPhotoWarning(true)
+    } finally {
+      setRetrying(false)
+    }
+  }
+
   async function handleSubmit() {
     setFormError(null)
     setErrors({})
@@ -124,6 +150,7 @@ export default function PublishStoreRoomScreen() {
       const result = await createStoreRoom(values)
       const id = result.item?.id
       setCreatedTitle(result.item?.title ?? values.title.trim())
+      setCreatedId(id ?? null)
 
       if (id && values.photos.length > 0) {
         try {
@@ -134,7 +161,7 @@ export default function PublishStoreRoomScreen() {
       }
       setPhase('success')
     } catch (error) {
-      if (axios.isAxiosError(error) && error.response?.status === 400) {
+      if (axios.isAxiosError(error) && error.response?.status === 422) {
         const body = error.response.data as ApiValidationError
         const { fieldErrors, firstStep } = mapApiErrors(body.errors)
         setErrors(fieldErrors)

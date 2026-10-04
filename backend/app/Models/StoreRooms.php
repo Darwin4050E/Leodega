@@ -12,6 +12,10 @@ class StoreRooms extends Model
     use HasFactory;
     use SoftDeletes;
 
+    public const MIN_PHOTOS = 3;
+
+    public const MAX_PHOTOS = 10;
+
     protected $table = 'storeRooms';
 
     protected $fillable = [
@@ -51,6 +55,11 @@ class StoreRooms extends Model
         return $this->hasMany(StorePhoto::class, 'store_room_id');
     }
 
+    public function hasMinimumPhotos(): bool
+    {
+        return $this->storePhotos()->count() >= self::MIN_PHOTOS;
+    }
+
     public function storeDisponibility()
     {
         return $this->hasMany(StoreDisponibility::class, 'store_room_id');
@@ -86,6 +95,53 @@ class StoreRooms extends Model
     }
 
     /**
+     * Answers "is this storeroom occupied RIGHT NOW?" — confirmed
+     * reservations whose date range contains today
+     * (start_date <= today <= end_date).
+     *
+     * This is NOT the deletion guard. activeReservations() (see its
+     * docblock above) intentionally also counts FUTURE confirmed
+     * reservations, because deletion must be blocked by any upcoming
+     * booking, not only a current one. This predicate answers a strictly
+     * narrower, present-tense question and must never replace or be merged
+     * into activeReservations() (Engram obs #217).
+     */
+    public function currentlyOccupiedReservations()
+    {
+        return $this->hasMany(Reservations::class, 'store_room_id')
+            ->where('status', 'confirmed')
+            ->whereDate('start_date', '<=', today())
+            ->whereDate('end_date', '>=', today());
+    }
+
+    /**
+     * Answers "does this proposed date range overlap ANY confirmed
+     * reservation, past, present, or future, on this storeroom?" — used to
+     * guard landlord-created availability blocks (StoreDisponibility)
+     * against clobbering a confirmed booking.
+     *
+     * This is a THIRD, independent predicate. It is NEITHER
+     * activeReservations() (the deletion guard, intentionally
+     * future-inclusive, Engram obs #217) NOR currentlyOccupiedReservations()
+     * (present-tense "occupied right now" check, Engram obs #225) — do not
+     * fold this into either.
+     *
+     * Boundary rule reused verbatim from ReservationService's existing
+     * conflict checks (ReservationService.php:31-35,84-89): inclusive on
+     * both ends. A range whose start_date equals a confirmed reservation's
+     * end_date, or whose end_date equals a confirmed reservation's
+     * start_date, COUNTS as overlapping.
+     */
+    public function hasConfirmedReservationOverlapping(string $startDate, string $endDate): bool
+    {
+        return $this->reservations()
+            ->where('status', 'confirmed')
+            ->whereDate('start_date', '<=', $endDate)
+            ->whereDate('end_date', '>=', $startDate)
+            ->exists();
+    }
+
+    /**
      * Single visibility predicate for the two public listing call sites
      * (StoreRoomsController::index() and ::getByLandlord()): a storeroom is
      * visible to a viewer when the viewer is an admin, when the viewer is
@@ -109,5 +165,24 @@ class StoreRooms extends Model
         }
 
         return $query->where('publication_status', 'approved');
+    }
+
+    /**
+     * Single-room counterpart of scopeVisibleTo() for public endpoints that
+     * address one storeroom by id (detail(), reservedDates()). The owner is
+     * resolved from the row itself, so the rule is exactly scopeVisibleTo()'s
+     * and is never copied: approved rooms are visible to everyone, any other
+     * room only to an admin or its owning landlord. A missing, soft-deleted or
+     * hidden room all yield an empty result, which callers turn into the same
+     * 404 so existence does not leak.
+     */
+    public function scopeViewableById($query, $id, ?User $viewer)
+    {
+        $ownerLandlordId = static::query()->whereKey($id)->value('landlord_id');
+
+        return $query->whereKey($id)->visibleTo(
+            $viewer,
+            $ownerLandlordId === null ? null : (int) $ownerLandlordId
+        );
     }
 }

@@ -19,7 +19,15 @@ export interface StoreRoomDetail {
     name?: string;
     lastname?: string;
     email?: string;
+    /** `user.start_date`; not nullable at the DB level (default CURRENT_DATE), but kept
+     * optional here defensively since older cached responses may omit it. */
+    start_date?: string;
   };
+  latitude: number | null;
+  longitude: number | null;
+  rating_avg: number;
+  rating_count: number;
+  is_available_now: boolean;
 }
 
 export interface StoreRoomSummary {
@@ -42,14 +50,47 @@ export interface StoreRoomSummary {
   rating_count?: number;
   image?: string | null;
   active_reservations_count?: number;
+  direction?: string | null;
+  room_type?: string | null;
+  storage_type?: string | null;
+  latitude?: number | null;
+  longitude?: number | null;
+  monthly_price?: number | null;
+  distance_km?: number | null;
 }
 
-export function getStoreRooms() {
-  return api.get<StoreRoomSummary[]>("/storeRooms");
+export interface StoreRoomFilters {
+  city?: string;
+  min_size?: number;
+  min_price?: number;
+  max_price?: number;
+  lat?: number;
+  lng?: number;
+}
+
+export function getStoreRooms(filters?: StoreRoomFilters) {
+  return api.get<StoreRoomSummary[]>("/storeRooms", { params: filters });
 }
 
 export function getStoreRoomDetail(id: number | string) {
   return api.get<StoreRoomDetail>(`/store-rooms/${id}/detail`);
+}
+
+/**
+ * `ReservationPricingService::quote()`'s response shape, returned verbatim
+ * by `GET /store-rooms/{id}/quote`. The frontend never recomputes any of
+ * these figures — see `PriceBreakdownPanel`.
+ */
+export interface StoreRoomQuote {
+  rent_subtotal: string;
+  service_fee: string;
+  deposit: string;
+  total_mount: string;
+}
+
+export function getStoreRoomQuote(id: number | string, startDate?: string, endDate?: string) {
+  const params = startDate && endDate ? { start_date: startDate, end_date: endDate } : undefined;
+  return api.get<StoreRoomQuote>(`/store-rooms/${id}/quote`, { params });
 }
 
 export function createStoreRoom(formData: FormData) {
@@ -67,6 +108,12 @@ export interface UpdateStoreRoomResponse {
    * confirmed reservations. Absent otherwise.
    */
   notice?: string;
+  /**
+   * True when the edit sent an approved room back to review; `review_notice`
+   * carries the explanation. Both are absent or false otherwise.
+   */
+  requires_review?: boolean;
+  review_notice?: string;
 }
 
 export function updateStoreRoom(id: number | string, data: Record<string, unknown>) {
@@ -81,6 +128,24 @@ export function uploadStoreRoomPhotos(storeRoomId: number | string, formData: Fo
   return api.post(`/store-rooms/${storeRoomId}/photos`, formData, {
     headers: { "Content-Type": "multipart/form-data" },
   });
+}
+
+/**
+ * The owning gestor replaces the fire-department permit PDF. An approved
+ * room goes back to `pending`; a rejected one stays rejected until
+ * resubmitStoreRoom() is called explicitly.
+ */
+export function replaceStoreRoomPermit(storeRoomId: number | string, file: File) {
+  const formData = new FormData();
+  formData.append("firefighter_permit", file);
+  return api.post<{ message: string; status: number }>(`/store-rooms/${storeRoomId}/permit`, formData, {
+    headers: { "Content-Type": "multipart/form-data" },
+  });
+}
+
+/** Empty-body transition of a rejected room back to the moderation queue (409 otherwise). */
+export function resubmitStoreRoom(id: number | string) {
+  return api.post<{ message: string; status: number }>(`/storeRooms/${id}/resubmit`);
 }
 
 export function deleteStoreRoom(id: number | string) {
@@ -106,6 +171,12 @@ export const REASON_CODE = {
   OTRO: "otro",
 } as const;
 export type ReasonCode = (typeof REASON_CODE)[keyof typeof REASON_CODE];
+
+/** Latest rejection of a rejected room, as returned by GET /landlords/{id}/storeRooms. */
+export interface StoreRoomRejection {
+  reason_code: ReasonCode | null;
+  reason: string | null;
+}
 
 export interface ModerationHistoryEntry {
   status: "approved" | "pending" | "rejected";

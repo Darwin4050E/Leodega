@@ -2,7 +2,8 @@ import { useState } from "react";
 import { Lock, Pencil, Trash2 } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 
-import { deleteStoreRoom } from "../services/storeRooms";
+import { deleteStoreRoom, type StoreRoomRejection } from "../services/storeRooms";
+import { PUBLICATION_STATUS_LABEL, REASON_LABEL, type PublicationStatus } from "../utils/storeRoomLabels";
 import { asApiError } from "../api/errors";
 import EliminarBodegaModal from "./EliminarBodegaModal";
 
@@ -10,6 +11,16 @@ interface StorePrice {
     mode: string;
     price: number;
     disponibility: boolean;
+}
+
+const STATUS_BADGE_CLASS: Record<PublicationStatus, string> = {
+    pending: "bg-yellow-100 text-yellow-700",
+    approved: "bg-green-100 text-green-700",
+    rejected: "bg-red-100 text-red-700",
+};
+
+function isPublicationStatus(value: string): value is PublicationStatus {
+    return value in PUBLICATION_STATUS_LABEL;
 }
 
 interface BodegaCardProps {
@@ -24,6 +35,7 @@ interface BodegaCardProps {
     image?: string;
     storePrices?: StorePrice[];
     active_reservations_count?: number;
+    rejection?: StoreRoomRejection | null;
     onDeleted?: (id: number, status: "deleted" | "not_found") => void;
 }
 
@@ -31,8 +43,10 @@ const BodegaCard = ({
     id,
     title,
     image,
+    publication_status,
     storePrices = [],
     active_reservations_count = 0,
+    rejection = null,
     onDeleted,
 }: BodegaCardProps) => {
     const defaultImage =
@@ -89,7 +103,25 @@ const BodegaCard = ({
 
             <div className="p-4">
 
-                <h3 className="text-[18px] font-medium text-gray-900">{title}</h3>
+                <div className="flex items-start justify-between gap-2">
+                    <h3 className="text-[18px] font-medium text-gray-900">{title}</h3>
+                    {isPublicationStatus(publication_status) && (
+                        <span
+                            className={`shrink-0 text-[11px] px-2 py-0.5 rounded-full font-medium ${STATUS_BADGE_CLASS[publication_status]}`}
+                        >
+                            {PUBLICATION_STATUS_LABEL[publication_status]}
+                        </span>
+                    )}
+                </div>
+
+                {publication_status === "rejected" && rejection && (
+                    <div className="mt-1 mb-2 rounded-lg bg-red-50 px-3 py-2 text-xs text-red-700">
+                        {rejection.reason_code && (
+                            <p className="font-medium">Motivo: {REASON_LABEL[rejection.reason_code].label}</p>
+                        )}
+                        {rejection.reason && <p>{rejection.reason}</p>}
+                    </div>
+                )}
 
                 <p className="text-[16px] font-medium text-blue-600">
 

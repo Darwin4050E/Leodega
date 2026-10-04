@@ -2,7 +2,6 @@
 
 namespace App\Http\Controllers;
 
-use App\Exceptions\AccountModerationException;
 use App\Http\Requests\BlockUserRequest;
 use App\Models\User;
 use App\Services\AccountModerationService;
@@ -21,11 +20,7 @@ class AccountModerationController extends Controller
         $target = User::findOrFail($id);
         $validated = $request->validate((new BlockUserRequest)->rules());
 
-        try {
-            $moderation = $service->block($target, $validated['reason'], (int) auth()->id());
-        } catch (AccountModerationException $e) {
-            return response()->json(['message' => $e->getMessage()], $e->statusCode);
-        }
+        $moderation = $service->block($target, $validated['reason'], (int) auth()->id());
 
         return response()->json([
             'status' => 'success',
@@ -39,11 +34,7 @@ class AccountModerationController extends Controller
     {
         $target = User::findOrFail($id);
 
-        try {
-            $moderation = $service->reactivate($target, (int) auth()->id());
-        } catch (AccountModerationException $e) {
-            return response()->json(['message' => $e->getMessage()], $e->statusCode);
-        }
+        $moderation = $service->reactivate($target, (int) auth()->id());
 
         return response()->json([
             'status' => 'success',

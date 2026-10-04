@@ -30,7 +30,7 @@ class ApiController extends Controller
     {
         $item = $modelClass::find($id);
         if (! $item) {
-            return response()->json(['message' => 'Item not found', 'status' => 404], 404);
+            return response()->json(['message' => 'Item not found'], 404);
         }
 
         return response()->json($item, 200);
@@ -43,8 +43,7 @@ class ApiController extends Controller
             return response()->json([
                 'message' => 'Validation Error',
                 'errors' => $validator->errors(),
-                'status' => 400,
-            ], 400);
+            ], 422);
         }
 
         $validated = $validator->validated();
@@ -78,8 +77,6 @@ class ApiController extends Controller
         } catch (\Exception $e) {
             return response()->json([
                 'message' => 'Error creating item',
-                'error' => $e->getMessage(),
-                'status' => 500,
             ], 500);
         }
     }
@@ -88,7 +85,7 @@ class ApiController extends Controller
     {
         $item = $modelClass::find($id);
         if (! $item) {
-            return response()->json(['message' => 'Not found', 'status' => 404], 404);
+            return response()->json(['message' => 'Not found'], 404);
         }
 
         // Agregar "sometimes" automáticamente
@@ -105,8 +102,7 @@ class ApiController extends Controller
             return response()->json([
                 'message' => 'Validation Error',
                 'errors' => $validator->errors(),
-                'status' => 400,
-            ], 400);
+            ], 422);
         }
 
         $validated = $validator->validated();
@@ -135,8 +131,6 @@ class ApiController extends Controller
         } catch (\Exception $e) {
             return response()->json([
                 'message' => 'Error updating item',
-                'error' => $e->getMessage(),
-                'status' => 500,
             ], 500);
         }
     }
@@ -145,7 +139,7 @@ class ApiController extends Controller
     {
         $item = $modelClass::find($id);
         if (! $item) {
-            return response()->json(['message' => 'Item not found', 'status' => 404], 404);
+            return response()->json(['message' => 'Item not found'], 404);
         }
         $item->delete();
 

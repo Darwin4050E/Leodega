@@ -4,12 +4,18 @@ import { render, screen, fireEvent, waitFor, within } from '@testing-library/rea
 const mockGetLandlordReservations = vi.hoisted(() => vi.fn());
 const mockCancelReservation = vi.hoisted(() => vi.fn());
 const mockGetCancellationRate = vi.hoisted(() => vi.fn());
+const mockNavigate = vi.hoisted(() => vi.fn());
 
 vi.mock('../../services/reservations', () => ({
   getLandlordReservations: mockGetLandlordReservations,
   cancelReservation: mockCancelReservation,
   getCancellationRate: mockGetCancellationRate,
 }));
+
+vi.mock('react-router-dom', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('react-router-dom')>();
+  return { ...actual, useNavigate: () => mockNavigate };
+});
 
 import GestorReservas from './GestorReservas';
 
@@ -26,8 +32,11 @@ const reservations = [
     payment_status: 'paid',
     can_be_cancelled: true,
     has_refund_obligation: false,
+    payment_id: 101,
+    payment_method: 'credit card',
+    payment_date: '2030-01-05',
     store_rooms: { title: 'Bodega Norte' },
-    tenants: { user: { name: 'Ana', lastname: 'Torres', email: 'ana@example.com' } },
+    tenants: { user: { id: 501, name: 'Ana', lastname: 'Torres', email: 'ana@example.com' } },
   },
   {
     id: 2,
@@ -41,6 +50,9 @@ const reservations = [
     payment_status: 'pending',
     can_be_cancelled: false,
     has_refund_obligation: false,
+    payment_id: null,
+    payment_method: null,
+    payment_date: null,
     store_rooms: { title: 'Bodega Sur' },
     tenants: { user: { name: 'Luis', lastname: 'Perez', email: 'luis@example.com' } },
   },
@@ -56,6 +68,9 @@ const reservations = [
     payment_status: 'paid',
     can_be_cancelled: false,
     has_refund_obligation: true,
+    payment_id: 103,
+    payment_method: 'debit card',
+    payment_date: '2020-01-08',
     store_rooms: { title: 'Bodega Norte' },
     tenants: { user: { name: 'Marta', lastname: 'Ruiz', email: 'marta@example.com' } },
   },
@@ -71,6 +86,9 @@ const reservations = [
     payment_status: 'pending',
     can_be_cancelled: false,
     has_refund_obligation: false,
+    payment_id: null,
+    payment_method: null,
+    payment_date: null,
     store_rooms: { title: 'Bodega Sur' },
     tenants: { user: { name: 'Carlos', lastname: 'Diaz', email: 'carlos@example.com' } },
   },
@@ -142,21 +160,66 @@ describe('GestorReservas', () => {
     expect(screen.queryByText('Reserva #1')).not.toBeInTheDocument();
   });
 
-  it('decorative buttons (Mensaje al cliente / Descargar comprobante) produce no side effects', async () => {
+  it('"Mensaje al cliente" navigates to the tenant conversation when tenants.user.id is present', async () => {
     render(<GestorReservas />);
     await waitFor(() => screen.getAllByText('Bodega Norte'));
 
     fireEvent.click(screen.getByText('Ana Torres'));
+    const button = screen.getByText('Mensaje al cliente');
+    expect(button).not.toBeDisabled();
 
-    const mensajeBtn = screen.getByText('Mensaje al cliente');
-    const comprobanteBtn = screen.getByText('Descargar comprobante');
+    fireEvent.click(button);
 
-    fireEvent.click(mensajeBtn);
-    fireEvent.click(comprobanteBtn);
+    expect(mockNavigate).toHaveBeenCalledWith('/arrendador/mensajes?userId=501');
+  });
 
-    // No navigation, no additional API calls beyond the initial list load.
-    expect(mockGetLandlordReservations).toHaveBeenCalledTimes(1);
-    expect(mockCancelReservation).not.toHaveBeenCalled();
+  it('"Mensaje al cliente" is disabled and does not navigate when tenants.user.id is absent', async () => {
+    render(<GestorReservas />);
+    await waitFor(() => screen.getAllByText('Bodega Norte'));
+
+    fireEvent.click(screen.getByText('Luis Perez'));
+    const button = screen.getByText('Mensaje al cliente');
+    expect(button).toBeDisabled();
+
+    fireEvent.click(button);
+
+    expect(mockNavigate).not.toHaveBeenCalled();
+  });
+
+  /**
+   * HUG-05 escenario 3: a receipt only makes sense for a reservation that
+   * was actually paid. `payment_id` (not `payment_status`, which is also
+   * 'paid' for REEMBOLSADO) is the signal -- id 1 and 3 were paid, id 2 and
+   * 4 never were.
+   */
+  it('shows "Descargar comprobante" only for reservations that were actually paid', async () => {
+    render(<GestorReservas />);
+    await waitFor(() => screen.getAllByText('Bodega Norte'));
+
+    fireEvent.click(screen.getByText('Ana Torres'));
+    expect(screen.getByText('Descargar comprobante')).toBeInTheDocument();
+    fireEvent.click(screen.getByText('← Volver a Reservas'));
+
+    fireEvent.click(screen.getByText('Luis Perez'));
+    expect(screen.queryByText('Descargar comprobante')).not.toBeInTheDocument();
+  });
+
+  it('opens the payment receipt with the reservation and client data', async () => {
+    render(<GestorReservas />);
+    await waitFor(() => screen.getAllByText('Bodega Norte'));
+
+    fireEvent.click(screen.getByText('Ana Torres'));
+    fireEvent.click(screen.getByText('Descargar comprobante'));
+
+    const dialog = await screen.findByRole('dialog', { name: /comprobante de pago/i });
+    expect(within(dialog).getByText('LEO-000001')).toBeInTheDocument();
+    expect(within(dialog).getByText('ana@example.com')).toBeInTheDocument();
+    expect(within(dialog).getByText('Tarjeta de crédito')).toBeInTheDocument();
+    expect(within(dialog).getByText('2030-01-05')).toBeInTheDocument();
+    expect(within(dialog).getByText('$4,180 USD')).toBeInTheDocument();
+
+    fireEvent.click(within(dialog).getByText('Cerrar'));
+    expect(screen.queryByRole('dialog', { name: /comprobante de pago/i })).not.toBeInTheDocument();
   });
 
   it('shows the cancel button only for the eligible reservation (confirmed, paid, strictly future)', async () => {

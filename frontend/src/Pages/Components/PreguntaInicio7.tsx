@@ -8,10 +8,8 @@ import { useWizard } from "../../context/WizardContext";
 import ModalConfirmacion from "../../Components/ModalConfirmacion";
 import { asApiError } from "../../api/errors";
 import leodegalogo from '../../img/LOGO_LEODEGAISO.png';
+import { validatePermitFile } from "../../utils/permitFile";
 
-// Fire-department permit: PDF only, 5 MB. Must match the backend rule in
-// StoreStoreRoomRequest (`mimes:pdf|max:5120`) and the mobile app.
-const PERMIT_MAX_BYTES = 5 * 1024 * 1024;
 
 const PreguntaInicio7 = () => {
   const navigate = useNavigate();
@@ -24,17 +22,19 @@ const PreguntaInicio7 = () => {
     camara: boolean;
     ruido: boolean;
     control: boolean;
-    objetos: boolean;
+    acceso: boolean;
   }>({
     camara: false,
     ruido: false,
     control: false,
-    objetos: false,
+    acceso: false,
   });
   const [cancellationPolicyTier, setCancellationPolicyTier] = useState("");
   const [permitError, setPermitError] = useState<string | null>(null);
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [isProcessing, setIsProcessing] = useState(false);
+  const [createdRoomId, setCreatedRoomId] = useState<number | null>(null);
+  const [photoUploadFailed, setPhotoUploadFailed] = useState(false);
 
   type SeguridadKey = keyof typeof seguridad;
 
@@ -45,17 +45,11 @@ const PreguntaInicio7 = () => {
   const handlePermitFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0] ?? null;
 
-    if (file) {
-      if (file.type !== "application/pdf") {
-        setPermitError("El permiso debe ser un archivo PDF.");
-        e.target.value = "";
-        return;
-      }
-      if (file.size > PERMIT_MAX_BYTES) {
-        setPermitError("El permiso no debe superar los 5 MB.");
-        e.target.value = "";
-        return;
-      }
+    const error = file ? validatePermitFile(file) : null;
+    if (error) {
+      setPermitError(error);
+      e.target.value = "";
+      return;
     }
 
     setPermitError(null);
@@ -73,10 +67,37 @@ const PreguntaInicio7 = () => {
     await uploadStoreRoomPhotos(storeRoomId, formData);
   };
 
+  const finishWithPhotos = async (storeRoomId: number) => {
+    setPhotoUploadFailed(false);
+    setIsProcessing(true);
+
+    try {
+      await uploadPhotos(storeRoomId);
+    } catch (e) {
+      console.error("Error subiendo fotos", e);
+      setPhotoUploadFailed(true);
+      setIsProcessing(false);
+      return;
+    }
+
+    wizardCtx.reset();
+    localStorage.removeItem("optionData");
+
+    setTimeout(() => {
+      setIsProcessing(false);
+      setIsModalOpen(true);
+    }, 1500);
+  };
+
   // Submit is gated: both a permit and a cancellation policy tier are required.
   const nextDisabled = !cancellationPolicyTier || !wizardCtx.permit;
 
   const handleEnviar = async () => {
+    if (createdRoomId !== null) {
+      await finishWithPhotos(createdRoomId);
+      return;
+    }
+
     if (!user?.landlord?.id) {
       alert("No se encontró tu perfil de arrendador. Vuelve a iniciar sesión e intenta de nuevo.");
       return;
@@ -87,18 +108,25 @@ const PreguntaInicio7 = () => {
       return;
     }
 
+    const data = JSON.parse(localStorage.getItem("optionData") || "{}");
+    const size = Number(data.priceData?.tamano);
+    const price = Number(data.priceData?.precio);
+
+    if (!(size > 0) || !(price > 0)) {
+      alert("Indica un tamaño y un precio mayores a cero para continuar.");
+      return;
+    }
+
     try {
       setIsModalOpen(false);
       setIsProcessing(true);
-
-      const data = JSON.parse(localStorage.getItem("optionData") || "{}");
 
       const formData = new FormData();
       formData.append("room_type", data.step1Data?.selectedOption || "");
       formData.append("storage_type", data.step2Data?.selectedOption || "");
       formData.append("direction", data.location?.direction || "");
       formData.append("city", data.location?.city || "");
-      formData.append("size", String(Number(data.priceData?.tamano) || 0));
+      formData.append("size", String(size));
       formData.append("title", data.titleData?.titulo || "");
       formData.append("description", data.titleData?.descripcion || "");
       formData.append("security", JSON.stringify(seguridad));
@@ -116,27 +144,16 @@ const PreguntaInicio7 = () => {
       }
 
       formData.append("storePrices[0][mode]", "month");
-      formData.append("storePrices[0][price]", String(Number(data.priceData?.precio) || 0));
+      formData.append("storePrices[0][price]", String(price));
       formData.append("storePrices[0][disponibility]", "true");
 
       const response = await createStoreRoom(formData);
 
       if (response.status === 201 || response.status === 200) {
         const storeRoomId = response.data.item?.id ?? response.data.id;
+        setCreatedRoomId(storeRoomId);
 
-        try {
-          await uploadPhotos(storeRoomId);
-        } catch (e) {
-          console.error("Error subiendo fotos", e);
-        }
-
-        wizardCtx.reset();
-        localStorage.removeItem("optionData");
-
-        setTimeout(() => {
-          setIsProcessing(false);
-          setIsModalOpen(true);
-        }, 1500);
+        await finishWithPhotos(storeRoomId);
       }
     } catch (error: unknown) {
       console.error("Error al crear la bodega:", error);
@@ -218,14 +235,11 @@ const PreguntaInicio7 = () => {
             </label>
 
             <label className="flex justify-between items-center border-b border-gray-100 py-2 text-gray-700">
-              <span>
-                Objetos prohibidos (sustancias peligrosas, inflamables, ilegales,
-                perecibles, etc.)
-              </span>
+              <span>Acceso restringido 24/7</span>
               <input
                 type="checkbox"
-                checked={seguridad.objetos}
-                onChange={() => handleCheckboxChange("objetos")}
+                checked={seguridad.acceso}
+                onChange={() => handleCheckboxChange("acceso")}
                 className="w-5 h-5 accent-purple-500 cursor-pointer"
               />
             </label>
@@ -304,6 +318,30 @@ const PreguntaInicio7 = () => {
               <option value="estricta">Estricta</option>
             </select>
           </div>
+
+          {photoUploadFailed && createdRoomId !== null && (
+            <div role="alert" className="mb-6 rounded-lg border border-red-300 bg-red-50 p-4">
+              <p className="text-sm text-red-700">
+                No pudimos subir las fotos. Tu bodega ya fue creada, pero no podrá aprobarse hasta que tenga al menos 3 fotos.
+              </p>
+              <div className="mt-3 flex flex-wrap gap-3">
+                <button
+                  type="button"
+                  onClick={() => finishWithPhotos(createdRoomId)}
+                  className="rounded-lg bg-purple-600 px-4 py-2 text-sm text-white hover:bg-purple-700"
+                >
+                  Reintentar subida de fotos
+                </button>
+                <button
+                  type="button"
+                  onClick={() => navigate("/arrendador/bodegas")}
+                  className="rounded-lg border border-gray-300 px-4 py-2 text-sm text-gray-700 hover:bg-gray-50"
+                >
+                  Volver a mis bodegas
+                </button>
+              </div>
+            </div>
+          )}
 
           <ProgressBar totalSteps={7} activeIndex={6} />
 

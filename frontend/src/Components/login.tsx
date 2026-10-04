@@ -1,8 +1,9 @@
 import React, { useState } from 'react';
-import { useNavigate } from "react-router-dom";
+import { useNavigate, useLocation } from "react-router-dom";
 import { login as loginRequest } from "../services/auth";
 import { useAuth } from "../context/useAuth";
 import { asApiError } from "../api/errors";
+import { LOGIN_REQUIRED_MESSAGE, safeReturnPath } from "../utils/reservationFlow";
 import { Link } from 'react-router-dom';
 import facebook from '../img/facebook.png';
 import google from '../img/google.png';
@@ -13,7 +14,11 @@ import leodegalogo from '../img/LOGO_LEODEGAISO.png';
 const Login: React.FC = () => {
 
     const navigate = useNavigate();
+    const location = useLocation();
     const { logout, login } = useAuth();
+    // Set by LeodegaUI when a visitor presses Reservar (HUC-03 S3).
+    const routerState = location.state as { from?: unknown; reason?: unknown } | null;
+    const showReserveNotice = routerState?.reason === "reserve";
     const [email, setEmail] = useState("");
     const [password, setPassword] = useState("");
     const [loading, setLoading] = useState(false);
@@ -35,7 +40,12 @@ const Login: React.FC = () => {
             } else if (data.user.role === "admin") {
                 navigate("/admin/resumen");
             } else if (data.user.role === "tenant") {
-                navigate("/arrendatario/dashboard");
+                // Only tenants return to the room they were booking; the
+                // target is validated so state.from can never redirect
+                // off-site (open-redirect guard).
+                const returnTo = safeReturnPath(routerState?.from);
+                if (returnTo) navigate(returnTo, { replace: true });
+                else navigate("/arrendatario/dashboard");
             } else {
                 navigate("/");
             }
@@ -66,6 +76,11 @@ const Login: React.FC = () => {
                 <div className="w-full lg:w-1/2 bg-white rounded-xl lg:pr-[90px] mb-8 lg:mb-0">
                     <h2 className="text-[30px] text-[#313131] font-semibold mb-4">Iniciar Sesión</h2>
                     <p className='font-light text-[#646464] text-[15px] mb-5'>Inicia sesión para ver las bodegas</p>
+                    {showReserveNotice && (
+                        <p role="status" className="bg-purple-50 text-purple-800 text-sm rounded-lg px-4 py-3 mb-5">
+                            {LOGIN_REQUIRED_MESSAGE}
+                        </p>
+                    )}
                     <form onSubmit={Login}>
                         <div>
                             <fieldset className="border-2 border-gray-300 rounded-lg px-3 pt-0 pb-2">

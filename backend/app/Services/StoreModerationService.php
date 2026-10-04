@@ -6,6 +6,7 @@ use App\Enums\NotificationType;
 use App\Models\StoreModeration;
 use App\Models\StoreRooms;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Validation\ValidationException;
 use InvalidArgumentException;
 
 /**
@@ -32,6 +33,8 @@ class StoreModerationService
         'otro' => 'Otro motivo',
     ];
 
+    public const MIN_PHOTOS_MESSAGE = 'La bodega necesita al menos 3 fotos para ser aprobada.';
+
     /**
      * @throws InvalidArgumentException si la decisión no es 'approved' ni 'rejected'.
      */
@@ -39,6 +42,10 @@ class StoreModerationService
     {
         if (! in_array($data->decision, ['approved', 'rejected'], true)) {
             throw new InvalidArgumentException("Decisión de moderación inválida: {$data->decision}");
+        }
+
+        if ($data->decision === 'approved' && ! $room->hasMinimumPhotos()) {
+            throw ValidationException::withMessages(['photos' => self::MIN_PHOTOS_MESSAGE]);
         }
 
         $waiverAcknowledged = $data->decision === 'approved'
