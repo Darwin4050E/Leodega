@@ -2,8 +2,14 @@ import { useEffect, useMemo, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { ArrowLeft } from "lucide-react";
 
-import { getStoreRoomDetail, updateStoreRoom } from "../services/storeRooms";
+import {
+  getStoreRoomDetail,
+  replaceStoreRoomPermit,
+  resubmitStoreRoom,
+  updateStoreRoom,
+} from "../services/storeRooms";
 import { asApiError } from "../api/errors";
+import { validatePermitFile } from "../utils/permitFile";
 
 /**
  * HUG-08: single-page edit form for a storeroom the gestor already
@@ -18,9 +24,18 @@ import { asApiError } from "../api/errors";
  * monthly tariff is the store_prices row with mode === 'month'.
  * Save hits PUT /storeRooms/:id (updateStoreRoom) with only the fields that
  * actually changed.
+ *
+ * The fire permit has its own form and submit (POST /store-rooms/:id/permit),
+ * independent of the field form. A rejected room additionally offers an
+ * explicit "Reenviar a revisión" (POST /storeRooms/:id/resubmit).
  */
 
 const SUCCESS_MESSAGE = "Los cambios se guardaron correctamente.";
+
+const REVIEW_CONFIRM_MESSAGE =
+  "Este cambio enviará tu bodega a revisión y dejará de estar disponible para nuevas reservas hasta ser aprobada. ¿Quieres continuar?";
+
+const MATERIAL_FIELDS = ["title", "description", "size", "price"];
 
 interface FormState {
   title: string;
@@ -56,6 +71,18 @@ const EditarBodega = () => {
   const [saving, setSaving] = useState(false);
   const [successMessage, setSuccessMessage] = useState("");
   const [noticeMessage, setNoticeMessage] = useState("");
+  const [reviewNotice, setReviewNotice] = useState("");
+
+  const [publicationStatus, setPublicationStatus] = useState<string | undefined>(undefined);
+
+  const [permitFile, setPermitFile] = useState<File | null>(null);
+  const [permitError, setPermitError] = useState("");
+  const [permitSaving, setPermitSaving] = useState(false);
+  const [permitSuccess, setPermitSuccess] = useState("");
+
+  const [resubmitting, setResubmitting] = useState(false);
+  const [resubmitSuccess, setResubmitSuccess] = useState("");
+  const [resubmitError, setResubmitError] = useState("");
 
   useEffect(() => {
     if (!id) return;
@@ -80,6 +107,7 @@ const EditarBodega = () => {
         setForm(prefilled);
         setInitialForm(prefilled);
         setHasMonthlyPrice(Boolean(monthly));
+        setPublicationStatus(data.publication_status);
       } catch (error) {
         if (!active) return;
         const status = asApiError(error).response?.status;
@@ -111,6 +139,7 @@ const EditarBodega = () => {
     setErrors((prev) => ({ ...prev, [key]: undefined }));
     setSuccessMessage("");
     setNoticeMessage("");
+    setReviewNotice("");
     setServerError("");
   };
 
@@ -158,6 +187,7 @@ const EditarBodega = () => {
     event.preventDefault();
     setSuccessMessage("");
     setNoticeMessage("");
+    setReviewNotice("");
     setServerError("");
 
     const validationErrors = validate();
@@ -172,11 +202,21 @@ const EditarBodega = () => {
       return;
     }
 
+    const sendsToReview =
+      publicationStatus === "approved" && MATERIAL_FIELDS.some((field) => field in payload);
+    if (sendsToReview && !window.confirm(REVIEW_CONFIRM_MESSAGE)) {
+      return;
+    }
+
     setSaving(true);
     try {
       const { data } = await updateStoreRoom(id as string, payload);
       setSuccessMessage(data?.message || SUCCESS_MESSAGE);
       if (data?.notice) setNoticeMessage(data.notice);
+      if (data?.requires_review) {
+        setPublicationStatus("pending");
+        if (data.review_notice) setReviewNotice(data.review_notice);
+      }
       setErrors({});
       setInitialForm({ ...form });
     } catch (error) {
@@ -184,7 +224,7 @@ const EditarBodega = () => {
       const status = apiError.response?.status;
       const fieldErrors = apiError.response?.data?.errors;
 
-      if (status === 400 && fieldErrors) {
+      if (status === 422 && fieldErrors) {
         const mapped: FieldErrors = {};
         (Object.keys(fieldErrors) as (keyof FormState)[]).forEach((key) => {
           const messages = fieldErrors[key];
@@ -205,6 +245,72 @@ const EditarBodega = () => {
       }
     } finally {
       setSaving(false);
+    }
+  };
+
+  const handlePermitChange = (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0] ?? null;
+    setPermitSuccess("");
+
+    const error = file ? validatePermitFile(file) : null;
+    if (error) {
+      setPermitError(error);
+      setPermitFile(null);
+      event.target.value = "";
+      return;
+    }
+
+    setPermitError("");
+    setPermitFile(file);
+  };
+
+  const handlePermitSubmit = async (event: React.FormEvent) => {
+    event.preventDefault();
+    if (!permitFile) return;
+
+    setPermitSaving(true);
+    setPermitError("");
+    setPermitSuccess("");
+    try {
+      const { data } = await replaceStoreRoomPermit(id as string, permitFile);
+      setPermitSuccess(data?.message || "El permiso de bomberos se reemplazó correctamente.");
+      setPermitFile(null);
+    } catch (error) {
+      const apiError = asApiError(error);
+      const status = apiError.response?.status;
+      const messages = apiError.response?.data?.errors?.firefighter_permit;
+
+      if (status === 422 && Array.isArray(messages) && messages.length > 0) {
+        setPermitError(messages.join(" "));
+      } else if (status === 403) {
+        setPermitError("No tienes permiso para editar esta bodega.");
+      } else if (status === 404) {
+        setPermitError("La bodega no existe o fue eliminada.");
+      } else {
+        setPermitError(
+          apiError.response?.data?.message || "Ocurrió un error al reemplazar el permiso."
+        );
+      }
+    } finally {
+      setPermitSaving(false);
+    }
+  };
+
+  const handleResubmit = async () => {
+    setResubmitting(true);
+    setResubmitError("");
+    setResubmitSuccess("");
+    try {
+      const { data } = await resubmitStoreRoom(id as string);
+      setResubmitSuccess(data?.message || "La bodega fue reenviada a revisión.");
+      setPublicationStatus("pending");
+    } catch (error) {
+      const apiError = asApiError(error);
+      setResubmitError(
+        apiError.response?.data?.message || "Ocurrió un error al reenviar la bodega a revisión."
+      );
+    } finally {
+      setResubmitting(false);
     }
   };
 
@@ -235,139 +341,231 @@ const EditarBodega = () => {
       )}
 
       {!loading && !loadError && (
-        <form onSubmit={handleSubmit} noValidate className="max-w-2xl space-y-5">
-          {successMessage && (
-            <div
-              role="status"
-              className="rounded-lg border border-green-200 bg-green-50 px-4 py-3 text-sm text-green-700"
-            >
-              {successMessage}
-            </div>
-          )}
-
-          {noticeMessage && (
-            <div
-              role="status"
-              className="rounded-lg border border-blue-200 bg-blue-50 px-4 py-3 text-sm text-blue-700"
-            >
-              {noticeMessage}
-            </div>
-          )}
-
-          {serverError && (
-            <div
-              role="alert"
-              className="rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700"
-            >
-              {serverError}
-            </div>
-          )}
-
-          <div>
-            <label htmlFor="title" className="block text-sm font-medium text-gray-700 mb-1">
-              Título
-            </label>
-            <input
-              id="title"
-              type="text"
-              value={form.title}
-              onChange={(e) => setField("title", e.target.value)}
-              aria-invalid={Boolean(errors.title)}
-              className={inputClass("title")}
-            />
-            {errors.title && <p className="mt-1 text-xs text-red-600">{errors.title}</p>}
-          </div>
-
-          <div>
-            <label htmlFor="description" className="block text-sm font-medium text-gray-700 mb-1">
-              Descripción
-            </label>
-            <textarea
-              id="description"
-              rows={4}
-              value={form.description}
-              onChange={(e) => setField("description", e.target.value)}
-              aria-invalid={Boolean(errors.description)}
-              className={inputClass("description")}
-            />
-            {errors.description && (
-              <p className="mt-1 text-xs text-red-600">{errors.description}</p>
+        <>
+          <form onSubmit={handleSubmit} noValidate className="max-w-2xl space-y-5">
+            {successMessage && (
+              <div
+                role="status"
+                className="rounded-lg border border-green-200 bg-green-50 px-4 py-3 text-sm text-green-700"
+              >
+                {successMessage}
+              </div>
             )}
-          </div>
 
-          <div>
-            <label htmlFor="size" className="block text-sm font-medium text-gray-700 mb-1">
-              Dimensiones (m²)
-            </label>
-            <input
-              id="size"
-              type="number"
-              min="0"
-              step="any"
-              value={form.size}
-              onChange={(e) => setField("size", e.target.value)}
-              aria-invalid={Boolean(errors.size)}
-              className={inputClass("size")}
-            />
-            {errors.size && <p className="mt-1 text-xs text-red-600">{errors.size}</p>}
-          </div>
-
-          <div>
-            <label htmlFor="price" className="block text-sm font-medium text-gray-700 mb-1">
-              Tarifa mensual (USD)
-            </label>
-            <input
-              id="price"
-              type="number"
-              min="0"
-              step="any"
-              value={form.price}
-              onChange={(e) => setField("price", e.target.value)}
-              aria-invalid={Boolean(errors.price)}
-              disabled={!hasMonthlyPrice}
-              className={`${inputClass("price")} ${
-                !hasMonthlyPrice ? "bg-gray-100 text-gray-400 cursor-not-allowed" : ""
-              }`}
-            />
-            {!hasMonthlyPrice && (
-              <p className="mt-1 text-xs text-gray-500">
-                Esta bodega no tiene una tarifa mensual configurada.
-              </p>
+            {noticeMessage && (
+              <div
+                role="status"
+                className="rounded-lg border border-blue-200 bg-blue-50 px-4 py-3 text-sm text-blue-700"
+              >
+                {noticeMessage}
+              </div>
             )}
-            {errors.price && <p className="mt-1 text-xs text-red-600">{errors.price}</p>}
-          </div>
 
-          <div className="flex items-center gap-2">
-            <input
-              id="disponibility"
-              type="checkbox"
-              checked={form.disponibility}
-              onChange={(e) => setField("disponibility", e.target.checked)}
-              disabled={!hasMonthlyPrice}
-              className="h-4 w-4 rounded border-gray-300 text-purple-600 focus:ring-purple-500"
-            />
-            <label htmlFor="disponibility" className="text-sm text-gray-700">
-              Disponible para nuevas reservas
-            </label>
-          </div>
+            {reviewNotice && (
+              <div
+                role="status"
+                className="rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800"
+              >
+                {reviewNotice}
+              </div>
+            )}
 
-          <div className="flex items-center gap-3 pt-2">
+            {serverError && (
+              <div
+                role="alert"
+                className="rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700"
+              >
+                {serverError}
+              </div>
+            )}
+
+            <div>
+              <label htmlFor="title" className="block text-sm font-medium text-gray-700 mb-1">
+                Título
+              </label>
+              <input
+                id="title"
+                type="text"
+                value={form.title}
+                onChange={(e) => setField("title", e.target.value)}
+                aria-invalid={Boolean(errors.title)}
+                className={inputClass("title")}
+              />
+              {errors.title && <p className="mt-1 text-xs text-red-600">{errors.title}</p>}
+            </div>
+
+            <div>
+              <label htmlFor="description" className="block text-sm font-medium text-gray-700 mb-1">
+                Descripción
+              </label>
+              <textarea
+                id="description"
+                rows={4}
+                value={form.description}
+                onChange={(e) => setField("description", e.target.value)}
+                aria-invalid={Boolean(errors.description)}
+                className={inputClass("description")}
+              />
+              {errors.description && (
+                <p className="mt-1 text-xs text-red-600">{errors.description}</p>
+              )}
+            </div>
+
+            <div>
+              <label htmlFor="size" className="block text-sm font-medium text-gray-700 mb-1">
+                Dimensiones (m²)
+              </label>
+              <input
+                id="size"
+                type="number"
+                min="0"
+                step="any"
+                value={form.size}
+                onChange={(e) => setField("size", e.target.value)}
+                aria-invalid={Boolean(errors.size)}
+                className={inputClass("size")}
+              />
+              {errors.size && <p className="mt-1 text-xs text-red-600">{errors.size}</p>}
+            </div>
+
+            <div>
+              <label htmlFor="price" className="block text-sm font-medium text-gray-700 mb-1">
+                Tarifa mensual (USD)
+              </label>
+              <input
+                id="price"
+                type="number"
+                min="0"
+                step="any"
+                value={form.price}
+                onChange={(e) => setField("price", e.target.value)}
+                aria-invalid={Boolean(errors.price)}
+                disabled={!hasMonthlyPrice}
+                className={`${inputClass("price")} ${
+                  !hasMonthlyPrice ? "bg-gray-100 text-gray-400 cursor-not-allowed" : ""
+                }`}
+              />
+              {!hasMonthlyPrice && (
+                <p className="mt-1 text-xs text-gray-500">
+                  Esta bodega no tiene una tarifa mensual configurada.
+                </p>
+              )}
+              {errors.price && <p className="mt-1 text-xs text-red-600">{errors.price}</p>}
+            </div>
+
+            <div className="flex items-center gap-2">
+              <input
+                id="disponibility"
+                type="checkbox"
+                checked={form.disponibility}
+                onChange={(e) => setField("disponibility", e.target.checked)}
+                disabled={!hasMonthlyPrice}
+                className="h-4 w-4 rounded border-gray-300 text-purple-600 focus:ring-purple-500"
+              />
+              <label htmlFor="disponibility" className="text-sm text-gray-700">
+                Disponible para nuevas reservas
+              </label>
+            </div>
+
+            <div className="flex items-center gap-3 pt-2">
+              <button
+                type="submit"
+                disabled={saving || !isDirty}
+                className="px-6 py-2.5 bg-purple-600 text-white rounded-lg hover:bg-purple-700 font-medium transition-colors disabled:opacity-60 disabled:cursor-not-allowed"
+              >
+                {saving ? "Guardando..." : "Guardar cambios"}
+              </button>
+              <button
+                type="button"
+                onClick={() => navigate("/arrendador/bodegas")}
+                className="px-6 py-2.5 border border-gray-300 text-gray-700 rounded-lg hover:bg-white transition-colors"
+              >
+                {successMessage ? "Volver a mis bodegas" : "Cancelar"}
+              </button>
+            </div>
+          </form>
+
+          <form
+            onSubmit={handlePermitSubmit}
+            noValidate
+            className="max-w-2xl space-y-3 mt-8 pt-6 border-t border-gray-200"
+          >
+            <h2 className="text-lg font-semibold text-gray-900">Permiso de bomberos</h2>
+
+            {permitSuccess && (
+              <div
+                role="status"
+                className="rounded-lg border border-green-200 bg-green-50 px-4 py-3 text-sm text-green-700"
+              >
+                {permitSuccess}
+              </div>
+            )}
+
+            <div>
+              <label htmlFor="firefighter_permit" className="block text-sm font-medium text-gray-700 mb-1">
+                Permiso de bomberos (PDF)
+              </label>
+              <input
+                id="firefighter_permit"
+                type="file"
+                accept="application/pdf"
+                onChange={handlePermitChange}
+                aria-invalid={Boolean(permitError)}
+                className="block w-full text-sm text-gray-700"
+              />
+              <p className="mt-1 text-xs text-gray-500">Solo PDF, máximo 5 MB.</p>
+              {permitError && <p className="mt-1 text-xs text-red-600">{permitError}</p>}
+            </div>
+
             <button
               type="submit"
-              disabled={saving || !isDirty}
+              disabled={permitSaving || !permitFile}
               className="px-6 py-2.5 bg-purple-600 text-white rounded-lg hover:bg-purple-700 font-medium transition-colors disabled:opacity-60 disabled:cursor-not-allowed"
             >
-              {saving ? "Guardando..." : "Guardar cambios"}
+              {permitSaving ? "Subiendo..." : "Reemplazar permiso"}
             </button>
-            <button
-              type="button"
-              onClick={() => navigate("/arrendador/bodegas")}
-              className="px-6 py-2.5 border border-gray-300 text-gray-700 rounded-lg hover:bg-white transition-colors"
-            >
-              {successMessage ? "Volver a mis bodegas" : "Cancelar"}
-            </button>
-          </div>
-        </form>
+          </form>
+
+          {(publicationStatus === "rejected" || resubmitSuccess) && (
+            <div className="max-w-2xl space-y-3 mt-8 pt-6 border-t border-gray-200">
+              <h2 className="text-lg font-semibold text-gray-900">Revisión</h2>
+
+              {resubmitSuccess && (
+                <div
+                  role="status"
+                  className="rounded-lg border border-green-200 bg-green-50 px-4 py-3 text-sm text-green-700"
+                >
+                  {resubmitSuccess}
+                </div>
+              )}
+
+              {resubmitError && (
+                <div
+                  role="alert"
+                  className="rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700"
+                >
+                  {resubmitError}
+                </div>
+              )}
+
+              {publicationStatus === "rejected" && (
+                <>
+                  <p className="text-sm text-gray-600">
+                    Cuando hayas corregido la bodega, reenvíala para que un administrador la revise de nuevo.
+                  </p>
+                  <button
+                    type="button"
+                    onClick={handleResubmit}
+                    disabled={resubmitting}
+                    className="px-6 py-2.5 bg-purple-600 text-white rounded-lg hover:bg-purple-700 font-medium transition-colors disabled:opacity-60 disabled:cursor-not-allowed"
+                  >
+                    {resubmitting ? "Reenviando..." : "Reenviar a revisión"}
+                  </button>
+                </>
+              )}
+            </div>
+          )}
+        </>
       )}
     </div>
   );

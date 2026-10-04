@@ -22,6 +22,10 @@ const reservation = {
   cancelation_reason: null,
   payment_status: 'paid' as const,
   has_refund_obligation: false,
+  can_be_cancelled: true,
+  payment_id: 1,
+  payment_method: 'credit card' as const,
+  payment_date: '2029-12-01',
 };
 
 function renderModal(overrides: Partial<Parameters<typeof CancelarReservaModal>[0]> = {}) {
@@ -69,7 +73,7 @@ describe('CancelarReservaModal', () => {
     expect(screen.getByRole('button', { name: /confirmar cancelación/i })).toBeDisabled();
   });
 
-  it('disables submit when the reason is under 10 characters', async () => {
+  it('highlights the reason field and does not submit when the reason is under 10 characters', async () => {
     mockGetCancellationRate.mockResolvedValue({ data: { gestor_cancellation_penalty_rate: 0.15 } });
     renderModal();
     await waitFor(() => screen.getByText('$4,180'));
@@ -78,11 +82,14 @@ describe('CancelarReservaModal', () => {
       target: { value: 'corto' },
     });
     fireEvent.click(screen.getByRole('checkbox'));
+    fireEvent.click(screen.getByRole('button', { name: /confirmar cancelación/i }));
 
-    expect(screen.getByRole('button', { name: /confirmar cancelación/i })).toBeDisabled();
+    expect(screen.getByPlaceholderText(/explica al cliente/i)).toHaveAttribute('aria-invalid', 'true');
+    expect(screen.getByText('El motivo es obligatorio (mínimo 10 caracteres).')).toBeInTheDocument();
+    expect(mockCancelReservation).not.toHaveBeenCalled();
   });
 
-  it('disables submit when the acceptance checkbox is unchecked', async () => {
+  it('highlights the acceptance checkbox and does not submit when it is unchecked', async () => {
     mockGetCancellationRate.mockResolvedValue({ data: { gestor_cancellation_penalty_rate: 0.15 } });
     renderModal();
     await waitFor(() => screen.getByText('$4,180'));
@@ -90,8 +97,52 @@ describe('CancelarReservaModal', () => {
     fireEvent.change(screen.getByPlaceholderText(/explica al cliente/i), {
       target: { value: 'Motivo suficientemente largo' },
     });
+    fireEvent.click(screen.getByRole('button', { name: /confirmar cancelación/i }));
 
-    expect(screen.getByRole('button', { name: /confirmar cancelación/i })).toBeDisabled();
+    expect(screen.getByRole('checkbox')).toHaveAttribute('aria-invalid', 'true');
+    expect(
+      screen.getByText('Marca la casilla para confirmar que entiendes la penalización.')
+    ).toBeInTheDocument();
+    expect(mockCancelReservation).not.toHaveBeenCalled();
+  });
+
+  it('clears the acceptance checkbox highlight once it is checked', async () => {
+    mockGetCancellationRate.mockResolvedValue({ data: { gestor_cancellation_penalty_rate: 0.15 } });
+    renderModal();
+    await waitFor(() => screen.getByText('$4,180'));
+
+    fireEvent.change(screen.getByPlaceholderText(/explica al cliente/i), {
+      target: { value: 'Motivo suficientemente largo' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: /confirmar cancelación/i }));
+    expect(
+      screen.getByText('Marca la casilla para confirmar que entiendes la penalización.')
+    ).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('checkbox'));
+
+    expect(
+      screen.queryByText('Marca la casilla para confirmar que entiendes la penalización.')
+    ).not.toBeInTheDocument();
+    expect(screen.getByRole('checkbox')).toHaveAttribute('aria-invalid', 'false');
+  });
+
+  it('clears the reason field highlight once a valid reason is entered', async () => {
+    mockGetCancellationRate.mockResolvedValue({ data: { gestor_cancellation_penalty_rate: 0.15 } });
+    renderModal();
+    await waitFor(() => screen.getByText('$4,180'));
+
+    fireEvent.click(screen.getByRole('button', { name: /confirmar cancelación/i }));
+    expect(screen.getByText('El motivo es obligatorio (mínimo 10 caracteres).')).toBeInTheDocument();
+
+    fireEvent.change(screen.getByPlaceholderText(/explica al cliente/i), {
+      target: { value: 'Motivo suficientemente largo' },
+    });
+
+    expect(
+      screen.queryByText('El motivo es obligatorio (mínimo 10 caracteres).')
+    ).not.toBeInTheDocument();
+    expect(screen.getByPlaceholderText(/explica al cliente/i)).toHaveAttribute('aria-invalid', 'false');
   });
 
   it('on success calls onCancelled with the updated reservation and closes', async () => {

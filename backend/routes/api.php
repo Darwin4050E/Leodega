@@ -1,12 +1,10 @@
 <?php
 
 use App\Http\Controllers\AccountModerationController;
-use App\Http\Controllers\AdminController;
 use App\Http\Controllers\AuthController;
 use App\Http\Controllers\CancelationsPolicesController;
 use App\Http\Controllers\ConversationController;
 use App\Http\Controllers\DashboardController;
-use App\Http\Controllers\FavoritesController;
 use App\Http\Controllers\LandlordsController;
 use App\Http\Controllers\MessageController;
 use App\Http\Controllers\NotificationsController;
@@ -25,7 +23,6 @@ use App\Http\Controllers\StorePermitController;
 use App\Http\Controllers\StorePhotoController;
 use App\Http\Controllers\StorePricesController;
 use App\Http\Controllers\StoreRoomsController;
-use App\Http\Controllers\TenantsController;
 use App\Http\Controllers\UserController;
 use Illuminate\Support\Facades\Route;
 
@@ -60,8 +57,8 @@ Route::middleware('auth.api:sanctum')->group(function () {
 });
 // POST se mantiene público: es el mecanismo real de alta de cuenta que usa
 // Decision.tsx tras el flujo de "¿cuál es tu rol?". UserController::store
-// bloquea explícitamente que una petición no autenticada se auto-asigne
-// role=admin.
+// rechaza role=admin para cualquier llamador; no hay ruta HTTP que cree admins
+// (los provisiona AdminUserSeeder).
 Route::post('/user', [UserController::class, 'store']);
 Route::middleware(['auth.api:sanctum', 'role:admin'])->group(function () {
     Route::put('/user/{id}', [UserController::class, 'update']);
@@ -77,32 +74,28 @@ Route::middleware(['auth.api:sanctum', 'role:admin'])->group(function () {
 
 Route::get('/landlords', [LandlordsController::class, 'index']);
 Route::get('/landlords/{id}', [LandlordsController::class, 'show']);
-Route::middleware('auth.api:sanctum')->group(function () {
-    Route::post('/landlords', [LandlordsController::class, 'store']);
-    Route::put('/landlords/{id}', [LandlordsController::class, 'update']);
-    Route::delete('/landlords/{id}', [LandlordsController::class, 'destroy']);
-});
+// POST/PUT/DELETE /landlords were removed on purpose: landlords rows are created
+// over HTTP only by UserRegistrationService (POST /user) and ownership derives
+// from landlords.user_id.
 Route::get('/landlords/{id}/storeRooms', [StoreRoomsController::class, 'getByLandlord']);
 
-Route::middleware(['auth.api:sanctum', 'role:admin'])->group(function () {
-    Route::get('/admin', [AdminController::class, 'index']);
-    Route::get('/admin/{id}', [AdminController::class, 'show']);
-    Route::post('/admin', [AdminController::class, 'store']);
-    Route::put('/admin/{id}', [AdminController::class, 'update']);
-    Route::delete('/admin/{id}', [AdminController::class, 'destroy']);
-});
+// /admin was removed on purpose: it wrote the unused Admin profile model, never
+// user accounts; admin accounts are provisioned by AdminUserSeeder.
 
-Route::middleware('auth.api:sanctum')->group(function () {
-    Route::get('/tenants', [TenantsController::class, 'index']);
-    Route::get('/tenants/{id}', [TenantsController::class, 'show']);
-    Route::post('/tenants', [TenantsController::class, 'store']);
-    Route::put('/tenants/{id}', [TenantsController::class, 'update']);
-    Route::delete('/tenants/{id}', [TenantsController::class, 'destroy']);
-});
+// /tenants was removed on purpose: tenants rows are created over HTTP only by
+// UserRegistrationService (POST /user) and ownership derives from tenants.user_id.
 
 Route::get('/storeRooms', [StoreRoomsController::class, 'index']);
 Route::get('/storeRooms/{id}', [StoreRoomsController::class, 'show']);
 Route::get('/store-rooms/{id}/detail', [StoreRoomsController::class, 'detail']);
+// Public read-only price preview (storeroom-detail-pricing): reused verbatim
+// by ReservationPricingService::quote(), no auth required, same public
+// pattern as detail() above.
+Route::get('/store-rooms/{id}/quote', [StoreRoomsController::class, 'quote']);
+// Public (visitors see occupied periods before logging in). Same visibility
+// rule as detail(): non-approved rooms 404 unless the optional Sanctum caller
+// is the owning landlord or an admin. Date ranges only, no tenant data.
+Route::get('/storeRooms/{id}/reserved-dates', [ReservationsController::class, 'reservedDates']);
 // El registro (POST) queda restringido a landlords autenticados (HUG-04);
 // PUT/DELETE se mantienen en su propio grupo solo-auth porque PUT es el
 // camino de moderación admin (StoreModerationService::moderate) y no debe
@@ -120,11 +113,8 @@ Route::middleware('auth.api:sanctum')->group(function () {
 
 Route::get('/storePrices', [StorePricesController::class, 'index']);
 Route::get('/storePrices/{id}', [StorePricesController::class, 'show']);
-Route::middleware('auth.api:sanctum')->group(function () {
-    Route::post('/storePrices', [StorePricesController::class, 'store']);
-    Route::put('/storePrices/{id}', [StorePricesController::class, 'update']);
-    Route::delete('/storePrices/{id}', [StorePricesController::class, 'destroy']);
-});
+// storePrices writes were removed on purpose: ownership would derive from the
+// room's landlord, and price rows are created over HTTP only by StoreRoomService.
 
 // Las fotos no estaban en la tabla original de la Fase 0.5: se detectaron sin
 // protección al reescribir este archivo y se cierran aquí mismo por ser el
@@ -133,19 +123,18 @@ Route::get('/store-rooms/{storeRoom}/photos', [StorePhotoController::class, 'ind
 Route::middleware('auth.api:sanctum')->group(function () {
     Route::post('/store-rooms/{storeRoom}/photos', [StorePhotoController::class, 'store']);
     Route::delete('/store-rooms/{storeRoom}/photos/{photo}', [StorePhotoController::class, 'destroy']);
+    // Owner-only permit replacement (ownership enforced in the controller,
+    // same as photos); the admin download lives in the role:admin group.
+    Route::post('/store-rooms/{storeRoom}/permit', [StorePermitController::class, 'replace']);
 });
 
-Route::middleware('auth.api:sanctum')->group(function () {
-    Route::get('/favorites', [FavoritesController::class, 'index']);
-    Route::get('/favorites/{id}', [FavoritesController::class, 'show']);
-    Route::post('/favorites', [FavoritesController::class, 'store']);
-    Route::put('/favorites/{id}', [FavoritesController::class, 'update']);
-    Route::delete('/favorites/{id}', [FavoritesController::class, 'destroy']);
-});
+// /favorites was removed on purpose: the generic CRUD let any caller read, forge
+// or delete any user's favorites; ownership would derive from favorites.user_id.
 
-Route::get('/storeDisponibility', [StoreDisponibilityController::class, 'index']);
-Route::get('/storeDisponibility/{id}', [StoreDisponibilityController::class, 'show']);
 Route::middleware('auth.api:sanctum')->group(function () {
+    // index() is scoped to the authenticated landlord's own storerooms
+    // (obs #263), so it needs the same guard as the write actions below.
+    Route::get('/storeDisponibility', [StoreDisponibilityController::class, 'index']);
     Route::post('/storeDisponibility', [StoreDisponibilityController::class, 'store']);
     Route::put('/storeDisponibility/{id}', [StoreDisponibilityController::class, 'update']);
     Route::delete('/storeDisponibility/{id}', [StoreDisponibilityController::class, 'destroy']);
@@ -156,45 +145,34 @@ Route::middleware('auth.api:sanctum')->group(function () {
     Route::get('/landlord/reservations', [ReservationsController::class, 'landlordIndex']);
     Route::get('/landlord/reservations/cancellation-rate', [ReservationsController::class, 'cancellationRate']);
     Route::patch('/landlord/reservations/{reservation}/cancel', [ReservationsController::class, 'cancel']);
-    Route::get('/storeRooms/{id}/reserved-dates', [ReservationsController::class, 'reservedDates']);
 });
 
 Route::middleware('auth.api:sanctum')->group(function () {
-    Route::get('/payments', [PaymentsController::class, 'index']);
-    Route::get('/payments/{id}', [PaymentsController::class, 'show']);
     Route::post('/payments', [PaymentsController::class, 'store']);
-    Route::put('/payments/{id}', [PaymentsController::class, 'update']);
-    Route::delete('/payments/{id}', [PaymentsController::class, 'destroy']);
 });
 
 Route::middleware('auth.api:sanctum')->group(function () {
     Route::get('/ratings', [RatingsController::class, 'index']);
     Route::post('/ratings', [RatingsController::class, 'store']);
 });
-Route::middleware('auth.api:sanctum')->group(function () {
-    Route::get('/ratings/{id}', [RatingsController::class, 'show']);
-    Route::put('/ratings/{id}', [RatingsController::class, 'update']);
-    Route::delete('/ratings/{id}', [RatingsController::class, 'destroy']);
-});
+// /ratings/{id} was removed on purpose: any authenticated caller could read, edit
+// or delete any user's rating; ownership would derive from ratings.user_id.
 
 Route::get('/cancelations_polices', [CancelationsPolicesController::class, 'index']);
 Route::get('/cancelations_polices/{id}', [CancelationsPolicesController::class, 'show']);
-Route::middleware('auth.api:sanctum')->group(function () {
-    Route::post('/cancelations_polices', [CancelationsPolicesController::class, 'store']);
-    Route::put('/cancelations_polices/{id}', [CancelationsPolicesController::class, 'update']);
-    Route::delete('/cancelations_polices/{id}', [CancelationsPolicesController::class, 'destroy']);
-});
+// POST/PUT/DELETE /cancelations_polices were removed on purpose: any caller could
+// edit or delete any landlord's policy; ownership derives from landlords.user_id.
 
 Route::middleware('auth.api:sanctum')->group(function () {
     Route::post('/reports', [ReportsController::class, 'store']);
-    Route::get('/reports', [ReportsController::class, 'index']);
-    Route::get('/reports/{id}', [ReportsController::class, 'show']);
-    Route::put('/reports/{id}', [ReportsController::class, 'update']);
 });
 // El check de rol vivía como `if` manual dentro de updateStatus(); se formaliza
 // aquí como middleware, igual que el resto de rutas admin-only (Fase 0.5).
+// La lectura de reportes también es solo admin: incluye datos del reportante.
 Route::middleware(['auth.api:sanctum', 'role:admin'])->group(function () {
     Route::patch('/reports/{report}/status', [ReportsController::class, 'updateStatus']);
+    Route::get('/reports', [ReportsController::class, 'index']);
+    Route::get('/reports/{id}', [ReportsController::class, 'show']);
 });
 
 // Route::resource('reports', ReportsController::class)->except('create', 'edit');
@@ -219,16 +197,23 @@ Route::middleware('auth.api:sanctum')->group(function () {
 Route::middleware('auth.api:sanctum')->group(function () {
 
     Route::get('/notifications', [NotificationsController::class, 'index']);
-    Route::post('/notifications', [NotificationsController::class, 'store']);
     Route::post('/notifications/{notification}/read', [NotificationsController::class, 'markAsRead']);
     Route::get('/notifications-unread-count', [NotificationsController::class, 'unreadCount']);
-    Route::patch('/notifications/{id}/read', [NotificationsController::class, 'markAsRead']);
 });
 
 Route::middleware('auth.api:sanctum')->delete('/account', [UserController::class, 'destroySelf']);
 
 Route::middleware('auth.api:sanctum')->group(function () {
     Route::get('/tenant/reservations', [ReservationsController::class, 'tenantIndex']);
+    // sdd/tenant-self-cancel: the owning tenant cancels their own
+    // reservation; ownership is enforced by ReservationsPolicy::cancelAsTenant.
+    Route::patch('/tenant/reservations/{reservation}/cancel', [ReservationsController::class, 'cancelAsTenant']);
+    // sdd/tenant-reservations-screen: read-only refund preview fetched by
+    // the cancel modal on open, same ownership gate as the cancel action
+    // above.
+    Route::get('/tenant/reservations/{reservation}/cancellation-preview', [ReservationsController::class, 'cancellationPreview']);
+    // sdd/huc05-payment-receipt: owner-scoped payment receipt PDF.
+    Route::get('/tenant/reservations/{reservation}/receipt', [ReservationsController::class, 'receipt']);
 });
 
 Route::middleware(['auth.api:sanctum', 'role:admin'])->group(function () {

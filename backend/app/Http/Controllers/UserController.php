@@ -7,37 +7,57 @@ use App\Http\Requests\UpdateUserRequest;
 use App\Models\User;
 use App\Services\UserRegistrationService;
 use Illuminate\Http\Request;
+use Illuminate\Support\Arr;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
 
 class UserController extends ApiController
 {
-    public function index()
+    // Admins get the full row; every other caller only gets the messaging-contact fields.
+    public function index(Request $request)
     {
-        return $this->indexModel(User::class);
+        if ($request->user()->role === 'admin') {
+            return $this->indexModel(User::class);
+        }
+
+        return response()->json(User::query()->get(['id', 'name', 'lastname']), 200);
     }
 
-    public function show($id)
+    public function show(Request $request, $id)
     {
-        return $this->showModel(User::class, $id);
+        if ($request->user()->role === 'admin') {
+            return $this->showModel(User::class, $id);
+        }
+
+        $item = User::select(['id', 'name', 'lastname'])->find($id);
+        if (! $item) {
+            return response()->json(['message' => 'Item not found'], 404);
+        }
+
+        return response()->json($item, 200);
     }
 
     public function store(Request $request, UserRegistrationService $registrationService)
     {
         $rules = (new StoreUserRequest)->rules();
 
-        // Este endpoint se mantiene público porque es el alta de cuenta real que
-        // usa el flujo de registro (Decision.tsx envía role=landlord|tenant sin
-        // sesión). Sin este guard, cualquier petición anónima podría mandar
-        // role=admin y auto-promoverse a administrador.
-        if (! $request->user('sanctum') && $request->input('role') === 'admin') {
+        // Endpoint público (alta de cuenta en Decision.tsx). Ninguna ruta HTTP crea
+        // administradores (los provisiona AdminUserSeeder), por eso role=admin se
+        // rechaza siempre.
+        if ($request->input('role') === 'admin') {
             return response()->json([
                 'message' => 'No autorizado para crear un usuario con rol admin',
             ], 403);
         }
 
-        return DB::transaction(function () use ($request, $rules, $registrationService) {
-            $response = $this->storeModel($request, User::class, $rules);
+        // storeModel() creates related rows for every array key of the request, so
+        // only validated keys travel on; registered accounts always start active.
+        $payload = Arr::only($request->all(), array_keys($rules));
+        $payload['state'] = 'active';
+        $clean = Request::create('/', 'POST', $payload);
+
+        return DB::transaction(function () use ($clean, $rules, $registrationService) {
+            $response = $this->storeModel($clean, User::class, $rules);
             $data = $response->getData();
 
             if ($response->getStatusCode() === 201 && isset($data->item->id)) {

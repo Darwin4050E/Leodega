@@ -65,7 +65,7 @@ class StoreModerationTest extends TestCase
     public function test_store_creates_moderation_record_as_admin()
     {
         $admin = User::factory()->create(['role' => 'admin']);
-        $storeRoom = StoreRooms::factory()->create(['firefighter_permit_path' => 'firefighter_permits/permit.pdf']);
+        $storeRoom = StoreRooms::factory()->withPhotos()->create(['firefighter_permit_path' => 'firefighter_permits/permit.pdf']);
 
         $response = $this->actingAs($admin, 'sanctum')->postJson('/api/store_moderation', [
             'store_id' => $storeRoom->id,

@@ -304,3 +304,62 @@ describe("ModeracionAdmin — decision flows", () => {
     await waitFor(() => expect(mockGetPendingStoreRooms).toHaveBeenCalledTimes(2));
   });
 });
+
+// ─────────────────────────────────────────────────────────────
+// Photo minimum — the server refuses approval under 3 photos.
+// ─────────────────────────────────────────────────────────────
+describe("ModeracionAdmin — photo minimum", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  const WARNING = "No se puede aprobar: menos de 3 fotos";
+
+  async function loadWithPhotos(photos: string[]) {
+    mockGetPendingStoreRooms.mockResolvedValue({ data: [{ ...moderationDetail, photos }] });
+    renderScreen();
+    await waitFor(() => screen.getByText(moderationDetail.title));
+    await openFirstDossier();
+    await waitFor(() => screen.getByText(/Galpón de gran altura/));
+  }
+
+  it.each([
+    ["two photos", ["/img/a.jpg", "/img/b.jpg"]],
+    ["no photos", []],
+  ])("warns but keeps approve enabled with %s", async (_label, photos) => {
+    await loadWithPhotos(photos);
+
+    expect(screen.getByText(WARNING)).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Aprobar y publicar" })).not.toBeDisabled();
+  });
+
+  it("shows no warning with three photos", async () => {
+    await loadWithPhotos(["/img/a.jpg", "/img/b.jpg", "/img/c.jpg"]);
+
+    expect(screen.getByAltText("Portada")).toBeInTheDocument();
+    expect(screen.queryByText(WARNING)).not.toBeInTheDocument();
+  });
+
+  it("surfaces the server message when approval is refused for missing photos", async () => {
+    await loadWithPhotos(["/img/a.jpg", "/img/b.jpg"]);
+    mockUpdateStoreRoom.mockRejectedValue({
+      response: {
+        status: 422,
+        data: {
+          message: "La bodega necesita al menos 3 fotos para ser aprobada.",
+          errors: { photos: ["La bodega necesita al menos 3 fotos para ser aprobada."] },
+        },
+      },
+    });
+
+    fireEvent.click(screen.getByRole("button", { name: "Aprobar y publicar" }));
+    fireEvent.click(screen.getByRole("button", { name: "Sí, aprobar" }));
+
+    await waitFor(() =>
+      expect(
+        screen.getByText("La bodega necesita al menos 3 fotos para ser aprobada."),
+      ).toBeInTheDocument(),
+    );
+    expect(screen.getByRole("button", { name: "Sí, aprobar" })).toBeInTheDocument();
+  });
+});

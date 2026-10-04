@@ -8,6 +8,7 @@ use App\Models\StorePrices;
 use App\Models\StoreRooms;
 use App\Models\Tenants;
 use App\Models\User;
+use App\Services\ReservationPricingService;
 use Illuminate\Database\Console\Seeds\WithoutModelEvents;
 use Illuminate\Database\Seeder;
 
@@ -39,19 +40,24 @@ class DemoDataSeeder extends Seeder
         $cliente1 = $this->tenant('Ana', 'Torres', 'cliente@leodega.com');
         $cliente2 = $this->tenant('Diego', 'Salas', 'cliente2@leodega.com');
 
-        // [landlord, title, publication_status, monthly price, size m², city, direction]
+        // [landlord, title, publication_status, monthly price, size m², city, direction, latitude, longitude]
+        //
+        // Coordinates are APPROXIMATE, for demo/map rendering only — not
+        // surveyed precision. Each pair matches the row's real city and
+        // named neighbourhood/road (obs #287 Decision 4, storeroom-detail-
+        // pricing design): five in Guayaquil, one in Samborondón.
         $definitions = [
-            [$gestor1, 'Bodega Vía a Daule', 'approved', 780, 420, 'Guayaquil', 'Km 11.5 Vía a Daule'],
-            [$gestor1, 'Galpón Logístico Centro', 'approved', 540, 260, 'Guayaquil', 'Av. Domingo Comín 402'],
-            [$gestor1, 'Bodega Sur Km 16', 'pending', 610, 340, 'Guayaquil', 'Km 16 Vía a la Costa'],
-            [$gestor2, 'Mini Storage Urdesa', 'approved', 160, 18, 'Guayaquil', 'Calle Circunvalación 120'],
-            [$gestor2, 'Depósito Mapasingue', 'pending', 300, 120, 'Guayaquil', 'Av. 2da y Callejón 11'],
-            [$gestor2, 'Galpón Samborondón', 'rejected', 920, 360, 'Samborondón', 'Km 3 Vía Samborondón'],
+            [$gestor1, 'Bodega Vía a Daule', 'approved', 780, 420, 'Guayaquil', 'Km 11.5 Vía a Daule', -2.0836, -79.9989],
+            [$gestor1, 'Galpón Logístico Centro', 'approved', 540, 260, 'Guayaquil', 'Av. Domingo Comín 402', -2.2033, -79.8874],
+            [$gestor1, 'Bodega Sur Km 16', 'pending', 610, 340, 'Guayaquil', 'Km 16 Vía a la Costa', -2.1667, -80.1000],
+            [$gestor2, 'Mini Storage Urdesa', 'approved', 160, 18, 'Guayaquil', 'Calle Circunvalación 120', -2.1494, -79.9046],
+            [$gestor2, 'Depósito Mapasingue', 'pending', 300, 120, 'Guayaquil', 'Av. 2da y Callejón 11', -2.1333, -79.9167],
+            [$gestor2, 'Galpón Samborondón', 'rejected', 920, 360, 'Samborondón', 'Km 3 Vía Samborondón', -2.1000, -79.8833],
         ];
 
         $rooms = [];
-        foreach ($definitions as [$landlord, $title, $status, $price, $size, $city, $direction]) {
-            $rooms[$title] = $this->room($landlord, $title, $status, $price, $size, $city, $direction);
+        foreach ($definitions as [$landlord, $title, $status, $price, $size, $city, $direction, $lat, $lng]) {
+            $rooms[$title] = $this->room($landlord, $title, $status, $price, $size, $city, $direction, $lat, $lng);
         }
 
         $this->reservation($rooms['Bodega Vía a Daule'], $cliente1, now()->addWeek(), now()->addMonths(4));
@@ -96,6 +102,8 @@ class DemoDataSeeder extends Seeder
         int $size,
         string $city,
         string $direction,
+        float $lat,
+        float $lng,
     ): StoreRooms {
         $room = StoreRooms::firstOrCreate(
             ['landlord_id' => $landlord->id, 'title' => $title],
@@ -105,6 +113,8 @@ class DemoDataSeeder extends Seeder
                 'direction' => $direction,
                 'city' => $city,
                 'size' => $size,
+                'latitude' => $lat,
+                'longitude' => $lng,
                 'description' => 'Espacio de demostración generado por DemoDataSeeder.',
                 'security' => json_encode(['camara' => true, 'acceso' => true]),
                 'publication_status' => $status,
@@ -128,7 +138,15 @@ class DemoDataSeeder extends Seeder
         \DateTimeInterface $start,
         \DateTimeInterface $end,
     ): void {
-        $monthly = (float) $room->storePrices()->where('mode', 'month')->value('price');
+        // Quote through the real pricing service rather than hardcoding
+        // amounts: demo reservations then always reflect the live billing
+        // model (rent + deposit, commission deducted from the rent) and can
+        // never drift away from it again.
+        $quote = (new ReservationPricingService)->quote(
+            $room,
+            $start->format('Y-m-d'),
+            $end->format('Y-m-d'),
+        );
 
         Reservations::firstOrCreate(
             ['store_room_id' => $room->id, 'tenant_id' => $tenant->id],
@@ -136,8 +154,8 @@ class DemoDataSeeder extends Seeder
                 'start_date' => $start,
                 'end_date' => $end,
                 'status' => 'confirmed',
-                'total_mount' => $monthly,
-                'rent_subtotal' => round($monthly * 0.9, 2),
+                'total_mount' => $quote['total_mount'],
+                'rent_subtotal' => $quote['rent_subtotal'],
                 'creation_date' => now(),
             ],
         );

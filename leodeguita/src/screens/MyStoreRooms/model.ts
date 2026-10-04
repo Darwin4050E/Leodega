@@ -1,4 +1,5 @@
 import type { StatusTone } from '../../components/StatusChip'
+import { REJECTION_REASON_LABELS } from '../../lib/storeRoomLabels'
 import type { MyStoreRoom } from '../../services/storeRooms'
 
 /**
@@ -64,4 +65,20 @@ export function filterRooms(
 ): MyStoreRoom[] {
   if (filter === 'todas') return rooms
   return rooms.filter((room) => deriveStatus(room) === filter)
+}
+
+/**
+ * Why a rejected room was rejected: the labelled reason code plus the
+ * admin's optional free text. `null` when the room is not rejected or the
+ * API sent no rejection.
+ */
+export function rejectionDetail(
+  room: MyStoreRoom,
+): { label: string | null; reason: string | null } | null {
+  if (room.publication_status !== 'rejected' || !room.rejection) return null
+  const { reason_code, reason } = room.rejection
+  return {
+    label: reason_code ? REJECTION_REASON_LABELS[reason_code] : null,
+    reason,
+  }
 }

@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import { Search, ChevronDown, Plus } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 
-import { getStoreRoomsByLandlord } from "../services/storeRooms";
+import { getStoreRoomsByLandlord, type StoreRoomRejection } from "../services/storeRooms";
 import { useAuth } from "../context/useAuth";
 import BodegaCard from './BodegaCard';
 
@@ -26,6 +26,7 @@ interface Bodega {
   image?: string;
   storePrices?: StorePrice[];
   active_reservations_count?: number;
+  rejection?: StoreRoomRejection | null;
 }
 
 const BodegasArrendador = () => {

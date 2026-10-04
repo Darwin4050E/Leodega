@@ -5,9 +5,10 @@ namespace Tests\Feature;
 use App\Models\Landlords;
 use App\Models\Reservations;
 use App\Models\StoreRooms;
-use App\Models\Tenants;
 use App\Models\User;
+use App\Notifications\ReservationCancellationNotification;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\Notification;
 use Tests\TestCase;
 
 class ReservationCancellationTest extends TestCase
@@ -24,15 +25,18 @@ class ReservationCancellationTest extends TestCase
             'start_date' => now()->addDays(5)->toDateString(),
             'end_date' => now()->addDays(35)->toDateString(),
             'rent_subtotal' => 3000,
-            'total_mount' => 4180,
+            'total_mount' => 4000,
         ]);
     }
 
     public function test_owning_landlord_can_cancel_an_eligible_reservation()
     {
+        Notification::fake();
+
         $landlordUser = User::factory()->create(['role' => 'landlord']);
         $landlord = Landlords::factory()->create(['user_id' => $landlordUser->id]);
         $reservation = $this->eligibleReservation($landlord);
+        $tenantUser = $reservation->tenants->user;
 
         $response = $this->actingAs($landlordUser, 'sanctum')
             ->patchJson("/api/landlord/reservations/{$reservation->id}/cancel", [
@@ -47,12 +51,13 @@ class ReservationCancellationTest extends TestCase
         $this->assertDatabaseHas('reservation_cancellation_obligations', [
             'reservation_id' => $reservation->id,
             'landlord_id' => $landlord->id,
-            'refund_amount' => '4180.00',
+            'refund_amount' => '4000.00',
             'penalty_amount' => '450.00',
         ]);
         $this->assertDatabaseHas('notifications', [
             'type' => 'reservation_canceled',
         ]);
+        Notification::assertSentTo($tenantUser, ReservationCancellationNotification::class);
     }
 
     public function test_cannot_cancel_a_reservation_starting_today()
@@ -66,7 +71,7 @@ class ReservationCancellationTest extends TestCase
             'start_date' => today()->toDateString(),
             'end_date' => today()->addDays(30)->toDateString(),
             'rent_subtotal' => 3000,
-            'total_mount' => 4180,
+            'total_mount' => 4000,
         ]);
 
         $response = $this->actingAs($landlordUser, 'sanctum')
@@ -89,7 +94,7 @@ class ReservationCancellationTest extends TestCase
             'start_date' => today()->subDays(2)->toDateString(),
             'end_date' => today()->addDays(30)->toDateString(),
             'rent_subtotal' => 3000,
-            'total_mount' => 4180,
+            'total_mount' => 4000,
         ]);
 
         $response = $this->actingAs($landlordUser, 'sanctum')
@@ -150,7 +155,7 @@ class ReservationCancellationTest extends TestCase
             'start_date' => now()->addDays(5)->toDateString(),
             'end_date' => now()->addDays(35)->toDateString(),
             'rent_subtotal' => 3000,
-            'total_mount' => 4180,
+            'total_mount' => 4000,
         ]);
 
         $response = $this->actingAs($user, 'sanctum')

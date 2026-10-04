@@ -3,6 +3,7 @@
 namespace Database\Factories;
 
 use App\Models\Landlords;
+use App\Models\StorePhoto;
 use App\Models\StoreRooms;
 use Illuminate\Database\Eloquent\Factories\Factory;
 
@@ -25,5 +26,25 @@ class StoreRoomsFactory extends Factory
             'publication_status' => 'pending',
             'publication_date' => now(),
         ];
+    }
+
+    /**
+     * The default stays `pending`; only approved rooms are bookable and
+     * publicly visible, so tests that exercise those paths opt in here.
+     */
+    public function approved(): static
+    {
+        return $this->state(fn () => ['publication_status' => 'approved']);
+    }
+
+    /**
+     * Approval and resubmission need at least StoreRooms::MIN_PHOTOS photos,
+     * so tests that exercise those paths opt in here.
+     */
+    public function withPhotos(int $count = 3): static
+    {
+        return $this->afterCreating(function (StoreRooms $room) use ($count) {
+            StorePhoto::factory()->count($count)->create(['store_room_id' => $room->id]);
+        });
     }
 }

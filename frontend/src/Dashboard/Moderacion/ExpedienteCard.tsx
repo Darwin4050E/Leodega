@@ -5,6 +5,8 @@ import MiniMap from "./MiniMap";
 import PermitRow from "./PermitRow";
 import Lightbox from "./Lightbox";
 
+const MIN_PHOTOS = 3;
+
 const ROOM_TYPE_LABEL: Record<string, string> = {
   habitacion: "Habitación",
   garaje: "Garaje / Parqueadero",
@@ -164,6 +166,11 @@ const ExpedienteCard: React.FC<ExpedienteCardProps> = ({ detail, onApprove, onRe
         {/* Visual column */}
         <div className="p-5 lg:border-r border-gray-100">
           <Lightbox photos={detail.photos} />
+          {detail.photos.length < MIN_PHOTOS && (
+            <p className="mb-4 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-xs font-semibold text-red-700">
+              No se puede aprobar: menos de {MIN_PHOTOS} fotos
+            </p>
+          )}
           <p className="text-xs uppercase tracking-wide text-gray-500 font-bold mb-2">
             Ubicación declarada
           </p>

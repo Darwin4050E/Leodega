@@ -2,9 +2,12 @@
 
 namespace App\Http\Requests;
 
+use App\Models\Landlords;
 use Illuminate\Contracts\Validation\Validator;
 use Illuminate\Foundation\Http\FormRequest;
 use Illuminate\Http\Exceptions\HttpResponseException;
+use Illuminate\Validation\Rule;
+use Illuminate\Validation\Rules\Unique;
 
 /**
  * HUG-08: partial edit of an already published storeroom by its owning
@@ -33,17 +36,43 @@ class EditStoreRoomListingRequest extends FormRequest
     public function rules(): array
     {
         return [
-            'title' => 'sometimes|string|max:255',
+            'title' => ['sometimes', 'string', 'max:255', $this->uniqueTitlePerLandlord()],
             'description' => 'sometimes|string',
-            'size' => 'sometimes|numeric|gt:0',
+            'size' => 'sometimes|numeric|gt:0|max:99999999.99',
             'price' => 'sometimes|numeric|gt:0',
             'disponibility' => 'sometimes|boolean',
         ];
     }
 
+    public function messages(): array
+    {
+        return [
+            'title.unique' => 'Ya tienes una bodega publicada con ese nombre. Elige otro nombre para continuar.',
+        ];
+    }
+
     /**
-     * Preserve the legacy {message, errors, status} envelope with a 400
-     * instead of FormRequest's default 422 (source:
+     * Same scope as StoreStoreRoomRequest: per landlord, soft-deleted rooms
+     * ignored. The room being edited is ignored too, so resending its own
+     * title is not a duplicate.
+     */
+    private function uniqueTitlePerLandlord(): Unique|string
+    {
+        $landlordId = Landlords::where('user_id', $this->user()?->id)->value('id');
+
+        if ($landlordId === null) {
+            return 'string';
+        }
+
+        return Rule::unique('storeRooms', 'title')
+            ->where('landlord_id', $landlordId)
+            ->whereNull('deleted_at')
+            ->ignore((int) $this->route('id'));
+    }
+
+    /**
+     * Preserve the legacy "Validation Error" message ({message, errors})
+     * instead of FormRequest's default message (source:
      * StoreStoreRoomRequest::failedValidation()).
      */
     protected function failedValidation(Validator $validator): void
@@ -51,7 +80,6 @@ class EditStoreRoomListingRequest extends FormRequest
         throw new HttpResponseException(response()->json([
             'message' => 'Validation Error',
             'errors' => $validator->errors(),
-            'status' => 400,
-        ], 400));
+        ], 422));
     }
 }

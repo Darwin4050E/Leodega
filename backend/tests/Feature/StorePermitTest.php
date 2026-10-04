@@ -11,8 +11,9 @@ use Tests\TestCase;
 /**
  * Feature tests for StorePermitController::download.
  *
- * The permit is only ever written during atomic room registration
- * (StoreRoomService::register); there is no separate upload endpoint.
+ * The permit is written during atomic room registration
+ * (StoreRoomService::register) and replaced by its owner through
+ * StorePermitController::replace (see StorePermitReplacementTest).
  * These tests cover the admin-only download action.
  */
 class StorePermitTest extends TestCase

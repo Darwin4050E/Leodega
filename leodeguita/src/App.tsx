@@ -5,6 +5,8 @@ import LoginScreen from './screens/LoginScreen'
 import HomeScreen from './screens/HomeScreen'
 import PublishStoreRoomScreen from './screens/PublishStoreRoom/PublishStoreRoomScreen'
 import MyStoreRoomsScreen from './screens/MyStoreRooms/MyStoreRoomsScreen'
+import StoreRoomCatalogScreen from './screens/StoreRoomCatalog/StoreRoomCatalogScreen'
+import StoreRoomDetailScreen from './screens/StoreRoomDetail/StoreRoomDetailScreen'
 
 export default function App() {
   return (
@@ -16,6 +18,8 @@ export default function App() {
             <Route path="/" element={<HomeScreen />} />
             <Route path="/publicar" element={<PublishStoreRoomScreen />} />
             <Route path="/mis-bodegas" element={<MyStoreRoomsScreen />} />
+            <Route path="/bodegas" element={<StoreRoomCatalogScreen />} />
+            <Route path="/bodegas/:id" element={<StoreRoomDetailScreen />} />
           </Route>
           <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>

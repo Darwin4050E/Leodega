@@ -184,7 +184,8 @@ class StoreRoomDeletionTest extends TestCase
             ->deleteJson('/api/storeRooms/999999');
 
         $response->assertStatus(404);
-        $response->assertJson(['message' => 'Bodega no encontrada', 'status' => 404]);
+        $response->assertJson(['message' => 'Bodega no encontrada']);
+        $response->assertJsonMissingPath('status');
     }
 
     public function test_delete_fails_with_404_for_already_soft_deleted_storeroom()

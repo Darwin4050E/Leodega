@@ -2,7 +2,6 @@
 
 namespace App\Http\Controllers;
 
-use App\Http\Requests\StoreNotificationRequest;
 use App\Models\Notifications;
 
 class NotificationsController extends Controller
@@ -14,18 +13,6 @@ class NotificationsController extends Controller
             ->latest()
             ->limit(20)
             ->get();
-    }
-
-    public function store(StoreNotificationRequest $request)
-    {
-        return Notifications::create([
-            'sender_id' => auth()->id(),
-            'receiver_id' => $request->receiver_id,
-            'type' => $request->type,
-            'title' => $request->title,
-            'body' => $request->body,
-            'data' => $request->data,
-        ]);
     }
 
     public function markAsRead(Notifications $notification)
