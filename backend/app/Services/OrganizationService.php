@@ -5,6 +5,7 @@ namespace App\Services;
 use App\Enums\OrganizationRole;
 use App\Models\Organization;
 use App\Models\User;
+use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Database\UniqueConstraintViolationException;
 use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\DB;
@@ -52,5 +53,16 @@ class OrganizationService
                 ? ValidationException::withMessages(['ruc' => Organization::DUPLICATE_RUC_MESSAGE])
                 : $e;
         }
+    }
+
+    /**
+     * The user's own organizations, oldest first, each carrying the user's
+     * `pivot` (role, joined_at).
+     *
+     * @return Collection<int, Organization>
+     */
+    public function listFor(User $user): Collection
+    {
+        return $user->organizations()->orderBy('organizations.id')->get();
     }
 }

@@ -447,6 +447,128 @@ class OrganizationTest extends TestCase
     }
 
     // ---------------------------------------------------------------
+    // List (OM-S20..S23, S43)
+    // ---------------------------------------------------------------
+
+    private function getOrganizations(?User $user): \Illuminate\Testing\TestResponse
+    {
+        $request = $user ? $this->actingAs($user, 'sanctum') : $this;
+
+        return $request->getJson('/api/organizations');
+    }
+
+    public function test_list_returns_only_the_callers_organizations_with_their_role()
+    {
+        $tenantA = $this->tenant();
+        $tenantB = $this->tenant();
+        $org1 = Organization::factory()->withMember($tenantA)->create();
+        Organization::factory()->withMember($tenantB, 'member')->create();
+
+        $response = $this->getOrganizations($tenantA);
+
+        $response->assertStatus(200);
+        $response->assertJsonCount(1);
+        $response->assertJsonPath('0.id', $org1->id);
+        $response->assertJsonPath('0.role', 'admin');
+    }
+
+    public function test_list_includes_organizations_where_the_caller_is_a_member_with_that_role()
+    {
+        $tenant = $this->tenant();
+        $adminOf = Organization::factory()->withMember($tenant)->create();
+        $memberOf = Organization::factory()->withMember($tenant, 'member')->create();
+
+        $response = $this->getOrganizations($tenant);
+
+        $response->assertStatus(200);
+        $response->assertJsonCount(2);
+        $response->assertJsonPath('0.id', $adminOf->id);
+        $response->assertJsonPath('0.role', 'admin');
+        $response->assertJsonPath('1.id', $memberOf->id);
+        $response->assertJsonPath('1.role', 'member');
+    }
+
+    public function test_list_is_empty_for_a_tenant_without_organizations_even_when_others_exist()
+    {
+        Organization::factory()->withMember($this->tenant())->create();
+
+        $response = $this->getOrganizations($this->tenant());
+
+        $response->assertStatus(200);
+        $response->assertExactJson([]);
+    }
+
+    public function test_list_is_a_bare_array_ordered_by_organization_id_with_the_documented_keys()
+    {
+        $tenant = $this->tenant();
+        $first = Organization::factory()->create();
+        $second = Organization::factory()->create();
+        $third = Organization::factory()->create();
+        // Joined out of order on purpose: the list must follow organization id.
+        $third->users()->attach($tenant->id, ['role' => 'member']);
+        $first->users()->attach($tenant->id, ['role' => 'admin']);
+
+        $response = $this->getOrganizations($tenant);
+
+        $response->assertStatus(200);
+        $this->assertSame([$first->id, $third->id], array_column($response->json(), 'id'));
+        $this->assertEqualsCanonicalizing(
+            ['id', 'name', 'ruc', 'email', 'status', 'logo', 'role'],
+            array_keys($response->json('0'))
+        );
+        $response->assertJsonPath('0.name', $first->name);
+        $response->assertJsonPath('0.ruc', $first->ruc);
+        $response->assertJsonPath('0.email', $first->email);
+        $response->assertJsonPath('0.status', 'active');
+    }
+
+    public function test_list_items_carry_the_logo_url_or_null()
+    {
+        $tenant = $this->tenant();
+        $withLogo = Organization::factory()->withMember($tenant)->create(['logo_path' => 'organization_logos/abc.png']);
+        Organization::factory()->withMember($tenant)->create();
+
+        $response = $this->getOrganizations($tenant);
+
+        $response->assertJsonPath('0.id', $withLogo->id);
+        $response->assertJsonPath('0.logo', asset('storage/organization_logos/abc.png'));
+        $response->assertJsonPath('1.logo', null);
+        $response->assertJsonMissingPath('0.logo_path');
+    }
+
+    public function test_an_organization_created_with_a_logo_lists_the_same_logo_url()
+    {
+        $tenant = $this->tenant();
+        $created = $this->postOrganization($tenant, $this->validPayload([
+            'logo' => UploadedFile::fake()->create('logo.png', 100, 'image/png'),
+        ]));
+
+        $response = $this->getOrganizations($tenant);
+
+        $response->assertJsonPath('0.logo', $created->json('organization.logo'));
+    }
+
+    #[DataProvider('nonTenantRoleProvider')]
+    public function test_list_is_forbidden_for_non_tenants(string $role)
+    {
+        $user = User::factory()->create(['role' => $role]);
+        Organization::factory()->withMember($user)->create();
+
+        $response = $this->getOrganizations($user);
+
+        $response->assertStatus(403);
+        $response->assertExactJson(['message' => 'No autorizado']);
+    }
+
+    public function test_list_requires_authentication()
+    {
+        $response = $this->getOrganizations(null);
+
+        $response->assertStatus(401);
+        $response->assertJsonStructure(['message']);
+    }
+
+    // ---------------------------------------------------------------
     // Scope (OM-S37)
     // ---------------------------------------------------------------
 
