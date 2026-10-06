@@ -8,6 +8,7 @@ use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\Hash;
+use Illuminate\Support\Facades\Route;
 use Illuminate\Support\Facades\Storage;
 use Tests\TestCase;
 
@@ -146,5 +147,18 @@ class ErrorShapeInvariantTest extends TestCase
         $post->assertJsonMissingPath('status');
         $get->assertStatus(403);
         $get->assertJsonMissingPath('status');
+    }
+
+    public function test_active_organization_header_forbidden_has_no_status_key()
+    {
+        Route::middleware(['auth.api:sanctum', 'org.context'])
+            ->get('/api/_probe/error-shape', fn () => response()->json(['ok' => true]));
+        $tenant = User::factory()->create(['role' => 'tenant']);
+
+        $response = $this->actingAs($tenant, 'sanctum')
+            ->getJson('/api/_probe/error-shape', ['X-Organization-Id' => '999999']);
+
+        $response->assertStatus(403);
+        $response->assertJsonMissingPath('status');
     }
 }
