@@ -46,7 +46,8 @@ const HeaderTendant = () => {
     const navItems = [
         { label: "Bodegas populares", href: "/storage", path: "/storage" },
         { label: "Mensajes", href: "/arrendatario/mensajes", path: "/arrendatario/mensajes" },
-        { label: "Calendario", href: "/arrendatario/calendario", path: "/arrendatario/calendario" }
+        { label: "Calendario", href: "/arrendatario/calendario", path: "/arrendatario/calendario" },
+        { label: "Crear organización", href: "/mi-cuenta/crear-organizacion", path: "/mi-cuenta/crear-organizacion" }
     ];
 
     return (
