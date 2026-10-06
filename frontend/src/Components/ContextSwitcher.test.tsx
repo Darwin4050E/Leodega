@@ -1,7 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { MemoryRouter } from 'react-router-dom';
+import { MemoryRouter, useLocation } from 'react-router-dom';
 import type { Organization } from '../services/organizations';
 import type { ActiveContextValue } from '../context/activeContextBase';
 
@@ -65,6 +65,10 @@ async function open() {
   const user = userEvent.setup();
   await user.click(screen.getByTestId('context-switcher-trigger'));
   return user;
+}
+
+function LocationDisplay() {
+  return <p data-testid="location">{useLocation().pathname}</p>;
 }
 
 describe('ContextSwitcher visibility', () => {
@@ -279,6 +283,45 @@ describe('ContextSwitcher dismissal', () => {
     expect(screen.queryByRole('group', { name: 'Cambiar contexto' })).not.toBeInTheDocument();
   });
 
+  it('navigates to the creation route from the create link without changing the context', async () => {
+    setContext({ context: { kind: 'organization', organizationId: 7 }, activeOrganization: andina });
+    render(
+      <MemoryRouter initialEntries={['/arrendatario/dashboard']}>
+        <ContextSwitcher placement="header" />
+        <LocationDisplay />
+      </MemoryRouter>,
+    );
+    const user = await open();
+    expect(screen.getByTestId('location')).toHaveTextContent('/arrendatario/dashboard');
+
+    await user.click(within(panel()).getByRole('link', { name: 'Crear organización' }));
+
+    expect(screen.getByTestId('location')).toHaveTextContent('/mi-cuenta/crear-organizacion');
+    expect(selectOrganization).not.toHaveBeenCalled();
+    expect(selectPersonal).not.toHaveBeenCalled();
+  });
+
+  it('keeps the open state of each placement independent', async () => {
+    render(
+      <MemoryRouter>
+        <ContextSwitcher placement="header" />
+        <ContextSwitcher placement="drawer" />
+      </MemoryRouter>,
+    );
+    const user = userEvent.setup();
+    const [headerTrigger, drawerTrigger] = screen.getAllByTestId('context-switcher-trigger');
+
+    await user.click(headerTrigger);
+
+    expect(headerTrigger).toHaveAttribute('aria-expanded', 'true');
+    expect(drawerTrigger).toHaveAttribute('aria-expanded', 'false');
+    expect(screen.getAllByRole('group', { name: 'Cambiar contexto' })).toHaveLength(1);
+
+    await user.click(drawerTrigger);
+
+    expect(drawerTrigger).toHaveAttribute('aria-expanded', 'true');
+  });
+
   it('toggles closed when the trigger is clicked again', async () => {
     renderSwitcher();
     const user = await open();
@@ -310,6 +353,23 @@ describe('ContextSwitcher list states', () => {
     await user.click(within(panel()).getByRole('button', { name: 'Reintentar' }));
 
     expect(reloadOrganizations).toHaveBeenCalledTimes(1);
+  });
+
+  it('keeps personal mode selectable in the error state', async () => {
+    setContext({
+      status: 'error',
+      organizations: [],
+      context: { kind: 'organization', organizationId: 7 },
+      activeOrganization: null,
+    });
+    renderSwitcher();
+    const user = await open();
+
+    await user.click(within(panel()).getByRole('button', { name: /Modo personal/ }));
+
+    expect(selectPersonal).toHaveBeenCalledTimes(1);
+    expect(selectOrganization).not.toHaveBeenCalled();
+    expect(screen.queryByRole('group', { name: 'Cambiar contexto' })).not.toBeInTheDocument();
   });
 
   it('does not show loading or error notes when the list is ready', async () => {
