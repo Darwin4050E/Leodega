@@ -4,10 +4,12 @@ import userEvent from '@testing-library/user-event';
 import { MemoryRouter, Routes, Route } from 'react-router-dom';
 
 const mockCreateOrganization = vi.hoisted(() => vi.fn());
+const mockGetOrganizations = vi.hoisted(() => vi.fn());
 const mockUseAuth = vi.hoisted(() => vi.fn());
 
 vi.mock('../../services/organizations', () => ({
   createOrganization: mockCreateOrganization,
+  getOrganizations: mockGetOrganizations,
 }));
 
 vi.mock('../../context/useAuth', () => ({
@@ -19,6 +21,19 @@ vi.mock('../../Components/HeaderTendant', () => ({
 }));
 
 import CrearOrganizacion from './CrearOrganizacion';
+import { ActiveContextProvider } from '../../context/ActiveContext';
+import { useActiveContext } from '../../context/useActiveContext';
+
+function DashboardProbe() {
+  const { activeOrganization, organizations } = useActiveContext();
+  return (
+    <div>
+      <p>Panel del arrendatario</p>
+      <p data-testid="probe-active">{activeOrganization?.name ?? 'sin organización'}</p>
+      <p data-testid="probe-list">{organizations.map((item) => item.id).join(',')}</p>
+    </div>
+  );
+}
 
 const originalCreateObjectURL = URL.createObjectURL;
 const originalRevokeObjectURL = URL.revokeObjectURL;
@@ -49,11 +64,13 @@ function apiError(status: number, data: Record<string, unknown>) {
 function renderPage() {
   return render(
     <MemoryRouter initialEntries={['/mi-cuenta/crear-organizacion']}>
-      <Routes>
-        <Route path="/mi-cuenta/crear-organizacion" element={<CrearOrganizacion />} />
-        <Route path="/" element={<div>Inicio público</div>} />
-        <Route path="/arrendatario/dashboard" element={<div>Panel del arrendatario</div>} />
-      </Routes>
+      <ActiveContextProvider>
+        <Routes>
+          <Route path="/mi-cuenta/crear-organizacion" element={<CrearOrganizacion />} />
+          <Route path="/" element={<div>Inicio público</div>} />
+          <Route path="/arrendatario/dashboard" element={<DashboardProbe />} />
+        </Routes>
+      </ActiveContextProvider>
     </MemoryRouter>,
   );
 }
@@ -74,6 +91,7 @@ const submit = (user: ReturnType<typeof userEvent.setup>) =>
 describe('CrearOrganizacion', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    mockGetOrganizations.mockResolvedValue({ data: [] });
     setRole('tenant');
     URL.createObjectURL = vi.fn((file: Blob) => `blob:${(file as File).name}`);
     URL.revokeObjectURL = vi.fn();
@@ -319,15 +337,33 @@ describe('CrearOrganizacion', () => {
       expect(screen.getByText('Panel del arrendatario')).toBeInTheDocument();
     });
 
-    it('navigates to the tenant area on Operar como and persists no context', async () => {
+    it('activates the created organization on Operar como and opens the tenant area', async () => {
       const user = await createOrg();
 
       await user.click(screen.getByRole('button', { name: 'Operar como Importadora Andina' }));
 
       expect(screen.getByText('Panel del arrendatario')).toBeInTheDocument();
-      expect(localStorage).toHaveLength(0);
-      expect(sessionStorage).toHaveLength(0);
+      expect(localStorage.getItem('active_context:1')).toBe('7');
+      expect(screen.getByTestId('probe-active')).toHaveTextContent('Importadora Andina S.A.');
+      expect(screen.getByTestId('probe-list')).toHaveTextContent('7');
       expect(mockCreateOrganization).toHaveBeenCalledTimes(1);
+    });
+
+    it('leaves the stored context untouched on Seguir en modo personal', async () => {
+      localStorage.setItem('active_context:1', '3');
+      mockGetOrganizations.mockResolvedValue({ data: [organization({ id: 3, name: 'Norte S.A.' })] });
+      const user = await createOrg();
+
+      await user.click(screen.getByRole('button', { name: 'Seguir en modo personal' }));
+
+      expect(screen.getByText('Panel del arrendatario')).toBeInTheDocument();
+      expect(localStorage.getItem('active_context:1')).toBe('3');
+    });
+
+    it('does not select any organization until Operar como is pressed', async () => {
+      await createOrg();
+
+      expect(localStorage.getItem('active_context:1')).toBeNull();
     });
 
     it('shows initials in the mark when the organization has no logo', async () => {
