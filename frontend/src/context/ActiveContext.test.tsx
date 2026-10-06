@@ -399,6 +399,98 @@ describe('ActiveContextProvider multi-tab sync', () => {
     expect(result.current.active.context).toEqual(PERSONAL);
   });
 
+  it('falls back to personal and clears the key when another tab writes an organization that is not in the list', async () => {
+    const { result } = renderContext();
+    await waitFor(() => expect(result.current.active.status).toBe('ready'));
+
+    storageChange('active_context:5', '99');
+
+    expect(result.current.active.context).toEqual(PERSONAL);
+    expect(result.current.active.activeOrganization).toBeNull();
+    expect(localStorage.getItem('active_context:5')).toBeNull();
+  });
+
+  it('adopts and keeps an organization from another tab that is in the list', async () => {
+    const { result } = renderContext();
+    await waitFor(() => expect(result.current.active.status).toBe('ready'));
+
+    storageChange('active_context:5', '8');
+
+    expect(result.current.active.context).toEqual(organizationContext(8));
+    expect(localStorage.getItem('active_context:5')).toBe('8');
+  });
+
+  it('adopts an organization from another tab while the list is loading, then validates it on arrival: unknown id ends personal', async () => {
+    let resolveList: (value: { data: unknown[] }) => void = () => {};
+    mockGetOrganizations.mockReturnValue(new Promise((resolve) => (resolveList = resolve)));
+    const { result } = renderContext();
+    expect(result.current.active.status).toBe('loading');
+
+    storageChange('active_context:5', '99');
+
+    expect(result.current.active.context).toEqual(organizationContext(99));
+    expect(localStorage.getItem('active_context:5')).toBe('99');
+
+    await act(async () => resolveList({ data: [organization(7), organization(8)] }));
+
+    expect(result.current.active.status).toBe('ready');
+    expect(result.current.active.context).toEqual(PERSONAL);
+    expect(localStorage.getItem('active_context:5')).toBeNull();
+  });
+
+  it('adopts an organization from another tab while the list is loading, then validates it on arrival: known id stays', async () => {
+    let resolveList: (value: { data: unknown[] }) => void = () => {};
+    mockGetOrganizations.mockReturnValue(new Promise((resolve) => (resolveList = resolve)));
+    const { result } = renderContext();
+
+    storageChange('active_context:5', '8');
+
+    expect(result.current.active.context).toEqual(organizationContext(8));
+
+    await act(async () => resolveList({ data: [organization(7), organization(8)] }));
+
+    expect(result.current.active.context).toEqual(organizationContext(8));
+    expect(result.current.active.activeOrganization?.id).toBe(8);
+    expect(localStorage.getItem('active_context:5')).toBe('8');
+  });
+
+  it('keeps the stored context when another tab writes an unknown organization and the list failed to load', async () => {
+    mockGetOrganizations.mockRejectedValue(new Error('boom'));
+    const { result } = renderContext();
+    await waitFor(() => expect(result.current.active.status).toBe('error'));
+
+    storageChange('active_context:5', '99');
+
+    expect(result.current.active.context).toEqual(organizationContext(99));
+    expect(localStorage.getItem('active_context:5')).toBe('99');
+  });
+
+  it('does not demote an activated organization that a storage event echoes back', async () => {
+    const { result } = renderContext();
+    await waitFor(() => expect(result.current.active.status).toBe('ready'));
+    act(() => result.current.active.activateOrganization(organization(9) as Organization));
+
+    storageChange('active_context:5', '9');
+
+    expect(result.current.active.context).toEqual(organizationContext(9));
+    expect(result.current.active.activeOrganization?.id).toBe(9);
+    expect(localStorage.getItem('active_context:5')).toBe('9');
+  });
+
+  it('does not demote an organization activated while the list was loading when a storage event follows the load', async () => {
+    let resolveList: (value: { data: unknown[] }) => void = () => {};
+    mockGetOrganizations.mockReturnValue(new Promise((resolve) => (resolveList = resolve)));
+    const { result } = renderContext();
+    act(() => result.current.active.activateOrganization(organization(9) as Organization));
+    await act(async () => resolveList({ data: [organization(7)] }));
+    expect(result.current.active.status).toBe('ready');
+
+    storageChange('active_context:5', '9');
+
+    expect(result.current.active.context).toEqual(organizationContext(9));
+    expect(localStorage.getItem('active_context:5')).toBe('9');
+  });
+
   it('stops listening after unmount', async () => {
     const { result, unmount } = renderContext();
     await waitFor(() => expect(result.current.active.status).toBe('ready'));

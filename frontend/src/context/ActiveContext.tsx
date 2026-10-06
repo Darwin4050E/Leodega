@@ -44,6 +44,10 @@ export function ActiveContextProvider({ children }: { children: ReactNode }) {
   }
 
   const activatedIds = useRef(new Set<number>());
+  const latestList = useRef<{ status: OrganizationsStatus; organizations: Organization[] }>({
+    status: ORGANIZATIONS_STATUS.LOADING,
+    organizations: NO_ORGANIZATIONS,
+  });
   const fetchKey = `${ownerId}:${reloadCount}`;
 
   useEffect(() => {
@@ -52,7 +56,18 @@ export function ActiveContextProvider({ children }: { children: ReactNode }) {
 
   useEffect(() => {
     if (ownerId === null) return;
-    const syncFromStorage = () => setStoredId(readStoredOrganizationId(ownerId));
+    const syncFromStorage = () => {
+      const id = readStoredOrganizationId(ownerId);
+      // activatedIds is set synchronously, so a just-activated organization is known before latestList catches up.
+      const { status: listStatus, organizations: known } = latestList.current;
+      const unknown =
+        id !== null &&
+        listStatus === ORGANIZATIONS_STATUS.READY &&
+        !known.some((item) => item.id === id) &&
+        !activatedIds.current.has(id);
+      if (unknown) clearStoredOrganizationId(ownerId);
+      setStoredId(unknown ? null : id);
+    };
     const onStorage = (event: StorageEvent) => {
       if (event.key === null || event.key === activeContextKey(ownerId)) syncFromStorage();
     };
@@ -102,6 +117,10 @@ export function ActiveContextProvider({ children }: { children: ReactNode }) {
     : (current?.status ?? ORGANIZATIONS_STATUS.LOADING);
   const fetchedList = current?.status === ORGANIZATIONS_STATUS.READY ? current.organizations : [];
   const organizations = [...fetchedList, ...added.filter((item) => !fetchedList.some((f) => f.id === item.id))];
+
+  useEffect(() => {
+    latestList.current = { status, organizations };
+  });
 
   const context: ActiveContextSelection =
     storedId === null
