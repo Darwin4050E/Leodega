@@ -109,4 +109,42 @@ class ErrorShapeInvariantTest extends TestCase
         $response->assertStatus(409);
         $response->assertJsonMissingPath('status');
     }
+
+    public function test_organizations_validation_errors_have_no_status_key()
+    {
+        Storage::fake('public');
+        $tenant = User::factory()->create(['role' => 'tenant']);
+
+        $fieldError = $this->actingAs($tenant, 'sanctum')
+            ->post('/api/organizations', ['name' => '', 'ruc' => '123', 'email' => 'abc'], ['Accept' => 'application/json']);
+
+        $fieldError->assertStatus(422);
+        $fieldError->assertJsonValidationErrors(['name', 'ruc', 'email']);
+        $fieldError->assertJsonMissingPath('status');
+
+        $logoError = $this->actingAs($tenant, 'sanctum')->post('/api/organizations', [
+            'name' => 'Importadora Andina S.A.',
+            'ruc' => '1790012345001',
+            'email' => 'contacto@andina.ec',
+            'logo' => UploadedFile::fake()->create('logo.pdf', 10, 'application/pdf'),
+        ], ['Accept' => 'application/json']);
+
+        $logoError->assertStatus(422);
+        $logoError->assertJsonValidationErrors(['logo']);
+        $logoError->assertJsonMissingPath('status');
+    }
+
+    public function test_organizations_role_gate_forbidden_has_no_status_key()
+    {
+        $landlord = User::factory()->create(['role' => 'landlord']);
+
+        $post = $this->actingAs($landlord, 'sanctum')
+            ->post('/api/organizations', [], ['Accept' => 'application/json']);
+        $get = $this->actingAs($landlord, 'sanctum')->getJson('/api/organizations');
+
+        $post->assertStatus(403);
+        $post->assertJsonMissingPath('status');
+        $get->assertStatus(403);
+        $get->assertJsonMissingPath('status');
+    }
 }

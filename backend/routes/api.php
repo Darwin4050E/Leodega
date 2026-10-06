@@ -8,6 +8,7 @@ use App\Http\Controllers\DashboardController;
 use App\Http\Controllers\LandlordsController;
 use App\Http\Controllers\MessageController;
 use App\Http\Controllers\NotificationsController;
+use App\Http\Controllers\OrganizationController;
 use App\Http\Controllers\PasswordResetController;
 use App\Http\Controllers\PaymentsController;
 use App\Http\Controllers\ProfileController;
@@ -214,6 +215,13 @@ Route::middleware('auth.api:sanctum')->group(function () {
     Route::get('/tenant/reservations/{reservation}/cancellation-preview', [ReservationsController::class, 'cancellationPreview']);
     // sdd/huc05-payment-receipt: owner-scoped payment receipt PDF.
     Route::get('/tenant/reservations/{reservation}/receipt', [ReservationsController::class, 'receipt']);
+});
+
+// HUE-04: organizations are a tenant-only feature. The group also covers the
+// listing (GET) so landlords and admins get the same 403 as on creation.
+Route::middleware(['auth.api:sanctum', 'role:tenant'])->group(function () {
+    Route::get('/organizations', [OrganizationController::class, 'index']);
+    Route::post('/organizations', [OrganizationController::class, 'store']);
 });
 
 Route::middleware(['auth.api:sanctum', 'role:admin'])->group(function () {
