@@ -241,6 +241,20 @@ class OrganizationTest extends TestCase
         $this->assertDatabaseCount('organization_user', 1);
     }
 
+    public function test_a_duplicate_ruc_and_an_invalid_name_report_both_errors()
+    {
+        $this->postOrganization($this->tenant(), $this->validPayload())->assertStatus(201);
+
+        $response = $this->postOrganization($this->tenant(), $this->validPayload(['name' => '']));
+
+        $response->assertStatus(422);
+        $response->assertJsonValidationErrors(['name', 'ruc']);
+        $response->assertJsonPath('errors.ruc.0', 'Ya existe una organización registrada con este RUC');
+        $response->assertJsonMissingPath('status');
+        $this->assertSame(1, Organization::count());
+        $this->assertDatabaseCount('organization_user', 1);
+    }
+
     // ---------------------------------------------------------------
     // Logo (OM-S38..S51)
     // ---------------------------------------------------------------
