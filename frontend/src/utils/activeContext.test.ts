@@ -5,6 +5,7 @@ import {
   ORGANIZATION_HEADER,
   activeContextKey,
   clearStoredActiveContext,
+  clearStoredOrganizationId,
   forcePersonalContext,
   parseOrganizationId,
   readRequestOrganizationId,
@@ -96,6 +97,20 @@ describe('stored organization id', () => {
       expect(localStorage.getItem('active_context:5')).toBe(raw);
     },
   );
+});
+
+describe('clearStoredOrganizationId', () => {
+  beforeEach(() => localStorage.clear());
+
+  it('removes the key of the given user and leaves the others', () => {
+    writeStoredOrganizationId(5, 7);
+    writeStoredOrganizationId(6, 9);
+
+    clearStoredOrganizationId(5);
+
+    expect(localStorage.getItem('active_context:5')).toBeNull();
+    expect(localStorage.getItem('active_context:6')).toBe('9');
+  });
 });
 
 describe('clearStoredActiveContext', () => {

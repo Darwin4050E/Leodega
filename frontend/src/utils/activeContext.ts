@@ -49,9 +49,13 @@ export function writeStoredOrganizationId(userId: number, organizationId: number
   localStorage.setItem(activeContextKey(userId), String(organizationId));
 }
 
+export function clearStoredOrganizationId(userId: number): void {
+  localStorage.removeItem(activeContextKey(userId));
+}
+
 export function clearStoredActiveContext(): void {
   const user = readSessionUser();
-  if (user) localStorage.removeItem(activeContextKey(user.id));
+  if (user) clearStoredOrganizationId(user.id);
 }
 
 export function readRequestOrganizationId(): number | null {

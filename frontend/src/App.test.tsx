@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { render, screen } from '@testing-library/react';
+import { render, screen, waitFor } from '@testing-library/react';
 
 vi.mock('./Components/login', () => ({
   default: () => <div>Pantalla de inicio de sesión</div>,
@@ -19,6 +19,11 @@ vi.mock('./Dashboard/Tendant/MisReservas', () => ({
 
 vi.mock('./Dashboard/Tendant/CrearOrganizacion', () => ({
   default: () => <div>Crear organización</div>,
+}));
+
+const mockGetOrganizations = vi.hoisted(() => vi.fn());
+vi.mock('./services/organizations', () => ({
+  getOrganizations: mockGetOrganizations,
 }));
 
 import App from './App';
@@ -48,6 +53,8 @@ const TENANT_ROUTES: [string, string][] = [
 describe('tenant routes auth guard', () => {
   beforeEach(() => {
     localStorage.clear();
+    mockGetOrganizations.mockReset();
+    mockGetOrganizations.mockResolvedValue({ data: [] });
   });
 
   afterEach(() => {
@@ -71,5 +78,33 @@ describe('tenant routes auth guard', () => {
     visit(path);
 
     expect(screen.getByText(marker)).toBeInTheDocument();
+  });
+});
+
+describe('active context provider mounting', () => {
+  beforeEach(() => {
+    localStorage.clear();
+    mockGetOrganizations.mockReset();
+    mockGetOrganizations.mockResolvedValue({ data: [] });
+  });
+
+  afterEach(() => {
+    window.history.pushState({}, '', '/');
+  });
+
+  it('loads the organizations once for a tenant session', async () => {
+    localStorage.setItem('auth_token', 'test-token');
+    localStorage.setItem('auth_user', JSON.stringify({ id: 1, role: 'tenant' }));
+
+    visit('/arrendatario/dashboard');
+
+    await waitFor(() => expect(mockGetOrganizations).toHaveBeenCalledTimes(1));
+  });
+
+  it('does not call the organizations endpoint for an anonymous visitor on a public page', async () => {
+    visit('/login');
+
+    expect(await screen.findByText('Pantalla de inicio de sesión')).toBeInTheDocument();
+    expect(mockGetOrganizations).not.toHaveBeenCalled();
   });
 });
