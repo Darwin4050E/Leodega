@@ -6,6 +6,8 @@ import { getProfile } from "../services/profile";
 import { getUnreadNotificationsCount } from "../services/notifications";
 import { useAuth } from "../context/useAuth";
 import NotificationsDropdown from "../Dashboard/NotificatiosnDropdown";
+import ContextSwitcher from "./ContextSwitcher";
+import ActiveContextRibbon from "./ActiveContextRibbon";
 
 const HeaderTendant = () => {
     const { logout } = useAuth();
@@ -46,11 +48,11 @@ const HeaderTendant = () => {
     const navItems = [
         { label: "Bodegas populares", href: "/storage", path: "/storage" },
         { label: "Mensajes", href: "/arrendatario/mensajes", path: "/arrendatario/mensajes" },
-        { label: "Calendario", href: "/arrendatario/calendario", path: "/arrendatario/calendario" },
-        { label: "Crear organización", href: "/mi-cuenta/crear-organizacion", path: "/mi-cuenta/crear-organizacion" }
+        { label: "Calendario", href: "/arrendatario/calendario", path: "/arrendatario/calendario" }
     ];
 
     return (
+        <>
         <nav className="sticky top-0 z-50 py-5 px-12 backdrop-blur-lg border-b border-neutral-300 bg-white">
             <div className="container px-4 mx-auto relative text-sm">
                 <div className="flex justify-between items-center">
@@ -68,6 +70,7 @@ const HeaderTendant = () => {
                         ))}
                     </ul>
                     <div className="hidden lg:flex justify-center space-x-6 items-center">
+                        <ContextSwitcher placement="header" />
                         <div className="py-2 px-5 rounded-md text-white bg-leodega_p text-center flex items-center justify-center space-x-2">
                             <User className="w-6 h-6" />
                             <div className="pl-3 flex flex-col items-start">
@@ -122,6 +125,8 @@ const HeaderTendant = () => {
                             <div className="text-sm">{userLastName || ""}</div>
                         </div>
 
+                        <ContextSwitcher placement="drawer" />
+
                         <ul className="flex flex-col items-center space-y-6 w-full">
                             {navItems.map((item, index) => (
                                 <li key={index} className='py-2 w-full text-center border-b'>
@@ -133,6 +138,8 @@ const HeaderTendant = () => {
                 )}
             </div>
         </nav>
+        <ActiveContextRibbon />
+        </>
     );
 };
 
