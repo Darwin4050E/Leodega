@@ -4,6 +4,7 @@ import { Building2 } from "lucide-react";
 
 import HeaderTendant from "../../Components/HeaderTendant";
 import { useAuth } from "../../context/useAuth";
+import { useActiveContext } from "../../context/useActiveContext";
 import { asApiError } from "../../api/errors";
 import { createOrganization, type Organization } from "../../services/organizations";
 import {
@@ -61,6 +62,7 @@ const Field = ({ id, label, value, placeholder, error, hint, onChange }: FieldPr
 
 const CrearOrganizacion = () => {
   const { user } = useAuth();
+  const { activateOrganization } = useActiveContext();
   const navigate = useNavigate();
   const [name, setName] = useState("");
   const [ruc, setRuc] = useState("");
@@ -134,8 +136,10 @@ const CrearOrganizacion = () => {
     }
   };
 
-  // HUE-02 fills this seam with the active-organization context; until then it only leaves the page.
-  const handleOperate = () => navigate(TENANT_HOME);
+  const handleOperate = () => {
+    if (created) activateOrganization(created);
+    navigate(TENANT_HOME);
+  };
 
   return (
     <>

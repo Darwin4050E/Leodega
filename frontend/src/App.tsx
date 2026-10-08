@@ -1,5 +1,6 @@
 import { BrowserRouter as Router, Routes, Route } from 'react-router-dom'
 import { AuthProvider } from './context/AuthContext'
+import { ActiveContextProvider } from './context/ActiveContext'
 import { WizardProvider } from './context/WizardContext'
 import './App.css'
 import Header from './Components/Header'
@@ -55,6 +56,7 @@ import CrearOrganizacion from './Dashboard/Tendant/CrearOrganizacion'
 function App() {
   return (
     <AuthProvider>
+    <ActiveContextProvider>
     <Router>
       <Routes>
         <Route path="/register" element={<Register />} />
@@ -142,6 +144,7 @@ function App() {
         </Route>
       </Routes>
     </Router>
+    </ActiveContextProvider>
     </AuthProvider>
   )
 }

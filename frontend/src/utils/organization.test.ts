@@ -3,6 +3,7 @@ import {
   LOGO_MAX_BYTES,
   LOGO_MIME_TYPES,
   organizationInitials,
+  organizationRoleLabel,
   organizationShortName,
   validateLogoFile,
   validateOrganizationForm,
@@ -13,6 +14,16 @@ const VALID_FORM = { name: 'Importadora Andina S.A.', ruc: '1790012345001', emai
 function fileOf(type: string, size = 10) {
   return new File([new Uint8Array(size)], 'logo', { type });
 }
+
+describe('organizationRoleLabel', () => {
+  it('describes the admin role as Eres administrador', () => {
+    expect(organizationRoleLabel('admin')).toBe('Eres administrador');
+  });
+
+  it('describes the member role as Miembro', () => {
+    expect(organizationRoleLabel('member')).toBe('Miembro');
+  });
+});
 
 describe('organizationInitials', () => {
   it('uses the first letter of the first two words, uppercased', () => {

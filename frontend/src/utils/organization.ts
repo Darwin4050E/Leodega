@@ -1,3 +1,5 @@
+import type { Organization } from '../services/organizations';
+
 export const LOGO_MAX_BYTES = 2 * 1024 * 1024;
 export const LOGO_MIME_TYPES = ['image/png', 'image/jpeg'];
 
@@ -26,6 +28,10 @@ export function organizationInitials(name: string): string {
     .map((word) => word[0])
     .join('');
   return (initials || 'OR').toUpperCase();
+}
+
+export function organizationRoleLabel(role: Organization['role']): string {
+  return role === 'admin' ? 'Eres administrador' : 'Miembro';
 }
 
 export function organizationShortName(name: string): string {
