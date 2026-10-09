@@ -35,6 +35,12 @@ const ReservationCard = ({ reservation, onCancelClick, onReceiptClick }: Reserva
   const direction = reservation.store_rooms?.direction ?? "";
   const city = reservation.store_rooms?.city ?? "";
   const size = reservation.store_rooms?.size ?? "";
+  // HUE-05 OR-W5 (D6/D13): the server already gates can_be_cancelled/receipt
+  // for non-creators (defense in depth here, ~5 lines). `is_creator` is
+  // absent on a personal row, where every row is trivially the caller's own.
+  const canActOnReservation = reservation.is_creator !== false;
+  const showCancelButton = reservation.can_be_cancelled && canActOnReservation;
+  const showReceiptButton = Boolean(reservation.receipt) && canActOnReservation;
 
   return (
     <div className="bg-white border border-gray-200 rounded-2xl shadow-sm overflow-hidden">
@@ -56,18 +62,28 @@ const ReservationCard = ({ reservation, onCancelClick, onReceiptClick }: Reserva
         <div className="flex-1 min-w-[200px]">
           <div className="flex justify-between items-start gap-2.5 mb-1">
             <h3 className="text-base font-semibold text-gray-900 m-0">{title}</h3>
-            <span
-              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-semibold whitespace-nowrap"
-              style={{ background: badge.bg, color: badge.color }}
-            >
-              <span className="w-1.5 h-1.5 rounded-full" style={{ background: badge.color }} />
-              {badge.label}
-            </span>
+            <div className="flex items-center gap-1.5">
+              {reservation.organization && (
+                <span className="inline-flex items-center px-3 py-1.5 rounded-full text-xs font-semibold whitespace-nowrap bg-[#EDE9FE] text-[#7551E9]">
+                  {reservation.organization.name}
+                </span>
+              )}
+              <span
+                className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-semibold whitespace-nowrap"
+                style={{ background: badge.bg, color: badge.color }}
+              >
+                <span className="w-1.5 h-1.5 rounded-full" style={{ background: badge.color }} />
+                {badge.label}
+              </span>
+            </div>
           </div>
           <p className="text-xs text-gray-500 mb-2.5 flex items-center gap-1.5">
             <MapPin size={13} color="#9CA3AF" />
             {direction}, {city} · {size} m²
           </p>
+          {reservation.organization && reservation.creator_name && (
+            <p className="text-xs text-gray-500 mb-2.5">Reservada por {reservation.creator_name}</p>
+          )}
           <div className="flex gap-6 flex-wrap">
             <div>
               <p className="text-[11px] text-gray-400 mb-0.5">Período</p>
@@ -99,10 +115,10 @@ const ReservationCard = ({ reservation, onCancelClick, onReceiptClick }: Reserva
           </div>
         </div>
       </div>
-      {(reservation.receipt || reservation.can_be_cancelled) && (
+      {(showReceiptButton || showCancelButton) && (
         <div className="px-4 pb-4">
           <div className="border-t border-gray-100 pt-3.5 flex gap-2.5 flex-wrap">
-            {reservation.receipt && (
+            {showReceiptButton && (
               <button
                 onClick={() => onReceiptClick(reservation)}
                 className="inline-flex items-center gap-1.5 px-4 py-2 bg-white text-[#7551E9] border border-[#7551E9] rounded-lg text-sm font-semibold"
@@ -111,7 +127,7 @@ const ReservationCard = ({ reservation, onCancelClick, onReceiptClick }: Reserva
                 Ver comprobante
               </button>
             )}
-            {reservation.can_be_cancelled && (
+            {showCancelButton && (
               <button
                 onClick={() => onCancelClick(reservation)}
                 className="inline-flex items-center gap-1.5 px-4 py-2 bg-white text-red-600 border border-red-300 rounded-lg text-sm font-semibold"
