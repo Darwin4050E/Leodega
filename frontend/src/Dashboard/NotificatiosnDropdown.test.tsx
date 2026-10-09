@@ -73,6 +73,25 @@ const expiredNoData = {
   data: null,
 };
 
+const paidOrgData = {
+  id: 5,
+  title: 'Bodega reservada y pagada',
+  body: 'Tu bodega fue reservada y el pago quedó confirmado',
+  type: 'reservation_booked_and_paid',
+  is_read: false,
+  data: {
+    reservation_id: 13,
+    store_room_id: 23,
+    customer_name: 'Ana Torres',
+    store_room_title: 'Bodega Centro',
+    amount: '1500.00',
+    start_date: '2026-04-01',
+    end_date: '2026-06-01',
+    organization_name: 'Andina',
+    organization_ruc: '1792146739001',
+  },
+};
+
 describe('NotificationsDropdown', () => {
   beforeEach(() => {
     vi.clearAllMocks();
@@ -152,5 +171,24 @@ describe('NotificationsDropdown', () => {
     await user.click(screen.getByText('Luis Pérez'));
 
     await waitFor(() => expect(mockNavigate).toHaveBeenCalledWith('/arrendador/solicitudes'));
+  });
+
+  // HUE-05 OR-WS13/WS14
+  it('shows the organization name for a paid-booking notification carrying one', async () => {
+    mockGetNotifications.mockResolvedValue({ data: [paidOrgData] });
+
+    render(<NotificationsDropdown onUnreadChange={vi.fn()} />);
+
+    expect(await screen.findByText('Ana Torres')).toBeInTheDocument();
+    expect(screen.getByText(/Andina/)).toBeInTheDocument();
+  });
+
+  it('shows no organization line for a paid-booking notification without one', async () => {
+    mockGetNotifications.mockResolvedValue({ data: [paidWithData] });
+
+    render(<NotificationsDropdown onUnreadChange={vi.fn()} />);
+
+    expect(await screen.findByText('Ana Torres')).toBeInTheDocument();
+    expect(screen.queryByText(/Andina/)).not.toBeInTheDocument();
   });
 });
