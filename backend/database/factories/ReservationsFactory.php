@@ -2,6 +2,7 @@
 
 namespace Database\Factories;
 
+use App\Models\Organization;
 use App\Models\StoreRooms;
 use App\Models\Tenants;
 use Illuminate\Database\Eloquent\Factories\Factory;
@@ -29,5 +30,17 @@ class ReservationsFactory extends Factory
             'cancelation_reason' => null,
             'creation_date' => now(),
         ];
+    }
+
+    /**
+     * HUE-05 D4: attaches the reservation to an organization (creator stays
+     * `tenant_id`). Pass an existing `Organization` to reuse one across
+     * several reservations in the same org, otherwise a fresh one is made.
+     */
+    public function forOrganization(?Organization $organization = null): static
+    {
+        return $this->state(fn () => [
+            'organization_id' => ($organization ?? Organization::factory()->create())->id,
+        ]);
     }
 }

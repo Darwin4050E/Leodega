@@ -3,7 +3,11 @@
 namespace Tests\Feature;
 
 use App\Models\Organization;
+use App\Models\Reservations;
+use App\Models\StoreRooms;
+use App\Models\Tenants;
 use App\Models\User;
+use Illuminate\Database\QueryException;
 use Illuminate\Database\UniqueConstraintViolationException;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Schema;
@@ -115,5 +119,35 @@ class OrganizationSchemaTest extends TestCase
 
         $this->assertSame('member', $organization->pivot->role);
         $this->assertNotNull($organization->pivot->joined_at);
+    }
+
+    // -- HUE-05 U1a: reservations.organization_id (nullable FK, restrictOnDelete, indexed) --
+
+    public function test_reservations_organization_id_column_is_nullable_and_indexed()
+    {
+        $this->assertTrue(Schema::hasColumn('reservations', 'organization_id'));
+
+        $column = collect(Schema::getColumns('reservations'))->firstWhere('name', 'organization_id');
+        $this->assertTrue($column['nullable']);
+
+        $indexedColumns = collect(Schema::getIndexes('reservations'))
+            ->flatMap(fn ($index) => $index['columns'])
+            ->all();
+        $this->assertContains('organization_id', $indexedColumns);
+    }
+
+    public function test_deleting_an_organization_with_a_reservation_is_restricted()
+    {
+        $organization = Organization::factory()->create();
+        $room = StoreRooms::factory()->create();
+        $tenant = Tenants::factory()->create();
+        Reservations::factory()->create([
+            'store_room_id' => $room->id,
+            'tenant_id' => $tenant->id,
+            'organization_id' => $organization->id,
+        ]);
+
+        $this->expectException(QueryException::class);
+        $organization->delete();
     }
 }

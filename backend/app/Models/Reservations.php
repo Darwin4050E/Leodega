@@ -17,6 +17,7 @@ class Reservations extends Model
     protected $fillable = [
         'store_room_id',
         'tenant_id',
+        'organization_id',
         'start_date',
         'end_date',
         'status',
@@ -36,6 +37,14 @@ class Reservations extends Model
     public function tenants()
     {
         return $this->belongsTo(Tenants::class, 'tenant_id');
+    }
+
+    /**
+     * HUE-05 D4: nullable, null for every personal reservation.
+     */
+    public function organization()
+    {
+        return $this->belongsTo(Organization::class, 'organization_id');
     }
 
     public function payments()
@@ -136,5 +145,31 @@ class Reservations extends Model
     public function isExpiredHold(): bool
     {
         return Carbon::parse($this->created_at)->lte($this->holdCutoff());
+    }
+
+    /**
+     * sdd/hue-05-reservar-organizacion decision #589 (D12, refined): backs
+     * the DELETE /account 409 guard (UserController::destroySelf). "Active"
+     * here means a `confirmed` reservation that has NOT ended yet
+     * (`end_date >= today`), OR an unexpired `pending` hold
+     * (scopeActiveHold's exact cutoff) -- an ended confirmed reservation or
+     * an expired hold must stop blocking account deletion, because the
+     * `reservations.status` enum never transitions to a terminal
+     * "finished" value on its own (only `pending|confirmed|canceled`).
+     * Restricted to organization reservations (`organization_id` NOT NULL)
+     * created by the given tenant; personal reservations never block D7.
+     */
+    public function scopeActiveOrganizationHoldFor(Builder $query, int $tenantId): Builder
+    {
+        return $query->where('tenant_id', $tenantId)
+            ->whereNotNull('organization_id')
+            ->where(function (Builder $query) {
+                $query->where(function (Builder $query) {
+                    $query->where('status', 'confirmed')
+                        ->whereDate('end_date', '>=', today());
+                })->orWhere(function (Builder $query) {
+                    $query->activeHold();
+                });
+            });
     }
 }
