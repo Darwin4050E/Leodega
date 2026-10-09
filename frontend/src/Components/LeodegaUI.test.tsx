@@ -7,6 +7,7 @@ const mockGetReservedDates = vi.hoisted(() => vi.fn());
 const mockCreateReservation = vi.hoisted(() => vi.fn());
 const mockCreatePayment = vi.hoisted(() => vi.fn());
 const mockUseAuth = vi.hoisted(() => vi.fn());
+const mockUseActiveContext = vi.hoisted(() => vi.fn());
 const mockAlert = vi.hoisted(() => vi.fn());
 const mockNavigate = vi.hoisted(() => vi.fn());
 
@@ -15,6 +16,25 @@ vi.mock('react-router-dom', () => ({
   useNavigate: () => mockNavigate,
   useLocation: () => ({ pathname: '/leodega/7' }),
 }));
+
+// HUE-05: every pre-existing test in this file exercises the personal
+// (non-org) path, so the default mock MUST resolve as "personal" or all
+// ~60 of them would see an unresolved/undefined context and break.
+vi.mock('../context/useActiveContext', () => ({
+  useActiveContext: mockUseActiveContext,
+}));
+
+const PERSONAL_CONTEXT = {
+  context: { kind: 'personal' },
+  activeOrganization: null,
+  organizations: [],
+  status: 'idle',
+  enabled: false,
+  selectOrganization: vi.fn(),
+  selectPersonal: vi.fn(),
+  activateOrganization: vi.fn(),
+  reloadOrganizations: vi.fn(),
+};
 
 vi.mock('react-leaflet', () => ({
   MapContainer: ({ children }: { children: React.ReactNode }) => (
@@ -45,6 +65,11 @@ vi.mock('../context/useAuth', () => ({
 
 import LeodegaUI from './LeodegaUI';
 import { RESERVATION_OVERLAP_MESSAGE } from '../utils/reservationFlow';
+
+// vi.clearAllMocks() (used throughout this file) only clears call history,
+// never the mockReturnValue implementation below -- so this default applies
+// to every test unless a describe block below overrides it explicitly.
+mockUseActiveContext.mockReturnValue(PERSONAL_CONTEXT);
 
 const storeRoomDetail = {
   title: 'Bodega Norte',
@@ -1132,5 +1157,154 @@ describe('LeodegaUI single reserve control and back label (RB-6, SRD-3)', () => 
     fireEvent.click(screen.getByRole('button', { name: '← Volver a mis bodegas' }));
 
     expect(mockNavigate).toHaveBeenCalledWith('/arrendador/bodegas');
+  });
+});
+
+describe('LeodegaUI organization reservation notice (OR-W1/OR-W2)', () => {
+  const orgReservation = {
+    id: 42,
+    start_date: '2030-01-10',
+    end_date: '2030-04-10',
+    total_mount: '4180.00',
+    rent_subtotal: '3800.00',
+    organization: { id: 5, name: 'Andina', ruc: '1792146739001' },
+  };
+
+  function orgContext(overrides: Partial<typeof PERSONAL_CONTEXT> = {}) {
+    return {
+      ...PERSONAL_CONTEXT,
+      context: { kind: 'organization', organizationId: 5 },
+      activeOrganization: { id: 5, name: 'Andina', ruc: '1792146739001', email: 'a@a.com', logo: null, status: 'active', role: 'member' },
+      status: 'ready',
+      enabled: true,
+      ...overrides,
+    };
+  }
+
+  async function openModal() {
+    render(<LeodegaUI />);
+    await waitFor(() => screen.getByText('Bodega Norte'));
+    fireEvent.click(screen.getByRole('button', { name: 'Reservar' }));
+    await waitFor(() => expect(screen.queryByText('Cargando disponibilidad...')).not.toBeInTheDocument());
+  }
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mockUseAuth.mockReturnValue({ user: { id: 9, role: 'tenant' } });
+    mockGetStoreRoomDetail.mockResolvedValue({ data: storeRoomDetail });
+    mockGetReservedDates.mockResolvedValue({ data: [] });
+  });
+
+  it('OR-WS1: shows "Reservando como Andina" in the modal and it persists through pago and comprobante', async () => {
+    mockUseActiveContext.mockReturnValue(orgContext());
+    mockCreateReservation.mockResolvedValue({ data: { message: 'ok', reservation: orgReservation } });
+
+    await openModal();
+    expect(screen.getByText(/Reservando como/)).toBeInTheDocument();
+    expect(screen.getByText('Andina')).toBeInTheDocument();
+
+    const dateInputs = screen.getAllByDisplayValue('');
+    fireEvent.change(dateInputs[0], { target: { value: '2030-01-10' } });
+    fireEvent.change(dateInputs[1], { target: { value: '2030-02-10' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Confirmar reserva' }));
+
+    await waitFor(() => expect(screen.getByText('Comprobante')).toBeInTheDocument());
+    // pago step
+    expect(screen.getByText('Andina')).toBeInTheDocument();
+  });
+
+  it('OR-WS2: shows no notice in personal context', async () => {
+    mockUseActiveContext.mockReturnValue(PERSONAL_CONTEXT);
+
+    await openModal();
+
+    expect(screen.queryByText(/Reservando como/)).not.toBeInTheDocument();
+  });
+
+  it('OR-WS2: shows no notice while the organization context is still loading', async () => {
+    mockUseActiveContext.mockReturnValue(
+      orgContext({ status: 'loading', activeOrganization: null })
+    );
+
+    await openModal();
+
+    expect(screen.queryByText(/Reservando como/)).not.toBeInTheDocument();
+  });
+
+  it('OR-WS2: shows no notice when the organization context errored', async () => {
+    mockUseActiveContext.mockReturnValue(orgContext({ status: 'error', activeOrganization: null }));
+
+    await openModal();
+
+    expect(screen.queryByText(/Reservando como/)).not.toBeInTheDocument();
+  });
+
+  it('OR-WS1/fail-safe: disables "Confirmar reserva" while an org id is stored but the organization has not resolved yet', async () => {
+    mockUseActiveContext.mockReturnValue(
+      orgContext({ status: 'loading', activeOrganization: null })
+    );
+
+    await openModal();
+
+    const dateInputs = screen.getAllByDisplayValue('');
+    fireEvent.change(dateInputs[0], { target: { value: '2030-01-10' } });
+    fireEvent.change(dateInputs[1], { target: { value: '2030-02-10' } });
+
+    expect(screen.getByRole('button', { name: 'Confirmar reserva' })).toBeDisabled();
+    expect(mockCreateReservation).not.toHaveBeenCalled();
+  });
+
+  it('OR-WS3: the request body carries no organization field', async () => {
+    mockUseActiveContext.mockReturnValue(orgContext());
+    mockCreateReservation.mockResolvedValue({ data: { message: 'ok', reservation: orgReservation } });
+
+    await openModal();
+    const dateInputs = screen.getAllByDisplayValue('');
+    fireEvent.change(dateInputs[0], { target: { value: '2030-01-10' } });
+    fireEvent.change(dateInputs[1], { target: { value: '2030-02-10' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Confirmar reserva' }));
+
+    await waitFor(() => expect(mockCreateReservation).toHaveBeenCalledTimes(1));
+    expect(mockCreateReservation).toHaveBeenCalledWith({
+      store_room_id: 7,
+      start_date: '2030-01-10',
+      end_date: '2030-02-10',
+    });
+  });
+
+  it('OR-WS5: shows the server message on a 422 inactive-organization rejection and keeps the modal open', async () => {
+    mockUseActiveContext.mockReturnValue(orgContext());
+    mockCreateReservation.mockRejectedValue({
+      response: {
+        status: 422,
+        data: {
+          message: 'La organización seleccionada no está activa.',
+          errors: { organization: ['La organización seleccionada no está activa.'] },
+        },
+      },
+    });
+
+    await openModal();
+    const dateInputs = screen.getAllByDisplayValue('');
+    fireEvent.change(dateInputs[0], { target: { value: '2030-01-10' } });
+    fireEvent.change(dateInputs[1], { target: { value: '2030-02-10' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Confirmar reserva' }));
+
+    await waitFor(() =>
+      expect(screen.getByText('La organización seleccionada no está activa.')).toBeInTheDocument()
+    );
+    expect(screen.getByRole('button', { name: 'Confirmar reserva' })).toBeInTheDocument();
+    expect(mockNavigate).not.toHaveBeenCalledWith('/login', expect.anything());
+  });
+
+  it('OR-WS4: a non-tenant viewer (no booking modal) shows no regression and never renders the notice', async () => {
+    mockUseAuth.mockReturnValue({ user: { id: 2, role: 'landlord' } });
+    mockUseActiveContext.mockReturnValue(orgContext());
+
+    render(<LeodegaUI />);
+    await waitFor(() => screen.getByText('Bodega Norte'));
+
+    expect(screen.queryByText(/Reservando como/)).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Reservar' })).not.toBeInTheDocument();
   });
 });
