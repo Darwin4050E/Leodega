@@ -38,6 +38,15 @@ export function organizationShortName(name: string): string {
   return name.trim().replace(LEGAL_SUFFIX, '').trim();
 }
 
+/**
+ * HUE-05 D5: the "{name} (RUC {ruc})" line shown wherever org identity is
+ * displayed (receipts, comprobantes, landlord detail, notifications) --
+ * extracted so the 4 call sites never drift from each other.
+ */
+export function organizationIdentityLine(name: string, ruc: string): string {
+  return `${name} (RUC ${ruc})`;
+}
+
 export function validateOrganizationForm(values: OrganizationFormValues): OrganizationFormErrors {
   const errors: OrganizationFormErrors = {};
   const ruc = values.ruc.trim();

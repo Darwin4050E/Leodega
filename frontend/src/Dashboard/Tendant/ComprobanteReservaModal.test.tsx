@@ -149,4 +149,18 @@ describe('ComprobanteReservaModal', () => {
 
     expect(onClose).toHaveBeenCalledTimes(1);
   });
+
+  // HUE-05 OR-WS6/WS7
+  it('shows the organization name and RUC when the receipt carries one', () => {
+    renderModal(reservation({ organization_name: 'Andina', organization_ruc: '1792146739001' }));
+
+    expect(field('Organización').getByText(/Andina/)).toBeInTheDocument();
+    expect(screen.getByText(/1792146739001/)).toBeInTheDocument();
+  });
+
+  it('shows no organization field for a personal reservation', () => {
+    renderModal();
+
+    expect(screen.queryByText('Organización')).not.toBeInTheDocument();
+  });
 });

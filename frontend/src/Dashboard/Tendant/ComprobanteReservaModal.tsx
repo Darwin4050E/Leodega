@@ -3,6 +3,7 @@ import { useState } from "react";
 import { downloadReservationReceipt } from "../../utils/receiptDownload";
 import { formatUSD } from "../../utils/money";
 import { formatReservationCode } from "../../utils/reservationCode";
+import { organizationIdentityLine } from "../../utils/organization";
 import type { TenantReservation } from "../../services/reservations";
 
 interface ComprobanteReservaModalProps {
@@ -44,6 +45,10 @@ const ComprobanteReservaModal = ({ reservation, onClose }: ComprobanteReservaMod
   ];
   if (receipt.payment_method_label) {
     fields.push(["Método de pago", receipt.payment_method_label]);
+  }
+  // HUE-05 OR-WS6/WS7: present only for an org reservation's receipt.
+  if (receipt.organization_name && receipt.organization_ruc) {
+    fields.push(["Organización", organizationIdentityLine(receipt.organization_name, receipt.organization_ruc)]);
   }
 
   return (

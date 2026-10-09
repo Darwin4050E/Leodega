@@ -2,12 +2,28 @@ import { describe, it, expect } from 'vitest';
 import {
   LOGO_MAX_BYTES,
   LOGO_MIME_TYPES,
+  organizationIdentityLine,
   organizationInitials,
   organizationRoleLabel,
   organizationShortName,
   validateLogoFile,
   validateOrganizationForm,
 } from './organization';
+
+// HUE-05: shared pure helper for the "{name} (RUC {ruc})" line repeated
+// across BookingReceipt, ComprobanteReservaModal, GestorReservas and
+// NotificatiosnDropdown (task 3.14 refactor).
+describe('organizationIdentityLine', () => {
+  it('formats the name and RUC', () => {
+    expect(organizationIdentityLine('Andina', '1792146739001')).toBe('Andina (RUC 1792146739001)');
+  });
+
+  it('formats a different name/RUC pair (triangulation)', () => {
+    expect(organizationIdentityLine('Logística del Pacífico', '0992345678001')).toBe(
+      'Logística del Pacífico (RUC 0992345678001)'
+    );
+  });
+});
 
 const VALID_FORM = { name: 'Importadora Andina S.A.', ruc: '1790012345001', email: 'ops@andina.com' };
 
