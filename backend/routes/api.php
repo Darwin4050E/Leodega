@@ -142,7 +142,9 @@ Route::middleware('auth.api:sanctum')->group(function () {
 });
 
 Route::middleware('auth.api:sanctum')->group(function () {
-    Route::post('/reservations', [ReservationsController::class, 'store']);
+    // HUE-05 AC-24: per-route mount, not per-group -- a stale header must
+    // never 403 the other actions in this group (landlord cancel etc.).
+    Route::post('/reservations', [ReservationsController::class, 'store'])->middleware('org.context');
     Route::get('/landlord/reservations', [ReservationsController::class, 'landlordIndex']);
     Route::get('/landlord/reservations/cancellation-rate', [ReservationsController::class, 'cancellationRate']);
     Route::patch('/landlord/reservations/{reservation}/cancel', [ReservationsController::class, 'cancel']);
@@ -205,7 +207,10 @@ Route::middleware('auth.api:sanctum')->group(function () {
 Route::middleware('auth.api:sanctum')->delete('/account', [UserController::class, 'destroySelf']);
 
 Route::middleware('auth.api:sanctum')->group(function () {
-    Route::get('/tenant/reservations', [ReservationsController::class, 'tenantIndex']);
+    // HUE-05 AC-24: per-route mount, same reasoning as POST /reservations
+    // above -- cancel/preview/receipt below must stay reachable on a stale
+    // or non-member header (the user acts on their OWN reservation there).
+    Route::get('/tenant/reservations', [ReservationsController::class, 'tenantIndex'])->middleware('org.context');
     // sdd/tenant-self-cancel: the owning tenant cancels their own
     // reservation; ownership is enforced by ReservationsPolicy::cancelAsTenant.
     Route::patch('/tenant/reservations/{reservation}/cancel', [ReservationsController::class, 'cancelAsTenant']);

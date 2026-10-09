@@ -15,8 +15,10 @@ use Tests\TestCase;
 
 /**
  * HUE-02 U1: the `org.context` middleware resolves the active organization
- * from X-Organization-Id. It is intentionally NOT mounted on any production
- * route yet, so every case goes through probe routes registered here only.
+ * from X-Organization-Id. Resolution cases go through probe routes
+ * registered here only; HUE-05 (AC-24) mounts it on exactly two production
+ * routes, checked by the allow-list test below and by
+ * AC-25's header-403 integration test on the real routes.
  */
 class ActiveOrganizationContextTest extends TestCase
 {
@@ -312,16 +314,28 @@ class ActiveOrganizationContextTest extends TestCase
         $this->assertHeaderForbidden($this->probe($user, $headers));
     }
 
-    public function test_no_production_route_mounts_the_middleware()
+    /**
+     * HUE-05 AC-24/AC-S19: `org.context` is now mounted on exactly two
+     * production routes (reservation store + tenant list). Any other route
+     * carrying it -- including a stale header 403'ing an unrelated action
+     * like cancel/pay/receipt -- is a regression (see design: per-route
+     * mount, never per-group).
+     */
+    public function test_org_context_is_mounted_on_exactly_the_allow_listed_production_routes()
     {
         $mounted = collect(Route::getRoutes()->getRoutes())
             ->reject(fn ($route) => str_starts_with($route->uri(), 'api/_probe/'))
             ->filter(fn ($route) => in_array('org.context', $route->gatherMiddleware(), true))
-            ->map(fn ($route) => $route->uri())
+            ->map(fn ($route) => collect($route->methods())
+                ->reject(fn ($method) => $method === 'HEAD')
+                ->map(fn ($method) => $method.' '.$route->uri())
+                ->all())
+            ->flatten()
+            ->sort()
             ->values()
             ->all();
 
-        $this->assertSame([], $mounted);
+        $this->assertSame(['GET api/tenant/reservations', 'POST api/reservations'], $mounted);
     }
 
     public function test_the_alias_maps_to_the_middleware_class()
