@@ -1,8 +1,9 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { Calendar } from "lucide-react";
 
 import HeaderTendant from "../../Components/HeaderTendant";
 import { getTenantReservations, type TenantReservation } from "../../services/reservations";
+import { useActiveContext } from "../../context/useActiveContext";
 import { asApiError } from "../../api/errors";
 import { deriveTenantTab, type TenantTab } from "../../utils/reservationVigencia";
 import ReservationCard from "./ReservationCard";
@@ -23,6 +24,13 @@ const RES_TABS: { key: TenantTab; label: string }[] = [
  * `ReservationCard[]` + empty states, plus the cancel modal on card click.
  */
 const MisReservas = () => {
+  const { context: activeContext } = useActiveContext();
+  // HUE-05 OR-W4: refetch whenever the active context changes (personal<->org,
+  // org A->B). Keyed on a string, not the context object identity, since a
+  // new ActiveContextSelection object is created on every provider render.
+  const contextKey =
+    activeContext.kind === "organization" ? `org:${activeContext.organizationId}` : "personal";
+
   const [reservations, setReservations] = useState<TenantReservation[]>([]);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState<string>("");
@@ -30,23 +38,36 @@ const MisReservas = () => {
   const [cancelingReservation, setCancelingReservation] = useState<TenantReservation | null>(null);
   const [receiptReservation, setReceiptReservation] = useState<TenantReservation | null>(null);
 
+  // OR-WS10: a response from a context the user has already switched away
+  // from must never overwrite the current one. `requestId` is bumped on
+  // every load() call (including the context-change effect below) and
+  // compared when the promise settles.
+  const latestRequestId = useRef(0);
+
   const load = () => {
+    const requestId = ++latestRequestId.current;
     setLoading(true);
     setLoadError("");
     getTenantReservations()
-      .then((res) => setReservations(res.data))
+      .then((res) => {
+        if (requestId !== latestRequestId.current) return;
+        setReservations(res.data);
+      })
       .catch((error) => {
+        if (requestId !== latestRequestId.current) return;
         const apiError = asApiError(error);
         setReservations([]);
         setLoadError(apiError.response?.data?.message || "No se pudieron cargar las reservas.");
       })
-      .finally(() => setLoading(false));
+      .finally(() => {
+        if (requestId !== latestRequestId.current) return;
+        setLoading(false);
+      });
   };
 
   useEffect(() => {
     load();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [contextKey]);
 
   const buckets = useMemo(() => {
     const grouped: Record<TenantTab, TenantReservation[]> = {

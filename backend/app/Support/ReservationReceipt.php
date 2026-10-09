@@ -22,7 +22,7 @@ class ReservationReceipt
 
     public static function build(Reservations $reservation): ?array
     {
-        $reservation->loadMissing(['storeRooms.landlord.user', 'payments']);
+        $reservation->loadMissing(['storeRooms.landlord.user', 'payments', 'organization']);
 
         $payment = $reservation->latestPaidPayment();
 
@@ -47,6 +47,10 @@ class ReservationReceipt
             'payment_method_label' => self::METHOD_LABELS[$payment->payment_method] ?? null,
             'paid_at' => $paidAt->toIso8601String(),
             'paid_at_label' => $paidAt->format('j').' '.$paidAt->shortMonthName.' '.$paidAt->format('Y, H:i'),
+            // HUE-05 OR-10/D5: null for a personal reservation, live org
+            // name/RUC (never a snapshot) for an organization reservation.
+            'organization_name' => $reservation->organization?->name,
+            'organization_ruc' => $reservation->organization?->ruc,
         ];
     }
 }

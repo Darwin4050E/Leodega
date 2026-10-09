@@ -3,6 +3,7 @@
 namespace Tests\Feature;
 
 use App\Models\Landlords;
+use App\Models\Organization;
 use App\Models\Payments;
 use App\Models\Reservations;
 use App\Models\StoreRooms;
@@ -70,6 +71,8 @@ class ReservationReceiptBuilderTest extends TestCase
             'payment_method_label' => 'Tarjeta de crédito',
             'paid_at' => $receipt['paid_at'],
             'paid_at_label' => $receipt['paid_at_label'],
+            'organization_name' => null,
+            'organization_ruc' => null,
         ], $receipt);
         $this->assertNotEmpty($receipt['paid_at']);
         $this->assertNotEmpty($receipt['paid_at_label']);
@@ -279,6 +282,52 @@ class ReservationReceiptBuilderTest extends TestCase
         $this->assertStringContainsString('1 oct 2026, 22:30', $html);
         $this->assertStringContainsString('CONFIRMADA', $html);
         $this->assertStringContainsString('Tarjeta de crédito', $html);
+    }
+
+    // -- HUE-05 OR-10/OR-S17/OR-S19: org identity on payload and PDF --
+
+    public function test_build_includes_the_live_org_name_and_ruc_for_an_organization_reservation()
+    {
+        $organization = Organization::factory()->create(['name' => 'Andina', 'ruc' => '1790011111001']);
+        $reservation = $this->reservation(['organization_id' => $organization->id]);
+        $this->payment($reservation);
+
+        $receipt = ReservationReceipt::build($reservation);
+
+        $this->assertSame('Andina', $receipt['organization_name']);
+        $this->assertSame('1790011111001', $receipt['organization_ruc']);
+    }
+
+    public function test_build_has_null_org_fields_for_a_personal_reservation()
+    {
+        $reservation = $this->reservation(['organization_id' => null]);
+        $this->payment($reservation);
+
+        $receipt = ReservationReceipt::build($reservation);
+
+        $this->assertNull($receipt['organization_name']);
+        $this->assertNull($receipt['organization_ruc']);
+    }
+
+    public function test_pdf_view_shows_the_org_row_for_an_organization_reservation()
+    {
+        $organization = Organization::factory()->create(['name' => 'Andina', 'ruc' => '1790011111001']);
+        $reservation = $this->reservation(['organization_id' => $organization->id]);
+        $this->payment($reservation);
+
+        $html = $this->renderPdfView(ReservationReceipt::build($reservation));
+
+        $this->assertStringContainsString('Reservado a nombre de: Andina (RUC 1790011111001)', $html);
+    }
+
+    public function test_pdf_view_omits_the_org_row_for_a_personal_reservation()
+    {
+        $reservation = $this->reservation(['organization_id' => null]);
+        $this->payment($reservation);
+
+        $html = $this->renderPdfView(ReservationReceipt::build($reservation));
+
+        $this->assertStringNotContainsString('Reservado a nombre de', $html);
     }
 
     public function test_pdf_view_shows_a_dash_for_a_missing_gestor_and_omits_a_missing_method()

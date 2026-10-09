@@ -214,4 +214,81 @@ describe('ReservationCard', () => {
       expect(screen.queryByRole('button', { name: 'Cancelar reserva' })).not.toBeInTheDocument();
     });
   });
+
+  // HUE-05 OR-WS8/WS11/WS12
+  describe('organization context (OR-W4/OR-W5)', () => {
+    it('OR-WS8: shows an organization badge and the creator name for an org reservation', () => {
+      render(
+        <ReservationCard
+          reservation={reservation({
+            organization: { id: 5, name: 'Andina', ruc: '1792146739001' },
+            is_creator: false,
+            creator_name: 'Ana Torres',
+          })}
+          onCancelClick={vi.fn()}
+          onReceiptClick={vi.fn()}
+        />
+      );
+
+      expect(screen.getByText('Andina')).toBeInTheDocument();
+      expect(screen.getByText('Reservada por Ana Torres')).toBeInTheDocument();
+    });
+
+    it('shows no organization badge or creator line for a personal reservation', () => {
+      render(<ReservationCard reservation={reservation()} onCancelClick={vi.fn()} onReceiptClick={vi.fn()} />);
+
+      expect(screen.queryByText(/Reservada por/)).not.toBeInTheDocument();
+    });
+
+    it('OR-WS11: hides both cancel and receipt actions when is_creator is false, even if the server also sent can_be_cancelled/receipt', () => {
+      render(
+        <ReservationCard
+          reservation={reservation({
+            organization: { id: 5, name: 'Andina', ruc: '1792146739001' },
+            is_creator: false,
+            creator_name: 'Ana Torres',
+            can_be_cancelled: true,
+            receipt,
+          })}
+          onCancelClick={vi.fn()}
+          onReceiptClick={vi.fn()}
+        />
+      );
+
+      expect(screen.queryByRole('button', { name: 'Cancelar reserva' })).not.toBeInTheDocument();
+      expect(screen.queryByRole('button', { name: 'Ver comprobante' })).not.toBeInTheDocument();
+    });
+
+    it('OR-WS12: renders actions normally when is_creator is true', () => {
+      render(
+        <ReservationCard
+          reservation={reservation({
+            organization: { id: 5, name: 'Andina', ruc: '1792146739001' },
+            is_creator: true,
+            creator_name: 'Ana Torres',
+            can_be_cancelled: true,
+            receipt,
+          })}
+          onCancelClick={vi.fn()}
+          onReceiptClick={vi.fn()}
+        />
+      );
+
+      expect(screen.getByRole('button', { name: 'Cancelar reserva' })).toBeInTheDocument();
+      expect(screen.getByRole('button', { name: 'Ver comprobante' })).toBeInTheDocument();
+    });
+
+    it('renders actions normally when is_creator is absent (personal row)', () => {
+      render(
+        <ReservationCard
+          reservation={reservation({ can_be_cancelled: true, receipt })}
+          onCancelClick={vi.fn()}
+          onReceiptClick={vi.fn()}
+        />
+      );
+
+      expect(screen.getByRole('button', { name: 'Cancelar reserva' })).toBeInTheDocument();
+      expect(screen.getByRole('button', { name: 'Ver comprobante' })).toBeInTheDocument();
+    });
+  });
 });

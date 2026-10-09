@@ -186,4 +186,32 @@ describe("BookingReceipt", () => {
 
     expect(onBackToCatalog).toHaveBeenCalledTimes(1);
   });
+
+  // HUE-05 OR-WS6/WS7
+  it("shows the organization name and RUC when the reservation carries one", () => {
+    render(
+      <BookingReceipt
+        storeRoom={storeRoom}
+        reservation={{ ...reservation, organization: { id: 5, name: "Andina", ruc: "1792146739001" } }}
+        onViewReservations={onViewReservations}
+        onBackToCatalog={onBackToCatalog}
+      />
+    );
+
+    expect(screen.getByText(/Andina/)).toBeInTheDocument();
+    expect(screen.getByText(/1792146739001/)).toBeInTheDocument();
+  });
+
+  it("shows no organization row for a personal reservation", () => {
+    render(
+      <BookingReceipt
+        storeRoom={storeRoom}
+        reservation={reservation}
+        onViewReservations={onViewReservations}
+        onBackToCatalog={onBackToCatalog}
+      />
+    );
+
+    expect(screen.queryByText("A nombre de")).not.toBeInTheDocument();
+  });
 });

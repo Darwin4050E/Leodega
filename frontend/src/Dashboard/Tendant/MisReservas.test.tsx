@@ -2,9 +2,16 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen, waitFor, fireEvent } from '@testing-library/react';
 
 const mockGetTenantReservations = vi.hoisted(() => vi.fn());
+const mockUseActiveContext = vi.hoisted(() => vi.fn());
 
 vi.mock('../../services/reservations', () => ({
   getTenantReservations: mockGetTenantReservations,
+}));
+
+const PERSONAL_CONTEXT = { context: { kind: 'personal' } };
+
+vi.mock('../../context/useActiveContext', () => ({
+  useActiveContext: mockUseActiveContext,
 }));
 
 vi.mock('../../Components/HeaderTendant', () => ({
@@ -33,6 +40,8 @@ vi.mock('./ComprobanteReservaModal', () => ({
 }));
 
 import MisReservas from './MisReservas';
+
+mockUseActiveContext.mockReturnValue(PERSONAL_CONTEXT);
 
 // Far-future end date keeps 'confirmed' fixtures active regardless of today's date.
 const ACTIVE_END_DATE = '2999-12-31';
@@ -182,5 +191,59 @@ describe('MisReservas', () => {
 
     expect(screen.getByTestId('cancel-modal')).toBeInTheDocument();
     expect(screen.queryByTestId('receipt-modal')).not.toBeInTheDocument();
+  });
+});
+
+describe('MisReservas refetch on active context change (OR-W4/OR-WS9/OR-WS10)', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mockUseActiveContext.mockReturnValue(PERSONAL_CONTEXT);
+  });
+
+  it('OR-WS9: issues a new request and shows org rows when the context switches personal -> org1', async () => {
+    mockGetTenantReservations.mockResolvedValueOnce({ data: [reservation({ id: 1 })] });
+    mockUseActiveContext.mockReturnValue(PERSONAL_CONTEXT);
+
+    const { rerender } = render(<MisReservas />);
+    await waitFor(() => expect(screen.getByText('Galpón Logístico Centro')).toBeInTheDocument());
+    expect(mockGetTenantReservations).toHaveBeenCalledTimes(1);
+
+    mockGetTenantReservations.mockResolvedValueOnce({
+      data: [reservation({ id: 2, is_creator: true, creator_name: 'Ana Torres' })],
+    });
+    mockUseActiveContext.mockReturnValue({ context: { kind: 'organization', organizationId: 1 } });
+    rerender(<MisReservas />);
+
+    await waitFor(() => expect(mockGetTenantReservations).toHaveBeenCalledTimes(2));
+    await waitFor(() => expect(screen.getByText('LEO-000002')).toBeInTheDocument());
+    expect(screen.queryByText('LEO-000001')).not.toBeInTheDocument();
+  });
+
+  it('OR-WS10: discards a slow response from the old context that resolves after the switch', async () => {
+    let resolvePersonal: (value: { data: unknown[] }) => void = () => {};
+    mockGetTenantReservations.mockReturnValueOnce(
+      new Promise((resolve) => {
+        resolvePersonal = resolve;
+      })
+    );
+    mockUseActiveContext.mockReturnValue(PERSONAL_CONTEXT);
+
+    const { rerender } = render(<MisReservas />);
+    await waitFor(() => expect(mockGetTenantReservations).toHaveBeenCalledTimes(1));
+
+    mockGetTenantReservations.mockResolvedValueOnce({
+      data: [reservation({ id: 2, is_creator: true, creator_name: 'Ana Torres' })],
+    });
+    mockUseActiveContext.mockReturnValue({ context: { kind: 'organization', organizationId: 1 } });
+    rerender(<MisReservas />);
+
+    await waitFor(() => expect(screen.getByText('LEO-000002')).toBeInTheDocument());
+
+    // The stale personal-context response now resolves late — it must not
+    // overwrite the already-rendered org list.
+    resolvePersonal({ data: [reservation({ id: 1 })] });
+
+    await waitFor(() => expect(screen.getByText('LEO-000002')).toBeInTheDocument());
+    expect(screen.queryByText('LEO-000001')).not.toBeInTheDocument();
   });
 });

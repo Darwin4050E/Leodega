@@ -11,6 +11,7 @@ use App\Models\StoreDisponibility;
 use App\Models\StoreRooms;
 use App\Models\Tenants;
 use App\Services\ReservationService;
+use App\Support\ActiveContext;
 use App\Support\ReservationCode;
 use App\Support\ReservationReceipt;
 use Barryvdh\DomPDF\Facade\Pdf;
@@ -31,7 +32,13 @@ class ReservationsController extends Controller
         $room = StoreRooms::where('publication_status', 'approved')
             ->findOrFail($data['store_room_id']);
 
-        $reservation = $reservationService->create($tenant, $room, $data, auth()->id());
+        // HUE-05 OR-1/OR-2: the active organization comes ONLY from the
+        // `org.context`-resolved header; a body `organization_id` (if any)
+        // is part of $data but is never read here, so it has no effect.
+        $organization = ActiveContext::fromRequest($request)->organization;
+
+        $reservation = $reservationService->create($tenant, $room, $data, auth()->id(), $organization);
+        $reservation->load('organization:id,name,ruc');
 
         return response()->json([
             'message' => 'Solicitud enviada',
@@ -54,6 +61,7 @@ class ReservationsController extends Controller
         $items = Reservations::with([
             'storeRooms:id,title,direction,city,size,room_type,landlord_id',
             'tenants.user:id,name,lastname,email,phone',
+            'organization:id,name,ruc',
             'cancellationObligation',
             'payments',
         ])
@@ -256,28 +264,58 @@ class ReservationsController extends Controller
         ]);
     }
 
+    /**
+     * HUE-05 OR-6/OR-7/OR-9 (D15): branches on the caller's active context
+     * (ActiveContext::fromRequest, resolved by `org.context` on this exact
+     * route). Personal: only the caller's own non-org rows
+     * (`tenant_id = me AND organization_id IS NULL`). Org: every member's
+     * row for that org (`organization_id = org.id`, any tenant_id) -- the
+     * lazy expiry sweep runs over the SAME scope as the listing query so an
+     * org-context view also expires org rows, not just the caller's own.
+     *
+     * `is_creator`/`creator_name` are only meaningful in org context (a
+     * personal row is trivially the caller's own); non-creators get
+     * `can_be_cancelled = false` and `receipt = null` -- server-authoritative
+     * (D6/D13), the web's own hiding is defense in depth, never the only gate.
+     */
     public function tenantIndex(Request $request, ReservationService $reservationService)
     {
         $user = $request->user();
         $tenant = Tenants::where('user_id', $user->id)->firstOrFail();
+        $organization = ActiveContext::fromRequest($request)->organization;
 
-        // sdd/hug02-payment-hold-expiry: trigger the lazy expiry sweep for
-        // this tenant's own reservations before querying.
-        $reservationService->expireElapsedHolds(Reservations::where('tenant_id', $tenant->id));
+        $scope = $organization
+            ? Reservations::where('organization_id', $organization->id)
+            : Reservations::where('tenant_id', $tenant->id)->whereNull('organization_id');
 
-        $items = Reservations::with([
+        // sdd/hug02-payment-hold-expiry: trigger the lazy expiry sweep over
+        // the exact same scope as the listing query below.
+        $reservationService->expireElapsedHolds(clone $scope);
+
+        $query = $scope->with([
             'storeRooms:id,title,direction,city,size,room_type,landlord_id',
             'storeRooms.storePhotos',
             'storeRooms.landlord.user:id,name,lastname',
             'payments',
-        ])
-            ->where('tenant_id', $tenant->id)
-            ->orderBy('start_date')
-            ->get();
+        ]);
 
-        $items->each(function (Reservations $item) {
-            $item->can_be_cancelled = $item->isCancellableByTenant();
-            $item->receipt = ReservationReceipt::build($item);
+        if ($organization) {
+            $query->with('tenants.user:id,name,lastname');
+        }
+
+        $items = $query->orderBy('start_date')->get();
+
+        $items->each(function (Reservations $item) use ($tenant, $organization) {
+            $isCreator = $item->tenant_id === $tenant->id;
+            $item->can_be_cancelled = $isCreator && $item->isCancellableByTenant();
+            $item->receipt = $isCreator ? ReservationReceipt::build($item) : null;
+
+            if ($organization) {
+                $item->is_creator = $isCreator;
+                $creatorUser = $item->tenants?->user;
+                $item->creator_name = $creatorUser ? trim($creatorUser->name.' '.$creatorUser->lastname) : null;
+                $item->makeHidden('tenants');
+            }
 
             $firstPhoto = $item->storeRooms?->storePhotos->first();
             $item->photo_url = $firstPhoto ? asset('storage/'.$firstPhoto->photo_url) : null;

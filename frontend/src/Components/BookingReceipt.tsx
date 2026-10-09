@@ -3,6 +3,7 @@ import { downloadReservationReceipt } from "../utils/receiptDownload";
 import { formatReservationCode } from "../utils/reservationCode";
 import { formatUSD } from "../utils/money";
 import { monthsBetween } from "../utils/dates";
+import { organizationIdentityLine } from "../utils/organization";
 
 export interface BookingReceiptStoreRoom {
   image?: string | null;
@@ -18,6 +19,8 @@ export interface BookingReceiptReservation {
   start_date: string;
   end_date: string;
   total_mount: string | number | null;
+  /** HUE-05 OR-W3: null/absent for a personal reservation. */
+  organization?: { id: number; name: string; ruc: string } | null;
 }
 
 interface BookingReceiptProps {
@@ -36,6 +39,7 @@ const COPY = {
   end: "Fin",
   duration: "Duración",
   gestor: "Gestor",
+  organization: "A nombre de",
   amountPaid: "Monto pagado",
   downloadPdf: "Descargar PDF",
   downloadingPdf: "Descargando...",
@@ -149,6 +153,15 @@ export default function BookingReceipt({
             <p className="text-sm font-semibold text-gray-900">{storeRoom.gestorName}</p>
           </div>
         </div>
+
+        {reservation.organization && (
+          <div className="flex items-baseline justify-between border-t border-gray-100 px-5 py-4">
+            <span className="text-sm font-semibold text-gray-700">{COPY.organization}</span>
+            <span className="text-sm font-semibold text-gray-900">
+              {organizationIdentityLine(reservation.organization.name, reservation.organization.ruc)}
+            </span>
+          </div>
+        )}
 
         <div className="flex items-baseline justify-between border-t border-gray-100 px-5 py-4">
           <span className="text-sm font-semibold text-gray-700">{COPY.amountPaid}</span>

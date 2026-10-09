@@ -8,6 +8,9 @@ export interface ReservationBookedAndPaidData {
   amount: string | number;
   start_date: string; // YYYY-MM-DD
   end_date: string; // YYYY-MM-DD
+  /** HUE-05 OR-11: present only when the reservation was made for an organization. */
+  organization_name?: string | null;
+  organization_ruc?: string | null;
 }
 
 export interface ReservationExpiredData {
@@ -17,6 +20,9 @@ export interface ReservationExpiredData {
   store_room_title: string;
   start_date: string; // YYYY-MM-DD
   end_date: string; // YYYY-MM-DD
+  /** HUE-05 OR-11: present only when the reservation was made for an organization. */
+  organization_name?: string | null;
+  organization_ruc?: string | null;
 }
 
 export interface AppNotification {

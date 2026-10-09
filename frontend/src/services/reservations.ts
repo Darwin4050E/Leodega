@@ -1,5 +1,16 @@
 import api from "../api/axios";
 
+/**
+ * HUE-05 D15: org identity read live (never snapshotted) and eager-loaded as
+ * `organization:id,name,ruc` on every reservation row. Null for a personal
+ * reservation.
+ */
+export interface OrganizationSummary {
+  id: number;
+  name: string;
+  ruc: string;
+}
+
 export interface LandlordReservation {
   id: number;
   status: string;
@@ -41,6 +52,8 @@ export interface LandlordReservation {
       phone?: string;
     };
   };
+  /** HUE-05 OR-12: null for a personal reservation. */
+  organization?: OrganizationSummary | null;
 }
 
 export function getLandlordReservations() {
@@ -133,6 +146,9 @@ export interface TenantReceipt {
   payment_method_label: string | null;
   paid_at: string;
   paid_at_label: string;
+  /** HUE-05 OR-10: present only for an org reservation's receipt. */
+  organization_name?: string | null;
+  organization_ruc?: string | null;
 }
 
 /**
@@ -164,6 +180,16 @@ export interface TenantReservation {
     city?: string;
     size?: number;
   };
+  /**
+   * HUE-05 OR-8/OR-9/D15: present (and non-null) only for an org
+   * reservation; absent in personal context, where every row is trivially
+   * the caller's own. `organization_id` mirrors the plain column.
+   */
+  organization?: OrganizationSummary | null;
+  organization_id?: number | null;
+  /** Org-context rows only — absent for personal rows. */
+  is_creator?: boolean;
+  creator_name?: string | null;
 }
 
 export function getTenantReservations() {

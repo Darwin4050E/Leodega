@@ -4,6 +4,7 @@ namespace Tests\Unit;
 
 use App\Exceptions\ReservationConflictException;
 use App\Models\Landlords;
+use App\Models\Organization;
 use App\Models\ReservationCancellationObligation;
 use App\Models\Reservations;
 use App\Models\StorePrices;
@@ -14,6 +15,7 @@ use App\Services\ReservationPricingService;
 use App\Services\ReservationService;
 use Carbon\Carbon;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Validation\ValidationException;
 use Tests\TestCase;
 
 class ReservationServiceTest extends TestCase
@@ -56,6 +58,104 @@ class ReservationServiceTest extends TestCase
             'rent_subtotal' => '3000.00',
             // Rent only: the deposit is zero, so the total is the rent.
             'total_mount' => '3000.00',
+        ]);
+    }
+
+    // -- HUE-05 D4/D16/D17: optional organization on create() --
+
+    public function test_create_persists_organization_id_when_an_active_organization_is_given()
+    {
+        $room = StoreRooms::factory()->create();
+        $this->monthPriceFor($room);
+        $tenant = Tenants::factory()->create();
+        $organization = Organization::factory()->create();
+
+        $reservation = $this->service()->create($tenant, $room, [
+            'start_date' => '2026-02-01',
+            'end_date' => '2026-05-01',
+        ], $tenant->user_id, $organization);
+
+        $this->assertDatabaseHas('reservations', [
+            'id' => $reservation->id,
+            'tenant_id' => $tenant->id,
+            'organization_id' => $organization->id,
+        ]);
+    }
+
+    public function test_create_leaves_organization_id_null_when_no_organization_is_given()
+    {
+        $room = StoreRooms::factory()->create();
+        $this->monthPriceFor($room);
+        $tenant = Tenants::factory()->create();
+
+        $reservation = $this->service()->create($tenant, $room, [
+            'start_date' => '2026-02-01',
+            'end_date' => '2026-05-01',
+        ], $tenant->user_id);
+
+        $this->assertDatabaseHas('reservations', [
+            'id' => $reservation->id,
+            'organization_id' => null,
+        ]);
+    }
+
+    public function test_create_rejects_an_inactive_organization_before_writing_anything()
+    {
+        $room = StoreRooms::factory()->create();
+        $this->monthPriceFor($room);
+        $tenant = Tenants::factory()->create();
+        $organization = Organization::factory()->inactive()->create();
+
+        try {
+            $this->service()->create($tenant, $room, [
+                'start_date' => '2026-02-01',
+                'end_date' => '2026-05-01',
+            ], $tenant->user_id, $organization);
+
+            $this->fail('Expected a ValidationException for the inactive organization.');
+        } catch (ValidationException $exception) {
+            $this->assertSame(
+                ['La organización seleccionada no está activa.'],
+                $exception->errors()['organization'],
+            );
+        }
+
+        $this->assertDatabaseCount('reservations', 0);
+    }
+
+    /**
+     * D17 (pinned): create() supersedes the SAME tenant's overlapping
+     * active hold regardless of context -- a personal hold and an org hold
+     * for the same tenant/room/dates cancel each other out, exactly like
+     * two personal holds do. This is intentional, unchanged conflict logic
+     * (not an org-aware rule); see design Risks.
+     */
+    public function test_create_supersedes_the_same_tenants_personal_hold_with_a_new_organization_hold()
+    {
+        $room = StoreRooms::factory()->create();
+        $this->monthPriceFor($room);
+        $tenant = Tenants::factory()->create();
+        $organization = Organization::factory()->create();
+
+        $personalHold = $this->service()->create($tenant, $room, [
+            'start_date' => '2026-07-01',
+            'end_date' => '2026-07-10',
+        ], $tenant->user_id);
+
+        $orgHold = $this->service()->create($tenant, $room, [
+            'start_date' => '2026-07-05',
+            'end_date' => '2026-07-15',
+        ], $tenant->user_id, $organization);
+
+        $this->assertDatabaseHas('reservations', [
+            'id' => $personalHold->id,
+            'status' => 'canceled',
+            'cancelation_reason' => 'Superseded by a newer hold',
+        ]);
+        $this->assertDatabaseHas('reservations', [
+            'id' => $orgHold->id,
+            'status' => 'pending',
+            'organization_id' => $organization->id,
         ]);
     }
 
@@ -235,6 +335,64 @@ class ReservationServiceTest extends TestCase
         $this->assertEquals(3000, $notification->data['amount']);
         $this->assertSame('2026-02-01', $notification->data['start_date']);
         $this->assertSame('2026-05-01', $notification->data['end_date']);
+    }
+
+    /**
+     * HUE-05 OR-11 (D5): the landlord notification `data` adds the live org
+     * name/RUC when the reservation was made in org context; `customer_name`
+     * stays the CREATOR's name regardless (web guards in notifications.ts
+     * require it).
+     */
+    public function test_confirm_enriches_the_paid_booking_notification_with_org_identity()
+    {
+        $tenantUser = User::factory()->create(['name' => 'Ana', 'lastname' => 'Torres']);
+        $tenant = Tenants::factory()->create(['user_id' => $tenantUser->id]);
+        $landlordUser = User::factory()->create(['role' => 'landlord']);
+        $landlord = Landlords::factory()->create(['user_id' => $landlordUser->id]);
+        $room = StoreRooms::factory()->create(['landlord_id' => $landlord->id]);
+        $this->monthPriceFor($room);
+        $organization = Organization::factory()->create(['name' => 'Andina', 'ruc' => '1790011111001']);
+
+        $reservation = $this->service()->create($tenant, $room, [
+            'start_date' => '2026-02-01',
+            'end_date' => '2026-05-01',
+        ], $tenant->user_id, $organization);
+        $reservation->load('storeRooms');
+
+        $this->service()->confirm($reservation, $tenantUser->id);
+
+        $notification = \App\Models\Notifications::where('receiver_id', $landlordUser->id)
+            ->where('type', 'reservation_booked_and_paid')
+            ->firstOrFail();
+
+        $this->assertSame('Ana Torres', $notification->data['customer_name']);
+        $this->assertSame('Andina', $notification->data['organization_name']);
+        $this->assertSame('1790011111001', $notification->data['organization_ruc']);
+    }
+
+    public function test_confirm_has_null_org_identity_in_the_notification_for_a_personal_reservation()
+    {
+        $tenantUser = User::factory()->create();
+        $tenant = Tenants::factory()->create(['user_id' => $tenantUser->id]);
+        $landlordUser = User::factory()->create(['role' => 'landlord']);
+        $landlord = Landlords::factory()->create(['user_id' => $landlordUser->id]);
+        $room = StoreRooms::factory()->create(['landlord_id' => $landlord->id]);
+        $this->monthPriceFor($room);
+
+        $reservation = $this->service()->create($tenant, $room, [
+            'start_date' => '2026-02-01',
+            'end_date' => '2026-05-01',
+        ], $tenant->user_id);
+        $reservation->load('storeRooms');
+
+        $this->service()->confirm($reservation, $tenantUser->id);
+
+        $notification = \App\Models\Notifications::where('receiver_id', $landlordUser->id)
+            ->where('type', 'reservation_booked_and_paid')
+            ->firstOrFail();
+
+        $this->assertNull($notification->data['organization_name']);
+        $this->assertNull($notification->data['organization_ruc']);
     }
 
     public function test_confirm_throws_when_another_confirmed_reservation_overlaps()
@@ -657,6 +815,40 @@ class ReservationServiceTest extends TestCase
             'title' => 'Reserva expirada',
             'body' => 'El cliente no completó el pago a tiempo; la bodega volvió a estar disponible.',
         ]);
+    }
+
+    /**
+     * HUE-05 OR-11 (D5): the expired-hold landlord notification also carries
+     * the live org identity when the hold was created in org context.
+     */
+    public function test_expire_elapsed_holds_notifies_with_org_identity_for_an_organization_hold()
+    {
+        Carbon::setTestNow('2026-01-01 12:00:00');
+        config(['reservations.payment_hold_minutes' => 15, 'reservations.payment_hold_notify_recency_hours' => 24]);
+
+        $landlordUser = User::factory()->create(['role' => 'landlord']);
+        $landlord = Landlords::factory()->create(['user_id' => $landlordUser->id]);
+        $room = StoreRooms::factory()->create(['landlord_id' => $landlord->id]);
+        $tenantUser = User::factory()->create();
+        $tenant = Tenants::factory()->create(['user_id' => $tenantUser->id]);
+        $organization = Organization::factory()->create(['name' => 'Andina', 'ruc' => '1790011111001']);
+
+        Reservations::factory()->create([
+            'store_room_id' => $room->id,
+            'tenant_id' => $tenant->id,
+            'organization_id' => $organization->id,
+            'status' => 'pending',
+            'created_at' => Carbon::parse('2026-01-01 09:45:00'),
+        ]);
+
+        $this->service()->expireElapsedHolds(Reservations::where('store_room_id', $room->id));
+
+        $notification = \App\Models\Notifications::where('receiver_id', $landlordUser->id)
+            ->where('type', 'reservation_expired')
+            ->firstOrFail();
+
+        $this->assertSame('Andina', $notification->data['organization_name']);
+        $this->assertSame('1790011111001', $notification->data['organization_ruc']);
     }
 
     public function test_expire_elapsed_holds_is_idempotent_on_a_second_call()

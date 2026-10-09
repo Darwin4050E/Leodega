@@ -303,4 +303,35 @@ describe('GestorReservas', () => {
       expect(screen.queryByText('Cancelar reserva')).not.toBeInTheDocument()
     );
   });
+
+  // HUE-05 OR-WS13/WS14
+  describe('organization identity (OR-W6)', () => {
+    it('OR-WS13: shows the organization name and RUC alongside the creator in the detail view', async () => {
+      mockGetLandlordReservations.mockResolvedValueOnce({
+        data: [
+          {
+            ...reservations[0],
+            organization: { id: 5, name: 'Andina', ruc: '1792146739001' },
+          },
+        ],
+      });
+
+      render(<GestorReservas />);
+      await waitFor(() => screen.getAllByText('Bodega Norte'));
+
+      fireEvent.click(screen.getByText('Ana Torres'));
+
+      expect(screen.getByText(/Andina/)).toBeInTheDocument();
+      expect(screen.getByText(/1792146739001/)).toBeInTheDocument();
+    });
+
+    it('OR-WS14: shows no organization field for a personal reservation', async () => {
+      render(<GestorReservas />);
+      await waitFor(() => screen.getAllByText('Bodega Norte'));
+
+      fireEvent.click(screen.getByText('Ana Torres'));
+
+      expect(screen.queryByText('Organización')).not.toBeInTheDocument();
+    });
+  });
 });

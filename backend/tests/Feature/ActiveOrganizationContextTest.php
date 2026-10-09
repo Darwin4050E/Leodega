@@ -5,6 +5,9 @@ namespace Tests\Feature;
 use App\Enums\OrganizationRole;
 use App\Http\Middleware\ResolveActiveOrganization;
 use App\Models\Organization;
+use App\Models\Reservations;
+use App\Models\StoreRooms;
+use App\Models\Tenants;
 use App\Models\User;
 use App\Support\ActiveContext;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -15,8 +18,10 @@ use Tests\TestCase;
 
 /**
  * HUE-02 U1: the `org.context` middleware resolves the active organization
- * from X-Organization-Id. It is intentionally NOT mounted on any production
- * route yet, so every case goes through probe routes registered here only.
+ * from X-Organization-Id. Resolution cases go through probe routes
+ * registered here only; HUE-05 (AC-24) mounts it on exactly two production
+ * routes, checked by the allow-list test below and by
+ * AC-25's header-403 integration test on the real routes.
  */
 class ActiveOrganizationContextTest extends TestCase
 {
@@ -312,16 +317,28 @@ class ActiveOrganizationContextTest extends TestCase
         $this->assertHeaderForbidden($this->probe($user, $headers));
     }
 
-    public function test_no_production_route_mounts_the_middleware()
+    /**
+     * HUE-05 AC-24/AC-S19: `org.context` is now mounted on exactly two
+     * production routes (reservation store + tenant list). Any other route
+     * carrying it -- including a stale header 403'ing an unrelated action
+     * like cancel/pay/receipt -- is a regression (see design: per-route
+     * mount, never per-group).
+     */
+    public function test_org_context_is_mounted_on_exactly_the_allow_listed_production_routes()
     {
         $mounted = collect(Route::getRoutes()->getRoutes())
             ->reject(fn ($route) => str_starts_with($route->uri(), 'api/_probe/'))
             ->filter(fn ($route) => in_array('org.context', $route->gatherMiddleware(), true))
-            ->map(fn ($route) => $route->uri())
+            ->map(fn ($route) => collect($route->methods())
+                ->reject(fn ($method) => $method === 'HEAD')
+                ->map(fn ($method) => $method.' '.$route->uri())
+                ->all())
+            ->flatten()
+            ->sort()
             ->values()
             ->all();
 
-        $this->assertSame([], $mounted);
+        $this->assertSame(['GET api/tenant/reservations', 'POST api/reservations'], $mounted);
     }
 
     public function test_the_alias_maps_to_the_middleware_class()
@@ -337,6 +354,69 @@ class ActiveOrganizationContextTest extends TestCase
         foreach (['routes/api.php', 'routes/web.php'] as $file) {
             $this->assertStringNotContainsString('_probe', file_get_contents(base_path($file)), $file);
         }
+    }
+
+    // -- HUE-05 AC-25/AC-S77..79: header-403 integration on the REAL routes,
+    // not the test-only probes above --
+
+    public function test_a_non_member_header_is_forbidden_on_the_real_reservation_store_route()
+    {
+        $user = $this->tenant();
+        Tenants::factory()->create(['user_id' => $user->id]);
+        $foreign = $this->organizationFor(User::factory()->create(['role' => 'tenant']));
+        $room = StoreRooms::factory()->approved()->create();
+        $countBefore = Reservations::count();
+
+        $response = $this->actingAs($user, 'sanctum')->postJson('/api/reservations', [
+            'store_room_id' => $room->id,
+            'start_date' => today()->addDays(1)->toDateString(),
+            'end_date' => today()->addDays(5)->toDateString(),
+        ], ['X-Organization-Id' => (string) $foreign->id]);
+
+        $response->assertStatus(403);
+        $response->assertExactJson(['message' => ResolveActiveOrganization::FORBIDDEN_MESSAGE]);
+        $this->assertSame($countBefore, Reservations::count());
+    }
+
+    public function test_a_non_member_header_is_forbidden_on_the_real_tenant_listing_route()
+    {
+        $user = $this->tenant();
+        Tenants::factory()->create(['user_id' => $user->id]);
+        $foreign = $this->organizationFor(User::factory()->create(['role' => 'tenant']));
+
+        $response = $this->actingAs($user, 'sanctum')
+            ->getJson('/api/tenant/reservations', ['X-Organization-Id' => (string) $foreign->id]);
+
+        $response->assertStatus(403);
+        $response->assertJsonMissingPath('status');
+        $response->assertExactJson(['message' => ResolveActiveOrganization::FORBIDDEN_MESSAGE]);
+    }
+
+    public function test_a_valid_member_header_resolves_the_org_on_both_real_routes()
+    {
+        $user = $this->tenant();
+        Tenants::factory()->create(['user_id' => $user->id]);
+        $organization = $this->organizationFor($user);
+        $room = StoreRooms::factory()->approved()->create();
+        \App\Models\StorePrices::factory()->create([
+            'store_room_id' => $room->id,
+            'mode' => 'month',
+            'price' => 1000,
+            'disponibility' => true,
+        ]);
+
+        $storeResponse = $this->actingAs($user, 'sanctum')->postJson('/api/reservations', [
+            'store_room_id' => $room->id,
+            'start_date' => today()->addMonth()->startOfMonth()->toDateString(),
+            'end_date' => today()->addMonth()->startOfMonth()->addMonths(1)->toDateString(),
+        ], ['X-Organization-Id' => (string) $organization->id]);
+        $storeResponse->assertStatus(201);
+        $this->assertSame($organization->id, $storeResponse->json('reservation.organization_id'));
+
+        $listResponse = $this->actingAs($user, 'sanctum')
+            ->getJson('/api/tenant/reservations', ['X-Organization-Id' => (string) $organization->id]);
+        $listResponse->assertStatus(200);
+        $this->assertNotEmpty($listResponse->json());
     }
 
     public function test_a_cors_preflight_may_ask_for_the_header_without_any_config_change()

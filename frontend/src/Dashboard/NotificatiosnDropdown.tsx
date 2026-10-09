@@ -7,6 +7,7 @@ import {
     type AppNotification,
 } from "../services/notifications";
 import { formatUSD } from "../utils/money";
+import { organizationIdentityLine } from "../utils/organization";
 import { useEffect, useState, type Dispatch, type SetStateAction } from "react";
 
 interface NotificationsDropdownProps {
@@ -56,6 +57,11 @@ const NotificationsDropdown = ({ onUnreadChange }: NotificationsDropdownProps) =
                             <p className="text-xs text-gray-500">
                                 {formatUSD(n.data.amount)} · {n.data.start_date} - {n.data.end_date}
                             </p>
+                            {n.data.organization_name && n.data.organization_ruc && (
+                                <p className="text-xs text-gray-500">
+                                    A nombre de {organizationIdentityLine(n.data.organization_name, n.data.organization_ruc)}
+                                </p>
+                            )}
                         </>
                     ) : hasExpiredReservationData(n) ? (
                         <>
@@ -64,6 +70,11 @@ const NotificationsDropdown = ({ onUnreadChange }: NotificationsDropdownProps) =
                             <p className="text-xs text-gray-500">
                                 {n.data.start_date} - {n.data.end_date}
                             </p>
+                            {n.data.organization_name && n.data.organization_ruc && (
+                                <p className="text-xs text-gray-500">
+                                    A nombre de {organizationIdentityLine(n.data.organization_name, n.data.organization_ruc)}
+                                </p>
+                            )}
                         </>
                     ) : (
                         <>

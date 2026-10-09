@@ -10,6 +10,7 @@ import {
   derivePagoEstado,
   type PagoEstado,
 } from "../../utils/reservationEligibility";
+import { organizationIdentityLine } from "../../utils/organization";
 import CancelarReservaModal from "./CancelarReservaModal";
 import ComprobantePagoModal from "./ComprobantePagoModal";
 
@@ -181,6 +182,10 @@ const GestorReservas = () => {
               ["Fin", selected.end_date],
               ["Vigencia", VIGENCIA_LABEL[vigencia].label],
               ["Monto total", formatUSD(selected.total_mount ?? 0, { suffix: true })],
+              // HUE-05 OR-W6: present only for an org reservation.
+              ...(selected.organization
+                ? ([["Organización", organizationIdentityLine(selected.organization.name, selected.organization.ruc)]] as const)
+                : []),
             ].map(([label, value]) => (
               <div key={label}>
                 <p className="text-[11px] text-gray-400 mb-0.5">{label}</p>

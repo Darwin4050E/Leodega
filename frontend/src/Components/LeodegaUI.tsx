@@ -8,7 +8,9 @@ import {
   type LandlordReservation,
 } from "../services/reservations";
 import { useAuth } from "../context/useAuth";
+import { useActiveContext } from "../context/useActiveContext";
 import { asApiError } from "../api/errors";
+import OrganizationNotice from "./OrganizationNotice";
 import { toDateOnlyISO, isDateBetween, formatMemberSince } from "../utils/dates";
 import { parseSecurityFeatures, SECURITY_LABELS, type ParsedSecurityFeatures } from "../utils/security";
 import { RESERVATION_OVERLAP_MESSAGE, upcomingOccupiedRanges } from "../utils/reservationFlow";
@@ -34,6 +36,16 @@ export default function LeodegaUI() {
   const location = useLocation();
   const { id } = useParams();
   const { user } = useAuth();
+  const { context: activeContext, activeOrganization } = useActiveContext();
+
+  // HUE-05 OR-W1/fail-safe: the axios interceptor sends X-Organization-Id
+  // whenever an org id is stored, even while the org list is still loading
+  // or errored (design risk note). Until `activeOrganization` resolves,
+  // confirm stays disabled rather than risk a request whose header the UI
+  // cannot yet name.
+  const isOrgContext = activeContext.kind === "organization";
+  const orgContextUnresolved = isOrgContext && !activeOrganization;
+  const showOrganizationNotice = isOrgContext && activeOrganization !== null;
 
   const [data, setData] = useState<StoreRoomDetail | null>(null);
   const [status, setStatus] = useState<DetailStatus>(DETAIL_STATUS.LOADING);
@@ -165,7 +177,9 @@ export default function LeodegaUI() {
 
       if (status === 401) goToLoginForReserve();
       else if (status === 409) setError(RESERVATION_OVERLAP_MESSAGE);
-      else if (status === 422 && err.response?.data?.errors?.start_date) {
+      else if (status === 422 && err.response?.data?.errors?.organization) {
+        setError(err.response.data.errors.organization[0]);
+      } else if (status === 422 && err.response?.data?.errors?.start_date) {
         setError("La fecha de inicio no puede ser anterior a hoy.");
       } else if (status === 422) setError("Revisa las fechas ingresadas.");
       else setError("Ocurrió un error enviando la solicitud.");
@@ -222,6 +236,11 @@ export default function LeodegaUI() {
     return (
       <div className="w-full min-h-screen bg-[#f5f6fa] text-gray-800">
         <BookingStepHeader step={step} onClose={handleExitBooking} />
+        {reservation.organization && (
+          <div className="max-w-5xl mx-auto px-6 pt-6">
+            <OrganizationNotice name={reservation.organization.name} />
+          </div>
+        )}
         {step === "pago" && (
           <div className="max-w-5xl mx-auto px-6 py-8">
             <BookingCheckout
@@ -489,6 +508,11 @@ export default function LeodegaUI() {
             </div>
 
             <div className="px-6 py-4">
+              {showOrganizationNotice && activeOrganization && (
+                <div className="mb-3">
+                  <OrganizationNotice name={activeOrganization.name} />
+                </div>
+              )}
               {loadingRanges ? (
                 <div className="text-sm text-gray-500 mb-3">Cargando disponibilidad...</div>
               ) : (
@@ -547,7 +571,7 @@ export default function LeodegaUI() {
               <button
                 onClick={sendReservation}
                 className="px-4 py-2 rounded-xl bg-purple-600 text-white hover:bg-purple-700 disabled:opacity-60"
-                disabled={sending || loadingRanges}
+                disabled={sending || loadingRanges || orgContextUnresolved}
               >
                 {sending ? "Enviando..." : "Confirmar reserva"}
               </button>
