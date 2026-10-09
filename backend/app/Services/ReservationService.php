@@ -4,6 +4,7 @@ namespace App\Services;
 
 use App\Enums\NotificationType;
 use App\Exceptions\ReservationConflictException;
+use App\Models\Organization;
 use App\Models\ReservationCancellationObligation;
 use App\Models\Reservations;
 use App\Models\StoreRooms;
@@ -14,6 +15,7 @@ use Carbon\Carbon;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
+use Illuminate\Validation\ValidationException;
 
 class ReservationService
 {
@@ -43,10 +45,28 @@ class ReservationService
      * double-notify). The conflict check then blocks on either a
      * `confirmed` row or ANOTHER tenant's active (non-expired) `pending`
      * hold -- a `pending` row alone no longer silently coexists.
+     *
+     * sdd/hue-05-reservar-organizacion (D4/D16/D17): `$organization` is the
+     * caller's active org context (resolved by `org.context`, null means
+     * personal). When given, its `status` MUST be `active` -- checked
+     * BEFORE the transaction opens, so an inactive org never takes the room
+     * lock or writes anything (OR-3). `tenant_id` always stays the creating
+     * member (D4); the conflict/supersede logic right below is intentionally
+     * unaware of `$organization` and keeps keying everything on `tenant_id`
+     * only, so the SAME tenant's personal and org holds supersede each
+     * other exactly like two personal holds would (D17, pinned by a test).
+     *
+     * @throws ValidationException when $organization->status !== 'active'.
      */
-    public function create(Tenants $tenant, StoreRooms $room, array $data, ?int $actingUserId): Reservations
+    public function create(Tenants $tenant, StoreRooms $room, array $data, ?int $actingUserId, ?Organization $organization = null): Reservations
     {
-        return DB::transaction(function () use ($tenant, $room, $data) {
+        if ($organization !== null && $organization->status !== 'active') {
+            throw ValidationException::withMessages([
+                'organization' => ['La organización seleccionada no está activa.'],
+            ]);
+        }
+
+        return DB::transaction(function () use ($tenant, $room, $data, $organization) {
             StoreRooms::where('id', $room->id)->lockForUpdate()->first();
 
             $this->expireElapsedHolds(Reservations::where('store_room_id', $room->id));
@@ -81,6 +101,7 @@ class ReservationService
             return Reservations::create([
                 'store_room_id' => $room->id,
                 'tenant_id' => $tenant->id,
+                'organization_id' => $organization?->id,
                 'start_date' => $data['start_date'],
                 'end_date' => $data['end_date'],
                 'status' => 'pending',

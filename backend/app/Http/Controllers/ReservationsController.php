@@ -11,6 +11,7 @@ use App\Models\StoreDisponibility;
 use App\Models\StoreRooms;
 use App\Models\Tenants;
 use App\Services\ReservationService;
+use App\Support\ActiveContext;
 use App\Support\ReservationCode;
 use App\Support\ReservationReceipt;
 use Barryvdh\DomPDF\Facade\Pdf;
@@ -31,7 +32,13 @@ class ReservationsController extends Controller
         $room = StoreRooms::where('publication_status', 'approved')
             ->findOrFail($data['store_room_id']);
 
-        $reservation = $reservationService->create($tenant, $room, $data, auth()->id());
+        // HUE-05 OR-1/OR-2: the active organization comes ONLY from the
+        // `org.context`-resolved header; a body `organization_id` (if any)
+        // is part of $data but is never read here, so it has no effect.
+        $organization = ActiveContext::fromRequest($request)->organization;
+
+        $reservation = $reservationService->create($tenant, $room, $data, auth()->id(), $organization);
+        $reservation->load('organization:id,name,ruc');
 
         return response()->json([
             'message' => 'Solicitud enviada',

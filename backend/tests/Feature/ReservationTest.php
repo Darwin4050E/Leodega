@@ -2,7 +2,9 @@
 
 namespace Tests\Feature;
 
+use App\Enums\OrganizationRole;
 use App\Models\Landlords;
+use App\Models\Organization;
 use App\Models\Reservations;
 use App\Models\StoreDisponibility;
 use App\Models\StorePrices;
@@ -96,6 +98,250 @@ class ReservationTest extends TestCase
             'store_room_id' => $room->id,
             'tenant_id' => $tenant->id,
             // Rent only: the deposit is zero, so the total is the rent.
+            'total_mount' => '3000.00',
+        ]);
+    }
+
+    // -- HUE-05 U1a: organization-reservations (OR-1..OR-11, store only) --
+
+    private function organizationFor(User $user, OrganizationRole $role = OrganizationRole::ADMIN): Organization
+    {
+        return Organization::factory()->withMember($user, $role)->create();
+    }
+
+    private function roomWithMonthPrice(int $price = 1000): StoreRooms
+    {
+        $room = StoreRooms::factory()->approved()->create();
+        StorePrices::factory()->create([
+            'store_room_id' => $room->id,
+            'mode' => 'month',
+            'price' => $price,
+            'disponibility' => true,
+        ]);
+
+        return $room;
+    }
+
+    /** OR-S1: tenant admin of org1, header=org1 WHEN POST THEN 201, row organization_id=org1, tenant_id=caller. */
+    public function test_org_s1_admin_reserves_in_org_context_and_the_row_carries_the_organization()
+    {
+        $user = User::factory()->create();
+        $tenant = Tenants::factory()->create(['user_id' => $user->id]);
+        $organization = $this->organizationFor($user, OrganizationRole::ADMIN);
+        $room = $this->roomWithMonthPrice();
+
+        $response = $this->actingAs($user, 'sanctum')
+            ->postJson('/api/reservations', [
+                'store_room_id' => $room->id,
+                'start_date' => $this->nextMonthStart()->toDateString(),
+                'end_date' => $this->nextMonthStart()->addMonths(3)->toDateString(),
+            ], ['X-Organization-Id' => (string) $organization->id]);
+
+        $response->assertStatus(201);
+        $response->assertJsonPath('reservation.organization.id', $organization->id);
+        $this->assertDatabaseHas('reservations', [
+            'store_room_id' => $room->id,
+            'tenant_id' => $tenant->id,
+            'organization_id' => $organization->id,
+        ]);
+    }
+
+    /** OR-S2: a member (not admin) gets the identical outcome -- no role check. */
+    public function test_org_s2_member_reserves_in_org_context_with_the_same_outcome_as_admin()
+    {
+        $user = User::factory()->create();
+        $tenant = Tenants::factory()->create(['user_id' => $user->id]);
+        $organization = $this->organizationFor($user, OrganizationRole::MEMBER);
+        $room = $this->roomWithMonthPrice();
+
+        $response = $this->actingAs($user, 'sanctum')
+            ->postJson('/api/reservations', [
+                'store_room_id' => $room->id,
+                'start_date' => $this->nextMonthStart()->toDateString(),
+                'end_date' => $this->nextMonthStart()->addMonths(3)->toDateString(),
+            ], ['X-Organization-Id' => (string) $organization->id]);
+
+        $response->assertStatus(201);
+        $this->assertDatabaseHas('reservations', [
+            'tenant_id' => $tenant->id,
+            'organization_id' => $organization->id,
+        ]);
+    }
+
+    /** OR-S3: header=org1, body organization_id=org2 (caller member of both) -- the row uses org1 only. */
+    public function test_org_s3_a_body_organization_id_is_ignored_in_favor_of_the_header()
+    {
+        $user = User::factory()->create();
+        Tenants::factory()->create(['user_id' => $user->id]);
+        $org1 = $this->organizationFor($user);
+        $org2 = $this->organizationFor($user);
+        $room = $this->roomWithMonthPrice();
+
+        $response = $this->actingAs($user, 'sanctum')
+            ->postJson('/api/reservations', [
+                'store_room_id' => $room->id,
+                'start_date' => $this->nextMonthStart()->toDateString(),
+                'end_date' => $this->nextMonthStart()->addMonths(3)->toDateString(),
+                'organization_id' => $org2->id,
+            ], ['X-Organization-Id' => (string) $org1->id]);
+
+        $response->assertStatus(201);
+        $this->assertDatabaseHas('reservations', ['organization_id' => $org1->id]);
+        $this->assertDatabaseMissing('reservations', ['organization_id' => $org2->id]);
+    }
+
+    /** OR-S4: no header, even for a tenant with orgs -- personal, organization_id null. */
+    public function test_org_s4_no_header_stays_personal_even_for_a_tenant_with_organizations()
+    {
+        $user = User::factory()->create();
+        $tenant = Tenants::factory()->create(['user_id' => $user->id]);
+        $this->organizationFor($user);
+        $room = $this->roomWithMonthPrice();
+
+        $response = $this->actingAs($user, 'sanctum')
+            ->postJson('/api/reservations', [
+                'store_room_id' => $room->id,
+                'start_date' => $this->nextMonthStart()->toDateString(),
+                'end_date' => $this->nextMonthStart()->addMonths(3)->toDateString(),
+            ]);
+
+        $response->assertStatus(201);
+        $response->assertJsonPath('reservation.organization', null);
+        $this->assertDatabaseHas('reservations', [
+            'tenant_id' => $tenant->id,
+            'organization_id' => null,
+        ]);
+    }
+
+    /** OR-S5: a landlord (non-tenant), no header -- 404 as today, D9 (no role:tenant added). */
+    public function test_org_s5_a_non_tenant_still_gets_404_with_no_header()
+    {
+        $landlordUser = User::factory()->create(['role' => 'landlord']);
+        $room = $this->roomWithMonthPrice();
+
+        $response = $this->actingAs($landlordUser, 'sanctum')
+            ->postJson('/api/reservations', [
+                'store_room_id' => $room->id,
+                'start_date' => $this->nextMonthStart()->toDateString(),
+                'end_date' => $this->nextMonthStart()->addMonths(3)->toDateString(),
+            ]);
+
+        $response->assertStatus(404);
+    }
+
+    /** OR-S6: a member of an inactive org, header=org1 -- rejected (422), zero new reservations. */
+    public function test_org_s6_reserving_in_an_inactive_organization_is_rejected_with_no_row_written()
+    {
+        $user = User::factory()->create();
+        Tenants::factory()->create(['user_id' => $user->id]);
+        $organization = Organization::factory()->inactive()->withMember($user)->create();
+        $room = $this->roomWithMonthPrice();
+
+        $response = $this->actingAs($user, 'sanctum')
+            ->postJson('/api/reservations', [
+                'store_room_id' => $room->id,
+                'start_date' => $this->nextMonthStart()->toDateString(),
+                'end_date' => $this->nextMonthStart()->addMonths(3)->toDateString(),
+            ], ['X-Organization-Id' => (string) $organization->id]);
+
+        $response->assertStatus(422);
+        $response->assertJsonPath('errors.organization.0', 'La organización seleccionada no está activa.');
+        $this->assertDatabaseCount('reservations', 0);
+    }
+
+    /** OR-S7: the same organization later set to active -- POST now succeeds. */
+    public function test_org_s7_reserving_succeeds_once_the_organization_becomes_active()
+    {
+        $user = User::factory()->create();
+        Tenants::factory()->create(['user_id' => $user->id]);
+        $organization = Organization::factory()->inactive()->withMember($user)->create();
+        $room = $this->roomWithMonthPrice();
+        $headers = ['X-Organization-Id' => (string) $organization->id];
+
+        $this->actingAs($user, 'sanctum')->postJson('/api/reservations', [
+            'store_room_id' => $room->id,
+            'start_date' => $this->nextMonthStart()->toDateString(),
+            'end_date' => $this->nextMonthStart()->addMonths(3)->toDateString(),
+        ], $headers)->assertStatus(422);
+
+        $organization->update(['status' => 'active']);
+
+        $this->actingAs($user, 'sanctum')->postJson('/api/reservations', [
+            'store_room_id' => $room->id,
+            'start_date' => $this->nextMonthStart()->toDateString(),
+            'end_date' => $this->nextMonthStart()->addMonths(3)->toDateString(),
+        ], $headers)->assertStatus(201);
+    }
+
+    /** OR-S8: header of an org the caller does NOT belong to -- header 403, zero rows. */
+    public function test_org_s8_a_non_member_header_is_rejected_and_writes_nothing()
+    {
+        $user = User::factory()->create();
+        Tenants::factory()->create(['user_id' => $user->id]);
+        $otherUser = User::factory()->create();
+        $foreignOrg = $this->organizationFor($otherUser);
+        $room = $this->roomWithMonthPrice();
+
+        $response = $this->actingAs($user, 'sanctum')
+            ->postJson('/api/reservations', [
+                'store_room_id' => $room->id,
+                'start_date' => $this->nextMonthStart()->toDateString(),
+                'end_date' => $this->nextMonthStart()->addMonths(3)->toDateString(),
+            ], ['X-Organization-Id' => (string) $foreignOrg->id]);
+
+        $response->assertStatus(403);
+        $response->assertExactJson(['message' => 'No perteneces a la organización seleccionada']);
+        $this->assertDatabaseCount('reservations', 0);
+    }
+
+    /** OR-S10: a member of org1 reserving the same room/dates a fellow member of org1 already holds -- still a 409 conflict. */
+    public function test_org_s10_two_members_of_the_same_org_still_conflict_on_overlapping_dates()
+    {
+        $room = $this->roomWithMonthPrice();
+        $organization = Organization::factory()->create();
+
+        $userA = User::factory()->create();
+        Tenants::factory()->create(['user_id' => $userA->id]);
+        $organization->users()->attach($userA->id, ['role' => 'member']);
+
+        $this->actingAs($userA, 'sanctum')->postJson('/api/reservations', [
+            'store_room_id' => $room->id,
+            'start_date' => today()->addDays(30)->toDateString(),
+            'end_date' => today()->addDays(39)->toDateString(),
+        ], ['X-Organization-Id' => (string) $organization->id])->assertStatus(201);
+
+        $userB = User::factory()->create();
+        Tenants::factory()->create(['user_id' => $userB->id]);
+        $organization->users()->attach($userB->id, ['role' => 'member']);
+
+        $response = $this->actingAs($userB, 'sanctum')->postJson('/api/reservations', [
+            'store_room_id' => $room->id,
+            'start_date' => today()->addDays(34)->toDateString(),
+            'end_date' => today()->addDays(44)->toDateString(),
+        ], ['X-Organization-Id' => (string) $organization->id]);
+
+        $response->assertStatus(409);
+    }
+
+    /** OR-S11: the same inputs with an org header produce the identical server-computed total as personal. */
+    public function test_org_s11_quote_totals_are_identical_with_or_without_an_organization_header()
+    {
+        $user = User::factory()->create();
+        Tenants::factory()->create(['user_id' => $user->id]);
+        $organization = $this->organizationFor($user);
+        $room = $this->roomWithMonthPrice(1000);
+
+        $response = $this->actingAs($user, 'sanctum')
+            ->postJson('/api/reservations', [
+                'store_room_id' => $room->id,
+                'start_date' => $this->nextMonthStart()->toDateString(),
+                'end_date' => $this->nextMonthStart()->addMonths(3)->toDateString(),
+            ], ['X-Organization-Id' => (string) $organization->id]);
+
+        $response->assertStatus(201);
+        $this->assertDatabaseHas('reservations', [
+            'organization_id' => $organization->id,
+            'rent_subtotal' => '3000.00',
             'total_mount' => '3000.00',
         ]);
     }
