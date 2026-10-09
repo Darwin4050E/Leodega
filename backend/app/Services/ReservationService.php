@@ -204,10 +204,11 @@ class ReservationService
                 ]
             );
 
-            $locked->load(['storeRooms.landlord.user', 'tenants.user']);
+            $locked->load(['storeRooms.landlord.user', 'tenants.user', 'organization']);
             $room = $locked->storeRooms;
             if ($room && $room->landlord && $room->landlord->user) {
                 $tenantUser = $locked->tenants->user;
+                $organization = $locked->organization;
                 NotificationService::send(
                     $actingUserId,
                     $room->landlord->user->id,
@@ -217,11 +218,15 @@ class ReservationService
                     [
                         'reservation_id' => $locked->id,
                         'store_room_id' => $locked->store_room_id,
+                        // HUE-05 OR-11/D5: the creator's name, never the
+                        // org's -- unchanged by $organization being present.
                         'customer_name' => trim("{$tenantUser->name} {$tenantUser->lastname}"),
                         'store_room_title' => $room->title,
                         'amount' => $locked->total_mount,
                         'start_date' => $locked->start_date,
                         'end_date' => $locked->end_date,
+                        'organization_name' => $organization?->name,
+                        'organization_ruc' => $organization?->ruc,
                     ]
                 );
             }
@@ -266,7 +271,7 @@ class ReservationService
     public function expireElapsedHolds(Builder $scope): void
     {
         $rows = (clone $scope)->expiredHold()
-            ->with(['storeRooms.landlord.user', 'tenants.user'])
+            ->with(['storeRooms.landlord.user', 'tenants.user', 'organization'])
             ->get();
 
         if ($rows->isEmpty()) {
@@ -302,6 +307,7 @@ class ReservationService
                 continue;
             }
 
+            $organization = $row->organization;
             NotificationService::send(
                 $tenantUser->id,
                 $room->landlord->user->id,
@@ -315,6 +321,8 @@ class ReservationService
                     'store_room_title' => $room->title,
                     'start_date' => $row->start_date,
                     'end_date' => $row->end_date,
+                    'organization_name' => $organization?->name,
+                    'organization_ruc' => $organization?->ruc,
                 ]
             );
         }

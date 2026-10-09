@@ -26,6 +26,9 @@
         @if ($receipt['payment_method_label'])
         <tr><th>Método de pago</th><td>{{ $receipt['payment_method_label'] }}</td></tr>
         @endif
+        @if (! empty($receipt['organization_name']))
+        <tr><th>Organización</th><td>Reservado a nombre de: {{ $receipt['organization_name'] }} (RUC {{ $receipt['organization_ruc'] }})</td></tr>
+        @endif
         <tr><th>Estado</th><td>{{ $receipt['status_label'] }}</td></tr>
     </table>
 </body>

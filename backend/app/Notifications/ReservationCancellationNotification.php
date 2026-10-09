@@ -34,19 +34,29 @@ class ReservationCancellationNotification extends Notification
     {
         unset($notifiable);
 
+        $this->reservation->loadMissing('organization');
+
         $tenantName = $this->reservation->tenants->user->name;
         $code = ReservationCode::format($this->reservation->id);
         $storeRoomTitle = $this->reservation->storeRooms->title;
         $refund = '$'.number_format((float) $this->reservation->total_mount, 2, '.', ',');
 
-        return (new MailMessage)
+        $mail = (new MailMessage)
             ->subject('Tu reserva fue cancelada - Leodega')
             ->greeting('Hola, '.$tenantName.'.')
             ->line('El gestor de "'.$storeRoomTitle.'" canceló tu reserva.')
             ->line('Código de reserva: '.$code)
             ->line('Período: '.$this->reservation->start_date.' – '.$this->reservation->end_date)
             ->line('Motivo: '.$this->reservation->cancelation_reason)
-            ->line('Se procesará un reembolso de '.$refund.'.')
-            ->line('Gracias por confiar en Leodega.');
+            ->line('Se procesará un reembolso de '.$refund.'.');
+
+        // HUE-05 OR-11/D5: org identity line, live-read, absent for a
+        // personal reservation.
+        $organization = $this->reservation->organization;
+        if ($organization !== null) {
+            $mail->line("Reservado a nombre de: {$organization->name} (RUC {$organization->ruc})");
+        }
+
+        return $mail->line('Gracias por confiar en Leodega.');
     }
 }
