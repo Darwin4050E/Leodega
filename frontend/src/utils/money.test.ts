@@ -22,4 +22,14 @@ describe('formatUSD', () => {
   it('formats large amounts with multiple thousand separators', () => {
     expect(formatUSD(1234567)).toBe('$1,234,567');
   });
+
+  it('keeps two decimals when fixed is requested, so wallet amounts never lose a trailing zero', () => {
+    expect(formatUSD('80.50', { fixed: true })).toBe('$80.50');
+    expect(formatUSD('5000.00', { fixed: true })).toBe('$5,000.00');
+    expect(formatUSD('0', { fixed: true })).toBe('$0.00');
+  });
+
+  it('combines fixed with the USD suffix', () => {
+    expect(formatUSD('50', { fixed: true, suffix: true })).toBe('$50.00 USD');
+  });
 });

@@ -1,10 +1,14 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { render, screen } from '@testing-library/react';
+import { render, screen, waitFor } from '@testing-library/react';
+import { MemoryRouter } from 'react-router-dom';
 import type { Organization } from '../services/organizations';
 import type { ActiveContextValue } from '../context/activeContextBase';
 
 const mockUseActiveContext = vi.hoisted(() => vi.fn());
 vi.mock('../context/useActiveContext', () => ({ useActiveContext: mockUseActiveContext }));
+
+const mockGetOrganizationWallet = vi.hoisted(() => vi.fn());
+vi.mock('../services/organizations', () => ({ getOrganizationWallet: mockGetOrganizationWallet }));
 
 import ActiveContextRibbon from './ActiveContextRibbon';
 
@@ -43,8 +47,17 @@ function setContext(overrides: Partial<ActiveContextValue> = {}) {
   } satisfies ActiveContextValue);
 }
 
+const withRouter = () => (
+  <MemoryRouter>
+    <ActiveContextRibbon />
+  </MemoryRouter>
+);
+
 describe('ActiveContextRibbon', () => {
-  beforeEach(() => vi.clearAllMocks());
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mockGetOrganizationWallet.mockResolvedValue({ data: { organization_id: 7, balance: '80.50' } });
+  });
 
   it('announces the organization the tenant is operating as', () => {
     setContext({
@@ -53,7 +66,7 @@ describe('ActiveContextRibbon', () => {
       organizations: [andina],
     });
 
-    render(<ActiveContextRibbon />);
+    render(withRouter());
 
     const ribbon = screen.getByRole('status');
     expect(ribbon).toHaveTextContent('Estás operando como Importadora Andina S.A.');
@@ -66,11 +79,11 @@ describe('ActiveContextRibbon', () => {
       activeOrganization: andina,
       organizations: [andina],
     });
-    const { container, rerender } = render(<ActiveContextRibbon />);
+    const { container, rerender } = render(withRouter());
     expect(screen.getByRole('status')).toHaveTextContent('Estás operando como Importadora Andina S.A.');
 
     setContext();
-    rerender(<ActiveContextRibbon />);
+    rerender(withRouter());
 
     expect(screen.queryByRole('status')).not.toBeInTheDocument();
     expect(container).toBeEmptyDOMElement();
@@ -82,14 +95,14 @@ describe('ActiveContextRibbon', () => {
       activeOrganization: andina,
       organizations: [andina, norte],
     });
-    const { rerender } = render(<ActiveContextRibbon />);
+    const { rerender } = render(withRouter());
 
     setContext({
       context: { kind: 'organization', organizationId: 8 },
       activeOrganization: norte,
       organizations: [andina, norte],
     });
-    rerender(<ActiveContextRibbon />);
+    rerender(withRouter());
 
     expect(screen.getByRole('status')).toHaveTextContent('Estás operando como Norte Cía. Ltda.');
     expect(screen.getByRole('status')).not.toHaveTextContent('Importadora Andina');
@@ -98,7 +111,7 @@ describe('ActiveContextRibbon', () => {
   it('renders nothing in personal mode', () => {
     setContext();
 
-    const { container } = render(<ActiveContextRibbon />);
+    const { container } = render(withRouter());
 
     expect(container).toBeEmptyDOMElement();
   });
@@ -110,7 +123,7 @@ describe('ActiveContextRibbon', () => {
       status: 'loading',
     });
 
-    const { container } = render(<ActiveContextRibbon />);
+    const { container } = render(withRouter());
 
     expect(container).toBeEmptyDOMElement();
   });
@@ -123,8 +136,53 @@ describe('ActiveContextRibbon', () => {
       activeOrganization: andina,
     });
 
-    const { container } = render(<ActiveContextRibbon />);
+    const { container } = render(withRouter());
 
     expect(container).toBeEmptyDOMElement();
+  });
+
+  it('OW-WS1: shows the wallet balance chip next to the unchanged operating text', async () => {
+    setContext({
+      context: { kind: 'organization', organizationId: 7 },
+      activeOrganization: andina,
+      organizations: [andina],
+    });
+
+    render(withRouter());
+
+    const chip = await screen.findByRole('link', { name: /Saldo/ });
+    expect(chip).toHaveTextContent('$80.50');
+    expect(chip).toHaveAttribute('href', '/organizacion/billetera');
+    expect(screen.getByRole('status')).toHaveTextContent('Estás operando como Importadora Andina S.A.');
+    expect(mockGetOrganizationWallet).toHaveBeenCalledWith(7);
+  });
+
+  it('shows the chip to a plain member too', async () => {
+    setContext({
+      context: { kind: 'organization', organizationId: 8 },
+      activeOrganization: norte,
+      organizations: [norte],
+    });
+    mockGetOrganizationWallet.mockResolvedValue({ data: { organization_id: 8, balance: '12.00' } });
+
+    render(withRouter());
+
+    expect(await screen.findByRole('link', { name: /Saldo/ })).toHaveTextContent('$12.00');
+  });
+
+  it('OW-WS2: issues no wallet request and shows no chip in personal mode or while unresolved', async () => {
+    setContext();
+    const personal = render(withRouter());
+    personal.unmount();
+
+    setContext({
+      context: { kind: 'organization', organizationId: 7 },
+      activeOrganization: null,
+      status: 'loading',
+    });
+    render(withRouter());
+
+    await waitFor(() => expect(screen.queryByRole('link')).not.toBeInTheDocument());
+    expect(mockGetOrganizationWallet).not.toHaveBeenCalled();
   });
 });

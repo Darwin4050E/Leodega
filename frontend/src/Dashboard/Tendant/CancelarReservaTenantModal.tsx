@@ -7,6 +7,7 @@ import {
 } from "../../services/reservations";
 import { asApiError } from "../../api/errors";
 import { formatUSD } from "../../utils/money";
+import { notifyWalletChanged } from "../../utils/walletEvents";
 import { formatReservationCode } from "../../utils/reservationCode";
 
 interface CancelarReservaTenantModalProps {
@@ -90,6 +91,8 @@ const CancelarReservaTenantModal = ({
     try {
       const response = await cancelReservationAsTenant(reservation.id);
       const recordedAmount = response.data.reservation.refund_amount ?? refundAmount ?? "0.00";
+      // OW-8: an org refund is credited to the wallet in the same transaction.
+      if (reservation.organization) notifyWalletChanged();
       onCancelled(String(recordedAmount));
       onClose();
     } catch (error) {
@@ -153,8 +156,17 @@ const CancelarReservaTenantModal = ({
 
           {!previewLoading && !previewStale && !previewError && refundAmount !== null && (
             <p className="text-sm text-gray-700 m-0">
-              Recibirás un reembolso de{" "}
-              <b className="text-gray-900">{formatUSD(refundAmount, { suffix: true })}</b>.
+              {reservation.organization ? (
+                <>
+                  El reembolso de <b className="text-gray-900">{formatUSD(refundAmount, { suffix: true })}</b> se
+                  acreditará al saldo de {reservation.organization.name}.
+                </>
+              ) : (
+                <>
+                  Recibirás un reembolso de{" "}
+                  <b className="text-gray-900">{formatUSD(refundAmount, { suffix: true })}</b>.
+                </>
+              )}
             </p>
           )}
 

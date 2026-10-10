@@ -11,6 +11,10 @@ import { useAuth } from "../context/useAuth";
 import { useActiveContext } from "../context/useActiveContext";
 import { asApiError } from "../api/errors";
 import OrganizationNotice from "./OrganizationNotice";
+import WalletTopUpModal from "./WalletTopUpModal";
+import { useOrganizationWallet, WALLET_STATUS } from "../hooks/useOrganizationWallet";
+import { formatUSD } from "../utils/money";
+import { notifyWalletChanged } from "../utils/walletEvents";
 import { toDateOnlyISO, isDateBetween, formatMemberSince } from "../utils/dates";
 import { parseSecurityFeatures, SECURITY_LABELS, type ParsedSecurityFeatures } from "../utils/security";
 import { RESERVATION_OVERLAP_MESSAGE, upcomingOccupiedRanges } from "../utils/reservationFlow";
@@ -58,6 +62,17 @@ export default function LeodegaUI() {
 
   const [sending, setSending] = useState(false);
   const [error, setError] = useState<string>("");
+  // OW-W5: set only by the insufficient-balance 422, so the recharge CTA never
+  // shows for any other rejection.
+  const [walletShortage, setWalletShortage] = useState(false);
+  const [topUpOpen, setTopUpOpen] = useState(false);
+
+  // The balance is only needed while the booking modal is open, so no request
+  // is issued for a visitor who is just browsing the room.
+  const wallet = useOrganizationWallet(
+    openReserve && showOrganizationNotice && activeOrganization ? activeOrganization.id : null
+  );
+  const isOrgAdmin = activeOrganization?.role === "admin";
 
   // Local step machine (design decision: `useState`, no new routes — the
   // prototype's own `BookingFlow` orchestrator is itself state-driven, not
@@ -135,6 +150,7 @@ export default function LeodegaUI() {
     if (!id) return;
 
     setError("");
+    setWalletShortage(false);
 
     if (!startDate || !endDate) {
       setError("Selecciona fecha de inicio y fin.");
@@ -170,14 +186,24 @@ export default function LeodegaUI() {
       setEndDate("");
 
       setReservation(response.data.reservation);
-      setStep("pago");
+      // OW-W4: an organization reservation is created already paid from the
+      // wallet, so it skips the card step; personal ones are still pending.
+      if (response.data.reservation.status === "confirmed") {
+        notifyWalletChanged();
+        setStep("comprobante");
+      } else {
+        setStep("pago");
+      }
     } catch (e: unknown) {
       const err = asApiError(e);
       const status = err.response?.status;
 
       if (status === 401) goToLoginForReserve();
       else if (status === 409) setError(RESERVATION_OVERLAP_MESSAGE);
-      else if (status === 422 && err.response?.data?.errors?.organization) {
+      else if (status === 422 && err.response?.data?.errors?.wallet) {
+        setError(err.response.data.errors.wallet[0]);
+        setWalletShortage(true);
+      } else if (status === 422 && err.response?.data?.errors?.organization) {
         setError(err.response.data.errors.organization[0]);
       } else if (status === 422 && err.response?.data?.errors?.start_date) {
         setError("La fecha de inicio no puede ser anterior a hoy.");
@@ -499,6 +525,7 @@ export default function LeodegaUI() {
                 onClick={() => {
                   setOpenReserve(false);
                   setError("");
+                  setWalletShortage(false);
                 }}
                 className="h-9 w-9 rounded-lg hover:bg-gray-100 flex items-center justify-center text-gray-500"
                 aria-label="Cerrar"
@@ -511,6 +538,16 @@ export default function LeodegaUI() {
               {showOrganizationNotice && activeOrganization && (
                 <div className="mb-3">
                   <OrganizationNotice name={activeOrganization.name} />
+                </div>
+              )}
+              {showOrganizationNotice && activeOrganization && (
+                <div className="mb-3 bg-gray-50 border border-gray-200 rounded-lg px-3 py-2">
+                  <p className="m-0 text-sm font-semibold text-gray-800">Saldo de {activeOrganization.name}</p>
+                  {wallet.status === WALLET_STATUS.READY && wallet.balance !== null && (
+                    <p className="m-0 text-xs text-gray-500">
+                      Disponible: <span data-testid="booking-wallet-balance">{formatUSD(wallet.balance, { fixed: true })}</span>
+                    </p>
+                  )}
                 </div>
               )}
               {loadingRanges ? (
@@ -556,6 +593,14 @@ export default function LeodegaUI() {
                 </div>
 
                 {modalMessage && <p className="text-sm text-red-600">{modalMessage}</p>}
+                {walletShortage && isOrgAdmin && !hasOverlap && (
+                  <button
+                    onClick={() => setTopUpOpen(true)}
+                    className="px-3 py-1.5 rounded-lg border border-purple-300 text-purple-700 text-sm font-semibold hover:bg-purple-50"
+                  >
+                    Recargar saldo
+                  </button>
+                )}
               </div>
             </div>
 
@@ -578,6 +623,10 @@ export default function LeodegaUI() {
             </div>
           </div>
         </div>
+      )}
+
+      {topUpOpen && activeOrganization && (
+        <WalletTopUpModal organizationId={activeOrganization.id} onClose={() => setTopUpOpen(false)} />
       )}
     </div>
   );

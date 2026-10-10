@@ -9,7 +9,13 @@ vi.mock('../api/axios', () => ({
   default: mockApi,
 }));
 
-import { createOrganization, getOrganizations } from './organizations';
+import {
+  createOrganization,
+  getOrganizations,
+  getOrganizationWallet,
+  getWalletMovements,
+  topUpWallet,
+} from './organizations';
 
 const MULTIPART = { headers: { 'Content-Type': 'multipart/form-data' } };
 
@@ -57,5 +63,23 @@ describe('organizations service', () => {
     getOrganizations();
 
     expect(mockApi.get).toHaveBeenCalledWith('/organizations');
+  });
+
+  it('getOrganizationWallet calls the path-addressed wallet endpoint', () => {
+    getOrganizationWallet(7);
+
+    expect(mockApi.get).toHaveBeenCalledWith('/organizations/7/wallet');
+  });
+
+  it('getWalletMovements calls the path-addressed movements endpoint', () => {
+    getWalletMovements(7);
+
+    expect(mockApi.get).toHaveBeenCalledWith('/organizations/7/wallet/movements');
+  });
+
+  it('topUpWallet posts only the amount string to the top-ups endpoint', () => {
+    topUpWallet(7, '100.50');
+
+    expect(mockApi.post).toHaveBeenCalledWith('/organizations/7/wallet/top-ups', { amount: '100.50' });
   });
 });

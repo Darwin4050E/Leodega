@@ -52,6 +52,7 @@ import PagePrincipal from './Dashboard/Tendant/PagePrincipal'
 import CalendarioTendant from './Dashboard/Tendant/CalendarioTendant'
 import MisReservas from './Dashboard/Tendant/MisReservas'
 import CrearOrganizacion from './Dashboard/Tendant/CrearOrganizacion'
+import BilleteraOrganizacion from './Dashboard/Tendant/BilleteraOrganizacion'
 
 function App() {
   return (
@@ -141,6 +142,7 @@ function App() {
           <Route path="/arrendatario/calendario" element={<CalendarioTendant />} />
           <Route path="/arrendatario/mis-reservas" element={<MisReservas />} />
           <Route path="/mi-cuenta/crear-organizacion" element={<CrearOrganizacion />} />
+          <Route path="/organizacion/billetera" element={<BilleteraOrganizacion />} />
         </Route>
       </Routes>
     </Router>
