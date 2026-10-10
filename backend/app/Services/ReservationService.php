@@ -5,12 +5,15 @@ namespace App\Services;
 use App\Enums\NotificationType;
 use App\Exceptions\ReservationConflictException;
 use App\Models\Organization;
+use App\Models\Payments;
 use App\Models\ReservationCancellationObligation;
 use App\Models\Reservations;
 use App\Models\StoreRooms;
 use App\Models\Tenants;
 use App\Notifications\ReservationCancellationNotification;
+use App\Notifications\ReservationReceiptNotification;
 use App\Support\CancellationRefundCalculator;
+use App\Support\Money;
 use Carbon\Carbon;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Support\Facades\DB;
@@ -19,7 +22,13 @@ use Illuminate\Validation\ValidationException;
 
 class ReservationService
 {
-    public function __construct(private ReservationPricingService $pricingService) {}
+    // A deadlock retry is safe: the org transaction body only touches the database.
+    private const ORGANIZATION_CREATE_ATTEMPTS = 3;
+
+    public function __construct(
+        private ReservationPricingService $pricingService,
+        private WalletService $walletService = new WalletService,
+    ) {}
 
     /**
      * Extraído de ReservationsController::store: crea la reserva si no hay
@@ -56,7 +65,14 @@ class ReservationService
      * only, so the SAME tenant's personal and org holds supersede each
      * other exactly like two personal holds would (D17, pinned by a test).
      *
-     * @throws ValidationException when $organization->status !== 'active'.
+     * sdd/org-wallet (OW-5, OW-6): in org context the reservation is paid
+     * from the organization wallet and confirmed in the SAME transaction, so
+     * there is no pending hold and no card step. Lock order is
+     * room -> reservation -> organization. The receipt email goes out after
+     * the transaction has returned, like PaymentService::process().
+     * @throws ValidationException when $organization->status !== 'active'
+     *                             or, on the locked row, is no longer active.
+     * @throws \App\Exceptions\InsufficientWalletBalanceException when the wallet cannot cover the total.
      */
     public function create(Tenants $tenant, StoreRooms $room, array $data, ?int $actingUserId, ?Organization $organization = null): Reservations
     {
@@ -66,7 +82,7 @@ class ReservationService
             ]);
         }
 
-        return DB::transaction(function () use ($tenant, $room, $data, $organization) {
+        $reservation = DB::transaction(function () use ($tenant, $room, $data, $actingUserId, $organization) {
             StoreRooms::where('id', $room->id)->lockForUpdate()->first();
 
             $this->expireElapsedHolds(Reservations::where('store_room_id', $room->id));
@@ -98,7 +114,7 @@ class ReservationService
 
             $quote = $this->pricingService->quote($room, $data['start_date'], $data['end_date']);
 
-            return Reservations::create([
+            $reservation = Reservations::create([
                 'store_room_id' => $room->id,
                 'tenant_id' => $tenant->id,
                 'organization_id' => $organization?->id,
@@ -115,8 +131,72 @@ class ReservationService
                 'cancellation_policy_tier' => $room->cancellation_policy_tier,
                 'creation_date' => now(),
             ]);
-        });
+
+            if ($organization === null) {
+                return $reservation;
+            }
+
+            return $this->payFromWallet($reservation, $organization, $tenant, $quote['total_mount'], $actingUserId);
+        }, $organization === null ? 1 : self::ORGANIZATION_CREATE_ATTEMPTS);
+
+        if ($organization === null) {
+            return $reservation;
+        }
+
+        try {
+            $reservation->tenants->user->notify(new ReservationReceiptNotification($reservation));
+        } catch (\Throwable $e) {
+            Log::error('Failed to send reservation receipt email', [
+                'reservation_id' => $reservation->id,
+                'error' => $e->getMessage(),
+            ]);
+        }
+
+        // Same payload shape as a personal create: no eager-loaded relations.
+        return $reservation->unsetRelations();
     }
+
+    /**
+     * Confirms the freshly inserted organization reservation and debits its
+     * total from the wallet. Runs inside create()'s transaction, with the room
+     * already locked: confirm() takes the reservation lock, then the
+     * organization row is locked last. The status re-check on that locked row
+     * closes the window in which the org was deactivated after being loaded
+     * (D11), and runs before any money moves.
+     */
+    private function payFromWallet(Reservations $reservation, Organization $organization, Tenants $tenant, string $total, ?int $actingUserId): Reservations
+    {
+        $confirmed = $this->confirm($reservation, $actingUserId ?? $tenant->user_id);
+
+        $locked = $this->walletService->lockOrganization($organization->id);
+
+        if ($locked->status !== 'active') {
+            throw ValidationException::withMessages([
+                'organization' => ['La organización seleccionada no está activa.'],
+            ]);
+        }
+
+        $this->assertOrganizationMaySpend($locked, $tenant, $total);
+
+        $this->walletService->debitForReservation($locked, $confirmed, $total, $tenant->user_id);
+
+        Payments::create([
+            'reservation_id' => $confirmed->id,
+            'payment_method' => 'wallet',
+            'payment_state' => 'paid',
+            'payment_date' => now(),
+        ]);
+
+        return $confirmed;
+    }
+
+    /**
+     * Intentional no-op hook: the next change (per-member spending limits)
+     * plugs its rule in here, after the organization lock is held and before
+     * the debit, so the check and the debit cannot interleave with another
+     * spend.
+     */
+    private function assertOrganizationMaySpend(Organization $locked, Tenants $tenant, string $total): void {}
 
     /**
      * Extraído de ReservationsController::updateStatus (rama "confirmed"):
@@ -354,13 +434,15 @@ class ReservationService
      */
     public function cancelByLandlord(Reservations $reservation, string $reason, ?int $actingUserId): Reservations
     {
-        if (! $reservation->isCancellableByLandlord()) {
-            throw new ReservationConflictException(
-                'Esta reserva no puede cancelarse: debe estar pagada y no haber iniciado.'
-            );
-        }
+        $this->assertCancellableByLandlord($reservation);
 
         $reservation = DB::transaction(function () use ($reservation, $reason, $actingUserId) {
+            // Re-read under the row lock and re-check: a wallet credit must
+            // never be written for a row a concurrent cancel already settled.
+            // Lock order is room -> reservation -> organization.
+            $reservation = Reservations::where('id', $reservation->id)->lockForUpdate()->firstOrFail();
+            $this->assertCancellableByLandlord($reservation);
+
             $reservation->load('storeRooms');
             $landlordId = $reservation->storeRooms->landlord_id;
 
@@ -373,16 +455,20 @@ class ReservationService
             $rentSubtotalCents = (int) round(((float) $reservation->rent_subtotal) * 100);
             $totalCents = (int) round(((float) $reservation->total_mount) * 100);
             $penaltyCents = (int) round($rentSubtotalCents * $penaltyRate);
+            $refundAmount = number_format($totalCents / 100, 2, '.', '');
 
             ReservationCancellationObligation::create([
                 'reservation_id' => $reservation->id,
                 'landlord_id' => $landlordId,
-                'refund_amount' => number_format($totalCents / 100, 2, '.', ''),
+                'refund_amount' => $refundAmount,
                 'penalty_amount' => number_format($penaltyCents / 100, 2, '.', ''),
                 'penalty_rate' => $penaltyRate,
                 'reason' => $reason,
                 'settlement_status' => 'pending_settlement',
             ]);
+
+            // The gestor cancelling returns the full amount, never a tier.
+            $this->creditOrganizationRefund($reservation, $refundAmount);
 
             NotificationService::send(
                 $actingUserId,
@@ -450,6 +536,8 @@ class ReservationService
                 'refund_amount' => $refundAmount,
             ]);
 
+            $this->creditOrganizationRefund($locked, $refundAmount);
+
             $locked->load('storeRooms.landlord.user');
             $room = $locked->storeRooms;
             if ($room && $room->landlord && $room->landlord->user) {
@@ -468,6 +556,42 @@ class ReservationService
 
             return $locked->load(['storeRooms', 'tenants.user']);
         });
+    }
+
+    private function assertCancellableByLandlord(Reservations $reservation): void
+    {
+        if (! $reservation->isCancellableByLandlord()) {
+            throw new ReservationConflictException(
+                'Esta reserva no puede cancelarse: debe estar pagada y no haber iniciado.'
+            );
+        }
+    }
+
+    /**
+     * org-wallet OW-8..OW-10: credits a refund to the organization wallet when
+     * the reservation was paid from it. A personal reservation, a legacy
+     * card-paid organization row and a zero refund leave the wallet alone. The
+     * organization is locked last (room -> reservation -> organization), its
+     * status is deliberately not checked (OW-S32) and the actor is always the
+     * reservation creator, whoever cancelled and whether or not they still
+     * belong to the organization (OW-S36, OW-S49).
+     */
+    private function creditOrganizationRefund(Reservations $reservation, string $amount): void
+    {
+        if ($reservation->organization_id === null || Money::toCents($amount) === 0) {
+            return;
+        }
+
+        $reservation->load('payments');
+
+        if ($reservation->latestPaidPayment()?->payment_method !== 'wallet') {
+            return;
+        }
+
+        $organization = $this->walletService->lockOrganization($reservation->organization_id);
+        $creatorUserId = Tenants::findOrFail($reservation->tenant_id)->user_id;
+
+        $this->walletService->creditRefund($organization, $reservation, $amount, $creatorUserId);
     }
 
     /**

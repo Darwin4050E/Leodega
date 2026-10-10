@@ -2,22 +2,25 @@
 
 namespace Database\Seeders;
 
+use App\Enums\OrganizationRole;
 use App\Models\Landlords;
+use App\Models\Organization;
 use App\Models\Reservations;
 use App\Models\StorePrices;
 use App\Models\StoreRooms;
 use App\Models\Tenants;
 use App\Models\User;
 use App\Services\ReservationPricingService;
+use App\Services\WalletService;
 use Illuminate\Database\Console\Seeds\WithoutModelEvents;
 use Illuminate\Database\Seeder;
 
 /**
  * Demo data for local development and staging: two gestores, two clientes,
  * listings across every publication state, and a couple of confirmed
- * reservations. Everything is keyed by a stable natural key (email, or
- * landlord + title) with firstOrCreate, so `php artisan db:seed` can be run
- * repeatedly without duplicating rows.
+ * reservations, plus one funded demo organization. Everything is keyed by a
+ * stable natural key (email, RUC, or landlord + title) with firstOrCreate, so
+ * `php artisan db:seed` can be run repeatedly without duplicating rows.
  *
  * Never runs in production — DatabaseSeeder guards the call by environment.
  *
@@ -62,6 +65,35 @@ class DemoDataSeeder extends Seeder
 
         $this->reservation($rooms['Bodega Vía a Daule'], $cliente1, now()->addWeek(), now()->addMonths(4));
         $this->reservation($rooms['Mini Storage Urdesa'], $cliente2, now()->addDays(3), now()->addMonths(2));
+
+        $this->organization($cliente1->user, $cliente2->user);
+    }
+
+    /**
+     * Demo organization with a starting wallet balance. Funded through
+     * WalletService (balance + ledger row together) and only when the row is
+     * first created, so re-seeding never funds it twice.
+     */
+    private function organization(User $admin, User $member): void
+    {
+        $organization = Organization::firstOrCreate(
+            ['ruc' => '1790011111001'],
+            [
+                'name' => 'Andina Logistica',
+                'email' => 'contacto@andina-logistica.test',
+                'status' => 'active',
+                'created_by' => $admin->id,
+            ],
+        );
+
+        $organization->users()->syncWithoutDetaching([
+            $admin->id => ['role' => OrganizationRole::ADMIN->value],
+            $member->id => ['role' => OrganizationRole::MEMBER->value],
+        ]);
+
+        if ($organization->wasRecentlyCreated) {
+            (new WalletService)->topUp($organization, $admin, '5000.00');
+        }
     }
 
     private function landlord(string $name, string $lastname, string $email): Landlords

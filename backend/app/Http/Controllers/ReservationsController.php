@@ -40,8 +40,20 @@ class ReservationsController extends Controller
         $reservation = $reservationService->create($tenant, $room, $data, auth()->id(), $organization);
         $reservation->load('organization:id,name,ruc');
 
+        if ($organization === null) {
+            return response()->json([
+                'message' => 'Solicitud enviada',
+                'reservation' => $reservation,
+            ], 201);
+        }
+
+        // OR-1: an org reservation is paid from the wallet inside create(), so
+        // the creator indicator and the method are known without a lookup.
+        $reservation->is_creator = true;
+        $reservation->payment_method = 'wallet';
+
         return response()->json([
-            'message' => 'Solicitud enviada',
+            'message' => 'Reserva confirmada y pagada con el saldo de la organización',
             'reservation' => $reservation,
         ], 201);
     }

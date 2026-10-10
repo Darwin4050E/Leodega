@@ -74,6 +74,14 @@ describe('ComprobanteReservaModal', () => {
     expect(field('Método de pago').getByText('Tarjeta de crédito')).toBeInTheDocument();
   });
 
+  // org-wallet OW-WS13: the server sends the label already resolved; the modal only prints it.
+  it("prints the wallet label 'Saldo de {org}' and no card text for a wallet-paid reservation", () => {
+    renderModal(reservation({ payment_method: 'wallet', payment_method_label: 'Saldo de Andina' }));
+
+    expect(field('Método de pago').getByText('Saldo de Andina')).toBeInTheDocument();
+    expect(screen.queryByText(/Tarjeta/)).not.toBeInTheDocument();
+  });
+
   it('does not reformat the label from the raw timestamp', () => {
     renderModal(reservation({ paid_at: '2030-01-01T00:00:00-05:00', paid_at_label: 'etiqueta del servidor' }));
 

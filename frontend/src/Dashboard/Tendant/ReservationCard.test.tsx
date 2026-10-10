@@ -278,6 +278,27 @@ describe('ReservationCard', () => {
       expect(screen.getByRole('button', { name: 'Ver comprobante' })).toBeInTheDocument();
     });
 
+    it('OR-WS12: offers no pay action on a paid organization row (payment happens at creation)', () => {
+      render(
+        <ReservationCard
+          reservation={reservation({
+            organization: { id: 5, name: 'Andina', ruc: '1792146739001' },
+            is_creator: true,
+            status: 'confirmed',
+            can_be_cancelled: true,
+            receipt,
+          })}
+          onCancelClick={vi.fn()}
+          onReceiptClick={vi.fn()}
+        />
+      );
+
+      expect(screen.getAllByRole('button').map((button) => button.textContent)).toEqual([
+        'Ver comprobante',
+        'Cancelar reserva',
+      ]);
+    });
+
     it('renders actions normally when is_creator is absent (personal row)', () => {
       render(
         <ReservationCard

@@ -44,7 +44,7 @@ class ReservationReceipt
             'total_paid' => number_format((float) $reservation->total_mount, 2, '.', ''),
             'payment_id' => $payment->id,
             'payment_method' => $payment->payment_method,
-            'payment_method_label' => self::METHOD_LABELS[$payment->payment_method] ?? null,
+            'payment_method_label' => self::methodLabel($payment->payment_method, $reservation->organization?->name),
             'paid_at' => $paidAt->toIso8601String(),
             'paid_at_label' => $paidAt->format('j').' '.$paidAt->shortMonthName.' '.$paidAt->format('Y, H:i'),
             // HUE-05 OR-10/D5: null for a personal reservation, live org
@@ -52,5 +52,19 @@ class ReservationReceipt
             'organization_name' => $reservation->organization?->name,
             'organization_ruc' => $reservation->organization?->ruc,
         ];
+    }
+
+    /**
+     * A wallet payment names the organization, so the label is computed from
+     * the live org name (it follows a later rename) instead of living in
+     * METHOD_LABELS.
+     */
+    private static function methodLabel(?string $method, ?string $organizationName): ?string
+    {
+        if ($method === 'wallet') {
+            return $organizationName !== null ? 'Saldo de '.$organizationName : null;
+        }
+
+        return self::METHOD_LABELS[$method] ?? null;
     }
 }

@@ -32,8 +32,15 @@ const ComprobantePagoModal = ({
   bodegaTitulo,
   onClose,
 }: ComprobantePagoModalProps) => {
+  // org-wallet OW-W6: a wallet payment has no card label; name the funding
+  // organization instead of printing the raw `wallet` value.
+  const walletLabel = reservation.organization
+    ? `Saldo de ${reservation.organization.name}`
+    : "Saldo de la organización";
   const metodoPago = reservation.payment_method
-    ? PAYMENT_METHOD_LABEL[reservation.payment_method] ?? reservation.payment_method
+    ? reservation.payment_method === "wallet"
+      ? walletLabel
+      : PAYMENT_METHOD_LABEL[reservation.payment_method] ?? reservation.payment_method
     : "—";
 
   return (

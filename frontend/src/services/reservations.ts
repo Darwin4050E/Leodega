@@ -36,7 +36,7 @@ export interface LandlordReservation {
    * `payment_status`, since REEMBOLSADO is also `payment_status: 'paid'`.
    */
   payment_id: number | null;
-  payment_method: "credit card" | "debit card" | null;
+  payment_method: "credit card" | "debit card" | "wallet" | null;
   payment_date: string | null;
   // Laravel serializes the `storeRooms()` relation snake_cased.
   store_rooms?: {
@@ -103,14 +103,16 @@ export function getCancellationRate() {
 export interface Payment {
   id: number;
   reservation_id: number;
-  payment_method: "credit card" | "debit card";
+  payment_method: "credit card" | "debit card" | "wallet";
   payment_state: "paid" | "pending" | "failed";
   payment_date: string;
 }
 
 /**
  * Matches `StorePaymentRequest::rules()` on the backend (read-only
- * reference — backend unchanged). No card number/holder/expiry/CVV field
+ * reference — backend unchanged). Card-only on purpose: `wallet` is written
+ * server-side when an organization reservation is created, and the public
+ * endpoint rejects it. No card number/holder/expiry/CVV field
  * ever belongs here: those stay in local component state and are discarded
  * after submit (REQ-PAY-6).
  */
@@ -142,7 +144,7 @@ export interface TenantReceipt {
   end_date: string;
   total_paid: string;
   payment_id: number;
-  payment_method: "credit card" | "debit card" | null;
+  payment_method: "credit card" | "debit card" | "wallet" | null;
   payment_method_label: string | null;
   paid_at: string;
   paid_at_label: string;

@@ -17,6 +17,10 @@ vi.mock('./Dashboard/Tendant/MisReservas', () => ({
   default: () => <div>Mis reservas</div>,
 }));
 
+vi.mock('./Dashboard/Tendant/BilleteraOrganizacion', () => ({
+  default: () => <div>Billetera de la organización</div>,
+}));
+
 vi.mock('./Dashboard/Tendant/CrearOrganizacion', () => ({
   default: () => <div>Crear organización</div>,
 }));
@@ -48,6 +52,7 @@ const TENANT_ROUTES: [string, string][] = [
   ['/arrendatario/calendario', 'Calendario del arrendatario'],
   ['/arrendatario/mis-reservas', 'Mis reservas'],
   ['/mi-cuenta/crear-organizacion', 'Crear organización'],
+  ['/organizacion/billetera', 'Billetera de la organización'],
 ];
 
 describe('tenant routes auth guard', () => {

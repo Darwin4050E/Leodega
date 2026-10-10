@@ -104,9 +104,9 @@ class ReservationTest extends TestCase
 
     // -- HUE-05 U1a: organization-reservations (OR-1..OR-11, store only) --
 
-    private function organizationFor(User $user, OrganizationRole $role = OrganizationRole::ADMIN): Organization
+    private function organizationFor(User $user, OrganizationRole $role = OrganizationRole::ADMIN, string $balance = '0.00'): Organization
     {
-        return Organization::factory()->withMember($user, $role)->create();
+        return Organization::factory()->withMember($user, $role)->withBalance($balance)->create();
     }
 
     private function roomWithMonthPrice(int $price = 1000): StoreRooms
@@ -127,7 +127,7 @@ class ReservationTest extends TestCase
     {
         $user = User::factory()->create();
         $tenant = Tenants::factory()->create(['user_id' => $user->id]);
-        $organization = $this->organizationFor($user, OrganizationRole::ADMIN);
+        $organization = $this->organizationFor($user, OrganizationRole::ADMIN, '10000.00');
         $room = $this->roomWithMonthPrice();
 
         $response = $this->actingAs($user, 'sanctum')
@@ -151,7 +151,7 @@ class ReservationTest extends TestCase
     {
         $user = User::factory()->create();
         $tenant = Tenants::factory()->create(['user_id' => $user->id]);
-        $organization = $this->organizationFor($user, OrganizationRole::MEMBER);
+        $organization = $this->organizationFor($user, OrganizationRole::MEMBER, '10000.00');
         $room = $this->roomWithMonthPrice();
 
         $response = $this->actingAs($user, 'sanctum')
@@ -173,7 +173,7 @@ class ReservationTest extends TestCase
     {
         $user = User::factory()->create();
         Tenants::factory()->create(['user_id' => $user->id]);
-        $org1 = $this->organizationFor($user);
+        $org1 = $this->organizationFor($user, OrganizationRole::ADMIN, '10000.00');
         $org2 = $this->organizationFor($user);
         $room = $this->roomWithMonthPrice();
 
@@ -254,7 +254,7 @@ class ReservationTest extends TestCase
     {
         $user = User::factory()->create();
         Tenants::factory()->create(['user_id' => $user->id]);
-        $organization = Organization::factory()->inactive()->withMember($user)->create();
+        $organization = Organization::factory()->inactive()->withMember($user)->withBalance('10000.00')->create();
         $room = $this->roomWithMonthPrice();
         $headers = ['X-Organization-Id' => (string) $organization->id];
 
@@ -298,7 +298,7 @@ class ReservationTest extends TestCase
     public function test_org_s10_two_members_of_the_same_org_still_conflict_on_overlapping_dates()
     {
         $room = $this->roomWithMonthPrice();
-        $organization = Organization::factory()->create();
+        $organization = Organization::factory()->withBalance('10000.00')->create();
 
         $userA = User::factory()->create();
         Tenants::factory()->create(['user_id' => $userA->id]);
@@ -328,7 +328,7 @@ class ReservationTest extends TestCase
     {
         $user = User::factory()->create();
         Tenants::factory()->create(['user_id' => $user->id]);
-        $organization = $this->organizationFor($user);
+        $organization = $this->organizationFor($user, OrganizationRole::ADMIN, '10000.00');
         $room = $this->roomWithMonthPrice(1000);
 
         $response = $this->actingAs($user, 'sanctum')

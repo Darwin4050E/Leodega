@@ -7,11 +7,14 @@
  * the browser's ambient locale (which could otherwise render `$1.440` under
  * `'es-EC'`).
  */
-export function formatUSD(value: string | number, opts?: { suffix?: boolean }): string {
+export function formatUSD(
+  value: string | number,
+  opts?: { suffix?: boolean; fixed?: boolean },
+): string {
   const numeric = Number(value);
   const safe = Number.isFinite(numeric) ? numeric : 0;
   const formatted = `$${safe.toLocaleString('en-US', {
-    minimumFractionDigits: 0,
+    minimumFractionDigits: opts?.fixed ? 2 : 0,
     maximumFractionDigits: 2,
   })}`;
 
