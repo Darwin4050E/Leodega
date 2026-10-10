@@ -9,6 +9,7 @@ use App\Http\Controllers\LandlordsController;
 use App\Http\Controllers\MessageController;
 use App\Http\Controllers\NotificationsController;
 use App\Http\Controllers\OrganizationController;
+use App\Http\Controllers\OrganizationWalletController;
 use App\Http\Controllers\PasswordResetController;
 use App\Http\Controllers\PaymentsController;
 use App\Http\Controllers\ProfileController;
@@ -228,6 +229,18 @@ Route::middleware(['auth.api:sanctum', 'role:tenant'])->group(function () {
     Route::get('/organizations', [OrganizationController::class, 'index']);
     Route::post('/organizations', [OrganizationController::class, 'store']);
 });
+
+// org-wallet OW-12: the organization is addressed in the path and membership is
+// checked in the controller, so `org.context` is NOT mounted here (AC-S19).
+// {organization} stays a raw id (no model binding) so a non-member and a
+// nonexistent organization get the same 403; the pattern keeps it inside int64.
+Route::middleware(['auth.api:sanctum', 'role:tenant'])
+    ->where(['organization' => '[1-9][0-9]{0,17}'])
+    ->group(function () {
+        Route::get('/organizations/{organization}/wallet', [OrganizationWalletController::class, 'show']);
+        Route::get('/organizations/{organization}/wallet/movements', [OrganizationWalletController::class, 'movements']);
+        Route::post('/organizations/{organization}/wallet/top-ups', [OrganizationWalletController::class, 'topUp']);
+    });
 
 Route::middleware(['auth.api:sanctum', 'role:admin'])->group(function () {
     Route::get('/store-rooms/{storeRoom}/permit/download', [StorePermitController::class, 'download']);
