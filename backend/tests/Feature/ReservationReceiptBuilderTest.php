@@ -330,6 +330,54 @@ class ReservationReceiptBuilderTest extends TestCase
         $this->assertStringNotContainsString('Reservado a nombre de', $html);
     }
 
+    // -- org-wallet OR-10/OR-S17/OR-S19/OR-S28: wallet payment label --
+
+    public function test_build_labels_a_wallet_payment_with_the_live_org_name()
+    {
+        $organization = Organization::factory()->create(['name' => 'Andina', 'ruc' => '1790011111001']);
+        $reservation = $this->reservation(['organization_id' => $organization->id]);
+        $this->payment($reservation, ['payment_method' => 'wallet']);
+
+        $receipt = ReservationReceipt::build($reservation);
+
+        $this->assertSame('wallet', $receipt['payment_method']);
+        $this->assertSame('Saldo de Andina', $receipt['payment_method_label']);
+    }
+
+    public function test_the_wallet_label_follows_an_org_rename_after_payment()
+    {
+        $organization = Organization::factory()->create(['name' => 'Andina']);
+        $reservation = $this->reservation(['organization_id' => $organization->id]);
+        $this->payment($reservation, ['payment_method' => 'wallet']);
+        $organization->update(['name' => 'Andina Logistica']);
+
+        $receipt = ReservationReceipt::build(Reservations::find($reservation->id));
+
+        $this->assertSame('Saldo de Andina Logistica', $receipt['payment_method_label']);
+    }
+
+    public function test_a_card_payment_keeps_its_static_label_even_for_an_organization_reservation()
+    {
+        $organization = Organization::factory()->create();
+        $reservation = $this->reservation(['organization_id' => $organization->id]);
+        $this->payment($reservation, ['payment_method' => 'debit card']);
+
+        $this->assertSame('Tarjeta de débito', ReservationReceipt::build($reservation)['payment_method_label']);
+    }
+
+    public function test_pdf_view_prints_the_wallet_label_and_the_org_identity()
+    {
+        $organization = Organization::factory()->create(['name' => 'Andina', 'ruc' => '1790011111001']);
+        $reservation = $this->reservation(['organization_id' => $organization->id]);
+        $this->payment($reservation, ['payment_method' => 'wallet']);
+
+        $html = $this->renderPdfView(ReservationReceipt::build($reservation));
+
+        $this->assertStringContainsString('Saldo de Andina', $html);
+        $this->assertStringContainsString('(RUC 1790011111001)', $html);
+        $this->assertStringNotContainsString('Tarjeta', $html);
+    }
+
     public function test_pdf_view_shows_a_dash_for_a_missing_gestor_and_omits_a_missing_method()
     {
         $reservation = $this->reservation();

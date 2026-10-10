@@ -8,6 +8,7 @@ use App\Models\Reservations;
 use App\Notifications\ReservationReceiptNotification;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
+use Illuminate\Validation\ValidationException;
 
 /**
  * Corrección de inconsistencia (ver PLAN_CORRECCION_INCONSISTENCIAS.md, Fase 2.2):
@@ -29,7 +30,7 @@ class PaymentService
      *                    at all. Closes the resurrection bug: a canceled
      *                    (and possibly refunded) reservation can no longer
      *                    be re-paid and re-confirmed.
-     *   - 'confirmed' -> idempotent no-op (decision #363): returns success
+     *   - 'confirmed' -> (personal only) idempotent no-op (decision #363): returns success
      *                    with the existing latest Payments row, WITHOUT
      *                    creating a second Payments row, without a second
      *                    call to confirm(), and -- structurally, because
@@ -39,13 +40,18 @@ class PaymentService
      *                    payment_state 'paid' calls confirm() on the locked
      *                    row.
      *
+     * An organization reservation that is not canceled is rejected with a 422
+     * before either branch (it is paid from the wallet).
+     *
      * @return array{payment: ?Payments, status: int} 201 for the created
-     *                                                 path, 200 for the
-     *                                                 idempotent no-op.
+     *                                                path, 200 for the
+     *                                                idempotent no-op.
+     *
      * @throws ReservationConflictException si la reserva bloqueada ya está
      *                                      cancelada, o si no puede
      *                                      confirmarse (propagada desde
      *                                      ReservationService::confirm()).
+     * @throws ValidationException si la reserva (no cancelada) pertenece a una organización.
      */
     public function process(Reservations $reservation, array $data, ?int $actingUserId): array
     {
@@ -82,6 +88,17 @@ class PaymentService
 
             if ($locked->status === 'canceled') {
                 throw new ReservationConflictException('Esta reserva fue cancelada y ya no admite pagos.');
+            }
+
+            // sdd/org-wallet (OW-13, OR-13): an organization reservation is
+            // paid from the wallet at creation and never by card, so it is
+            // rejected whether it is still pending (legacy rows, which expire
+            // through the lazy sweep) or already confirmed. Canceled rows keep
+            // their 409 above so the hold-expiry copy stays intact (OW-14).
+            if ($locked->organization_id !== null) {
+                throw ValidationException::withMessages([
+                    'payment_method' => ['Las reservas de organización se pagan con el saldo de la organización'],
+                ]);
             }
 
             if ($locked->status === 'confirmed') {

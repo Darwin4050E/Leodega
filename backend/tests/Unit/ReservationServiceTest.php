@@ -68,7 +68,7 @@ class ReservationServiceTest extends TestCase
         $room = StoreRooms::factory()->create();
         $this->monthPriceFor($room);
         $tenant = Tenants::factory()->create();
-        $organization = Organization::factory()->create();
+        $organization = Organization::factory()->withBalance('10000.00')->create();
 
         $reservation = $this->service()->create($tenant, $room, [
             'start_date' => '2026-02-01',
@@ -135,7 +135,7 @@ class ReservationServiceTest extends TestCase
         $room = StoreRooms::factory()->create();
         $this->monthPriceFor($room);
         $tenant = Tenants::factory()->create();
-        $organization = Organization::factory()->create();
+        $organization = Organization::factory()->withBalance('10000.00')->create();
 
         $personalHold = $this->service()->create($tenant, $room, [
             'start_date' => '2026-07-01',
@@ -154,7 +154,7 @@ class ReservationServiceTest extends TestCase
         ]);
         $this->assertDatabaseHas('reservations', [
             'id' => $orgHold->id,
-            'status' => 'pending',
+            'status' => 'confirmed',
             'organization_id' => $organization->id,
         ]);
     }
@@ -353,10 +353,13 @@ class ReservationServiceTest extends TestCase
         $this->monthPriceFor($room);
         $organization = Organization::factory()->create(['name' => 'Andina', 'ruc' => '1790011111001']);
 
-        $reservation = $this->service()->create($tenant, $room, [
-            'start_date' => '2026-02-01',
-            'end_date' => '2026-05-01',
-        ], $tenant->user_id, $organization);
+        // create() now confirms organization rows itself, so confirm() is
+        // exercised on a pending organization row built directly.
+        $reservation = Reservations::factory()->forOrganization($organization)->create([
+            'store_room_id' => $room->id,
+            'tenant_id' => $tenant->id,
+            'status' => 'pending',
+        ]);
         $reservation->load('storeRooms');
 
         $this->service()->confirm($reservation, $tenantUser->id);

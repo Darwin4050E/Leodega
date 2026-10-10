@@ -341,6 +341,36 @@ class ActiveOrganizationContextTest extends TestCase
         $this->assertSame(['GET api/tenant/reservations', 'POST api/reservations'], $mounted);
     }
 
+    /**
+     * org-wallet OW-12/OW-S41: the wallet routes address the organization in
+     * the path and check membership themselves, so they must exist (the
+     * allow-list test above cannot pass vacuously) and must not carry
+     * `org.context`.
+     */
+    public function test_the_wallet_routes_exist_without_org_context()
+    {
+        $wallet = collect(Route::getRoutes()->getRoutes())
+            ->filter(fn ($route) => str_starts_with($route->uri(), 'api/organizations/{organization}/wallet'))
+            ->keyBy(fn ($route) => $route->methods()[0].' '.$route->uri());
+
+        $this->assertSame(
+            [
+                'GET api/organizations/{organization}/wallet',
+                'GET api/organizations/{organization}/wallet/movements',
+                'POST api/organizations/{organization}/wallet/top-ups',
+            ],
+            $wallet->keys()->sort()->values()->all(),
+        );
+
+        foreach ($wallet as $route) {
+            $middleware = $route->gatherMiddleware();
+
+            $this->assertNotContains('org.context', $middleware);
+            $this->assertContains('auth.api:sanctum', $middleware);
+            $this->assertContains('role:tenant', $middleware);
+        }
+    }
+
     public function test_the_alias_maps_to_the_middleware_class()
     {
         $this->assertSame(
@@ -397,6 +427,7 @@ class ActiveOrganizationContextTest extends TestCase
         $user = $this->tenant();
         Tenants::factory()->create(['user_id' => $user->id]);
         $organization = $this->organizationFor($user);
+        $organization->forceFill(['wallet_balance' => '10000.00'])->save();
         $room = StoreRooms::factory()->approved()->create();
         \App\Models\StorePrices::factory()->create([
             'store_room_id' => $room->id,

@@ -233,6 +233,32 @@ class TenantReservationReceiptTest extends TestCase
         $this->assertNotSame('application/pdf', $response->headers->get('Content-Type'));
     }
 
+    /**
+     * org-wallet OR-S17/OR-S18: the creator downloads the PDF of a wallet-paid
+     * org reservation; a different admin of the same org is still denied.
+     */
+    public function test_the_creator_downloads_the_pdf_of_a_wallet_paid_org_reservation_and_an_admin_does_not()
+    {
+        [$creator, $creatorTenant] = $this->tenantUser();
+        [$admin] = $this->tenantUser();
+        $organization = Organization::factory()
+            ->withMember($creator, OrganizationRole::MEMBER)
+            ->withMember($admin, OrganizationRole::ADMIN)
+            ->create(['name' => 'Andina']);
+        $reservation = $this->reservationFor($creatorTenant, ['organization_id' => $organization->id]);
+        Payments::factory()->create([
+            'reservation_id' => $reservation->id,
+            'payment_state' => 'paid',
+            'payment_method' => 'wallet',
+        ]);
+
+        $this->actingAs($creator, 'sanctum')->get($this->receiptUrl($reservation->id))
+            ->assertStatus(200)
+            ->assertHeader('Content-Type', 'application/pdf');
+        $this->actingAs($admin, 'sanctum')->getJson($this->receiptUrl($reservation->id))
+            ->assertStatus(403);
+    }
+
     public function test_a_room_title_with_accents_and_markup_still_renders_a_pdf()
     {
         [$user, $tenant] = $this->tenantUser();
