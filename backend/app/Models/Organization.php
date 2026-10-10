@@ -23,10 +23,24 @@ class Organization extends Model
         'created_by',
     ];
 
+    // `wallet_balance` is deliberately not fillable: only WalletService
+    // writes it, under a row lock, together with a ledger row.
+    protected function casts(): array
+    {
+        return [
+            'wallet_balance' => 'decimal:2',
+        ];
+    }
+
     public function users()
     {
         return $this->belongsToMany(User::class, 'organization_user')
             ->withPivot('role', 'joined_at');
+    }
+
+    public function walletMovements()
+    {
+        return $this->hasMany(OrganizationWalletMovement::class);
     }
 
     public function creator()

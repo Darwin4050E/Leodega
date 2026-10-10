@@ -26,6 +26,7 @@ class OrganizationFactory extends Factory
             // factory creation (e.g. ReservationServiceTest), and an
             // unset attribute would read as null, not 'active'.
             'status' => 'active',
+            'wallet_balance' => '0.00',
         ];
     }
 
@@ -49,5 +50,15 @@ class OrganizationFactory extends Factory
     public function inactive(): static
     {
         return $this->state(fn () => ['status' => 'inactive']);
+    }
+
+    /**
+     * Funds the organization directly on the cached balance, without a ledger
+     * row. For tests that need a starting balance; use WalletService to cover
+     * the ledger.
+     */
+    public function withBalance(string $amount): static
+    {
+        return $this->state(fn () => ['wallet_balance' => $amount]);
     }
 }
