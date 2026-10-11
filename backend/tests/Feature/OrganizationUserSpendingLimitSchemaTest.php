@@ -101,7 +101,7 @@ class OrganizationUserSpendingLimitSchemaTest extends TestCase
         $organization->users()->attach($user->id, ['role' => 'member', 'monthly_limit' => '500.00']);
         $reservation = Reservations::factory()->forOrganization($organization)->create();
 
-        $this->artisan('migrate:rollback', ['--step' => 1])->assertExitCode(0);
+        $this->artisan('migrate:rollback', ['--step' => 2])->assertExitCode(0);
 
         $this->assertFalse(Schema::hasColumn('organization_user', 'monthly_limit'));
         $this->assertDatabaseHas('organizations', ['id' => $organization->id]);

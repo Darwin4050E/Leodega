@@ -3,6 +3,7 @@
 namespace App\Http\Requests;
 
 use App\Http\Requests\Concerns\AuthorizesTenantReservationCancellation;
+use App\Models\OrganizationReservationEvent;
 use Illuminate\Foundation\Http\FormRequest;
 
 /**
@@ -12,6 +13,11 @@ use Illuminate\Foundation\Http\FormRequest;
 class CancellationPreviewRequest extends FormRequest
 {
     use AuthorizesTenantReservationCancellation;
+
+    protected function attemptedAction(): string
+    {
+        return OrganizationReservationEvent::ACTION_PREVIEW;
+    }
 
     public function rules(): array
     {

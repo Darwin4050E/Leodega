@@ -3,6 +3,7 @@
 namespace App\Http\Requests;
 
 use App\Http\Requests\Concerns\AuthorizesTenantReservationCancellation;
+use App\Models\OrganizationReservationEvent;
 use Illuminate\Foundation\Http\FormRequest;
 
 /**
@@ -17,6 +18,11 @@ class CancelReservationAsTenantRequest extends FormRequest
     public const REASON_MIN_MESSAGE = 'El motivo debe tener al menos 10 caracteres.';
 
     public const REASON_MAX_MESSAGE = 'El motivo no puede superar los 200 caracteres.';
+
+    protected function attemptedAction(): string
+    {
+        return OrganizationReservationEvent::ACTION_CANCEL;
+    }
 
     public function rules(): array
     {
