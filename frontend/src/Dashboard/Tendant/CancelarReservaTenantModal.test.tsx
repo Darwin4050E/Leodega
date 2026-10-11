@@ -402,6 +402,27 @@ describe('CancelarReservaTenantModal on an organization reservation (HUE-06 OR-W
     expect(onNeedsRefresh).toHaveBeenCalled();
   });
 
+  it('OR-WS38: a 403 on an org confirm shows the error and leaves the modal usable', async () => {
+    mockGetCancellationPreview.mockResolvedValue(preview('50.00', '100.00'));
+    mockCancelReservationAsTenant.mockRejectedValue({
+      response: { status: 403, data: { message: 'No autorizado' } },
+    });
+    const { onClose, onCancelled, onNeedsRefresh } = renderModal({ reservation: orgReservation });
+
+    await confirmOrg('un motivo suficientemente largo');
+
+    expect(await screen.findByText('No autorizado')).toBeInTheDocument();
+    expect(onClose).not.toHaveBeenCalled();
+    expect(onCancelled).not.toHaveBeenCalled();
+    expect(onNeedsRefresh).not.toHaveBeenCalled();
+    expect(screen.getByLabelText(REASON_LABEL)).toHaveValue('un motivo suficientemente largo');
+
+    const confirm = screen.getByRole('button', { name: 'Cancelar reserva' });
+    expect(confirm).toBeEnabled();
+    fireEvent.click(confirm);
+    await waitFor(() => expect(mockCancelReservationAsTenant).toHaveBeenCalledTimes(2));
+  });
+
   it('OR-WS38: a 404 on an org confirm asks the parent to refresh', async () => {
     mockGetCancellationPreview.mockResolvedValue(preview('50.00', '100.00'));
     mockCancelReservationAsTenant.mockRejectedValue({
