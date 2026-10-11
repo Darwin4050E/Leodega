@@ -18,6 +18,7 @@ use App\Http\Controllers\ReportsController;
 use App\Http\Controllers\ReservationsController;
 use App\Http\Controllers\SecurityController;
 use App\Http\Controllers\SessionController;
+use App\Http\Controllers\SpendingLimitController;
 use App\Http\Controllers\StoreDisponibilityController;
 use App\Http\Controllers\StoreModerationController;
 use App\Http\Controllers\StoreModerationQueueController;
@@ -240,6 +241,15 @@ Route::middleware(['auth.api:sanctum', 'role:tenant'])
         Route::get('/organizations/{organization}/wallet', [OrganizationWalletController::class, 'show']);
         Route::get('/organizations/{organization}/wallet/movements', [OrganizationWalletController::class, 'movements']);
         Route::post('/organizations/{organization}/wallet/top-ups', [OrganizationWalletController::class, 'topUp']);
+    });
+
+// member-spending-limit ML-15: same path-based shape as the wallet routes above,
+// no `org.context`. {user} follows the same int64-safe pattern.
+Route::middleware(['auth.api:sanctum', 'role:tenant'])
+    ->where(['organization' => '[1-9][0-9]{0,17}', 'user' => '[1-9][0-9]{0,17}'])
+    ->group(function () {
+        Route::get('/organizations/{organization}/spending-limits', [SpendingLimitController::class, 'index']);
+        Route::put('/organizations/{organization}/spending-limits/{user}', [SpendingLimitController::class, 'update']);
     });
 
 Route::middleware(['auth.api:sanctum', 'role:admin'])->group(function () {
