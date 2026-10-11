@@ -401,20 +401,22 @@ class TenantReservationIndexTest extends TestCase
     }
 
     /**
-     * D6/D13/D15: a non-creator member sees the row but gets no cancel
-     * action and no receipt -- server-authoritative gating, not just a web
-     * concern.
+     * HUE-06 OR-18: in an org context the cancel flags follow the caller's
+     * live role, not authorship. The receipt stays creator-only (D13).
      */
-    public function test_non_creator_gets_can_be_cancelled_false_and_null_receipt_even_if_eligible()
+    private function orgRow(OrganizationRole $viewerRole, bool $viewerIsCreator, array $overrides = []): array
     {
         [$author, $authorTenant] = $this->tenant();
-        $viewer = User::factory()->create(['role' => 'tenant']);
-        Tenants::factory()->create(['user_id' => $viewer->id]);
+        $viewer = $author;
+        if (! $viewerIsCreator) {
+            $viewer = User::factory()->create(['role' => 'tenant']);
+            Tenants::factory()->create(['user_id' => $viewer->id]);
+        }
         $organization = Organization::factory()
-            ->withMember($author, OrganizationRole::ADMIN)
-            ->withMember($viewer, OrganizationRole::MEMBER)
+            ->withMember($author, $viewerIsCreator ? $viewerRole : OrganizationRole::MEMBER)
+            ->when(! $viewerIsCreator, fn ($factory) => $factory->withMember($viewer, $viewerRole))
             ->create();
-        $reservation = $this->paidReservation($authorTenant, ['organization_id' => $organization->id]);
+        $reservation = $this->paidReservation($authorTenant, ['organization_id' => $organization->id] + $overrides);
         $this->payment($reservation, 'paid');
 
         $item = collect(
@@ -423,8 +425,86 @@ class TenantReservationIndexTest extends TestCase
                 ->json()
         )->firstWhere('id', $reservation->id);
 
-        $this->assertFalse($item['can_be_cancelled']);
+        return [$item, $viewer, $organization, $reservation];
+    }
+
+    public function test_an_admin_who_is_not_the_creator_can_cancel_but_gets_no_receipt()
+    {
+        [$item] = $this->orgRow(OrganizationRole::ADMIN, false);
+
+        $this->assertTrue($item['can_be_cancelled']);
+        $this->assertFalse($item['cancel_requires_admin']);
         $this->assertNull($item['receipt']);
+    }
+
+    public function test_a_member_who_is_not_the_creator_is_told_the_cancel_needs_an_admin()
+    {
+        [$item] = $this->orgRow(OrganizationRole::MEMBER, false);
+
+        $this->assertFalse($item['can_be_cancelled']);
+        $this->assertTrue($item['cancel_requires_admin']);
+        $this->assertNull($item['receipt']);
+    }
+
+    public function test_a_member_who_is_the_creator_can_no_longer_cancel_but_keeps_the_receipt()
+    {
+        [$item] = $this->orgRow(OrganizationRole::MEMBER, true);
+
+        $this->assertFalse($item['can_be_cancelled']);
+        $this->assertTrue($item['cancel_requires_admin']);
+        $this->assertNotNull($item['receipt']);
+    }
+
+    public function test_an_admin_who_is_the_creator_can_cancel()
+    {
+        [$item] = $this->orgRow(OrganizationRole::ADMIN, true);
+
+        $this->assertTrue($item['can_be_cancelled']);
+        $this->assertFalse($item['cancel_requires_admin']);
+    }
+
+    public function test_an_ineligible_org_row_sets_neither_flag_for_anyone()
+    {
+        $started = ['start_date' => today()->toDateString()];
+
+        [$asAdmin] = $this->orgRow(OrganizationRole::ADMIN, false, $started);
+        [$asMember] = $this->orgRow(OrganizationRole::MEMBER, false, $started);
+
+        $this->assertFalse($asAdmin['can_be_cancelled']);
+        $this->assertFalse($asAdmin['cancel_requires_admin']);
+        $this->assertFalse($asMember['can_be_cancelled']);
+        $this->assertFalse($asMember['cancel_requires_admin']);
+    }
+
+    public function test_a_demotion_between_two_listings_flips_the_flags_immediately()
+    {
+        [$before, $viewer, $organization, $reservation] = $this->orgRow(OrganizationRole::ADMIN, false);
+        DB::table('organization_user')
+            ->where('user_id', $viewer->id)
+            ->where('organization_id', $organization->id)
+            ->update(['role' => OrganizationRole::MEMBER->value]);
+
+        $after = collect(
+            $this->actingAs($viewer, 'sanctum')
+                ->getJson('/api/tenant/reservations', ['X-Organization-Id' => (string) $organization->id])
+                ->json()
+        )->firstWhere('id', $reservation->id);
+
+        $this->assertTrue($before['can_be_cancelled']);
+        $this->assertFalse($after['can_be_cancelled']);
+        $this->assertTrue($after['cancel_requires_admin']);
+    }
+
+    public function test_a_personal_row_always_carries_cancel_requires_admin_false()
+    {
+        [$user, $tenant] = $this->tenant();
+        $reservation = $this->paidReservation($tenant);
+
+        $item = collect($this->actingAs($user, 'sanctum')->getJson('/api/tenant/reservations')->json())
+            ->firstWhere('id', $reservation->id);
+
+        $this->assertTrue($item['can_be_cancelled']);
+        $this->assertFalse($item['cancel_requires_admin']);
     }
 
     /**

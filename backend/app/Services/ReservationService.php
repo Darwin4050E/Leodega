@@ -29,6 +29,8 @@ class ReservationService
         private ReservationPricingService $pricingService,
         private WalletService $walletService = new WalletService,
         private SpendingLimitService $spendingLimitService = new SpendingLimitService,
+        private OrganizationReservationEventService $events = new OrganizationReservationEventService,
+        private OrganizationCancellationNotifier $orgNotifier = new OrganizationCancellationNotifier,
     ) {}
 
     /**
@@ -527,7 +529,7 @@ class ReservationService
      */
     public function cancelByTenant(Reservations $reservation, ?string $reason, ?int $actingUserId): Reservations
     {
-        return DB::transaction(function () use ($reservation, $reason, $actingUserId) {
+        $canceled = DB::transaction(function () use ($reservation, $reason, $actingUserId) {
             $locked = Reservations::where('id', $reservation->id)->lockForUpdate()->firstOrFail();
 
             if (! $locked->isCancellableByTenant()) {
@@ -546,24 +548,42 @@ class ReservationService
 
             $this->creditOrganizationRefund($locked, $refundAmount);
 
-            $locked->load('storeRooms.landlord.user');
-            $room = $locked->storeRooms;
-            if ($room && $room->landlord && $room->landlord->user) {
-                NotificationService::send(
-                    $actingUserId,
-                    $room->landlord->user->id,
-                    NotificationType::RESERVATION_CANCELED,
-                    'Reserva cancelada por el cliente',
-                    'El cliente canceló su reserva. Revisa el reembolso correspondiente.',
-                    [
-                        'reservation_id' => $locked->id,
-                        'store_room_id' => $locked->store_room_id,
-                    ]
-                );
+            if ($locked->organization_id !== null) {
+                $this->events->recordCancelled($locked, $actingUserId, $reason);
+                $this->orgNotifier->notifyInApp($locked, $actingUserId);
+            } else {
+                $locked->load('storeRooms.landlord.user');
+                $room = $locked->storeRooms;
+                if ($room && $room->landlord && $room->landlord->user) {
+                    NotificationService::send(
+                        $actingUserId,
+                        $room->landlord->user->id,
+                        NotificationType::RESERVATION_CANCELED,
+                        'Reserva cancelada por el cliente',
+                        'El cliente canceló su reserva. Revisa el reembolso correspondiente.',
+                        [
+                            'reservation_id' => $locked->id,
+                            'store_room_id' => $locked->store_room_id,
+                        ]
+                    );
+                }
             }
 
             return $locked->load(['storeRooms', 'tenants.user']);
         });
+
+        if ($canceled->organization_id !== null) {
+            try {
+                $this->orgNotifier->emailCreator($canceled, $actingUserId);
+            } catch (\Throwable $e) {
+                Log::error('Failed to send organization reservation cancellation email', [
+                    'reservation_id' => $canceled->id,
+                    'error' => $e->getMessage(),
+                ]);
+            }
+        }
+
+        return $canceled;
     }
 
     private function assertCancellableByLandlord(Reservations $reservation): void
@@ -630,12 +650,31 @@ class ReservationService
      */
     public function previewRefund(Reservations $reservation): string
     {
+        return $this->previewBreakdown($reservation)['refund_amount'];
+    }
+
+    /**
+     * HUE-06 OW-8: total, refund and penalty for the cancel modal. Penalty is
+     * derived in integer cents (never stored), so refund + penalty = total.
+     * An unpaid legacy pending reservation previews 0.00 across the board.
+     *
+     * @return array{total_amount: string, refund_amount: string, penalty_amount: string}
+     */
+    public function previewBreakdown(Reservations $reservation): array
+    {
         if (! $reservation->isCancellableByTenant()) {
             throw new ReservationConflictException(
                 'Esta reserva no puede cancelarse: ya fue cancelada, ya inició, o no existe.'
             );
         }
 
-        return $this->computeRefund($reservation);
+        $refund = $this->computeRefund($reservation);
+        $totalCents = $reservation->status === 'confirmed' ? Money::toCents((string) $reservation->total_mount) : 0;
+
+        return [
+            'total_amount' => Money::fromCents($totalCents),
+            'refund_amount' => $refund,
+            'penalty_amount' => Money::fromCents($totalCents - Money::toCents($refund)),
+        ];
     }
 }

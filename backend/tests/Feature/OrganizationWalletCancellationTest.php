@@ -34,6 +34,8 @@ class OrganizationWalletCancellationTest extends TestCase
 
     private User $creator;
 
+    private User $admin;
+
     private Organization $organization;
 
     private User $gestor;
@@ -46,9 +48,12 @@ class OrganizationWalletCancellationTest extends TestCase
 
         $this->creator = User::factory()->create(['role' => 'tenant']);
         Tenants::factory()->create(['user_id' => $this->creator->id]);
+        $this->admin = User::factory()->create(['role' => 'tenant']);
+        Tenants::factory()->create(['user_id' => $this->admin->id]);
         $this->organization = Organization::factory()
             ->withBalance('1000.00')
             ->withMember($this->creator, OrganizationRole::MEMBER)
+            ->withMember($this->admin, OrganizationRole::ADMIN)
             ->create();
         $this->gestor = User::factory()->create(['role' => 'landlord']);
         Landlords::factory()->create(['user_id' => $this->gestor->id]);
@@ -92,8 +97,16 @@ class OrganizationWalletCancellationTest extends TestCase
 
     private function tenantCancel(Reservations $reservation, ?User $as = null)
     {
-        return $this->actingAs($as ?? $this->creator, 'sanctum')
+        return $this->actingAs($as ?? $this->admin, 'sanctum')
             ->patchJson("/api/tenant/reservations/{$reservation->id}/cancel", ['reason' => 'Ya no la necesito']);
+    }
+
+    private function movementsFor(User $user): array
+    {
+        return $this->actingAs($user, 'sanctum')
+            ->getJson("/api/organizations/{$this->organization->id}/wallet/movements")
+            ->assertOk()
+            ->json();
     }
 
     private function gestorCancel(Reservations $reservation)
@@ -112,7 +125,7 @@ class OrganizationWalletCancellationTest extends TestCase
         return $this->organization->fresh()->wallet_balance;
     }
 
-    public function test_the_creator_cancel_credits_the_tiered_refund_to_the_wallet()
+    public function test_an_admin_cancel_credits_the_tiered_refund_to_the_wallet()
     {
         $reservation = $this->paidReservation('100.00', 'moderada');
         $this->assertSame('900.00', $this->balance());
@@ -126,6 +139,18 @@ class OrganizationWalletCancellationTest extends TestCase
         $this->assertSame($reservation->id, $refund->reservation_id);
         $this->assertSame('950.00', $this->balance());
         $this->assertDatabaseHas('reservations', ['id' => $reservation->id, 'status' => 'canceled', 'refund_amount' => '50.00']);
+        $this->assertSame('50.00', Money::fromCents(Money::toCents('100.00') - Money::toCents($refund->amount)));
+    }
+
+    public function test_the_creator_member_cannot_cancel_and_nothing_is_credited()
+    {
+        $reservation = $this->paidReservation('100.00', 'moderada');
+
+        $this->tenantCancel($reservation, $this->creator)->assertStatus(403);
+
+        $this->assertSame('confirmed', $reservation->fresh()->status);
+        $this->assertCount(0, $this->refunds());
+        $this->assertSame('900.00', $this->balance());
     }
 
     public function test_a_full_tier_refund_returns_the_whole_amount()
@@ -146,14 +171,19 @@ class OrganizationWalletCancellationTest extends TestCase
 
         $this->assertCount(0, $this->refunds());
         $this->assertSame('900.00', $this->balance());
-        $this->assertDatabaseHas('reservations', ['id' => $reservation->id, 'status' => 'canceled', 'refund_amount' => '0.00']);
+        $this->assertDatabaseHas('reservations', [
+            'id' => $reservation->id,
+            'status' => 'canceled',
+            'cancelation_reason' => 'Ya no la necesito',
+            'refund_amount' => '0.00',
+        ]);
     }
 
     public function test_the_preview_amount_equals_the_credited_amount()
     {
         $reservation = $this->paidReservation('100.00', 'moderada');
 
-        $preview = $this->actingAs($this->creator, 'sanctum')
+        $preview = $this->actingAs($this->admin, 'sanctum')
             ->getJson("/api/tenant/reservations/{$reservation->id}/cancellation-preview")
             ->assertOk()
             ->json('refund_amount');
@@ -191,7 +221,7 @@ class OrganizationWalletCancellationTest extends TestCase
             'payment_state' => 'paid',
         ]);
 
-        $this->tenantCancel($personal)->assertOk();
+        $this->tenantCancel($personal, $this->creator)->assertOk();
 
         $this->assertSame(0, OrganizationWalletMovement::count());
         $this->assertSame('1000.00', $this->balance());
@@ -241,18 +271,58 @@ class OrganizationWalletCancellationTest extends TestCase
         $this->assertSame('950.00', $this->balance());
     }
 
-    public function test_another_org_admin_cannot_cancel_the_creators_reservation()
+    public function test_another_org_admin_can_cancel_the_creators_reservation()
     {
         $reservation = $this->paidReservation('100.00', 'moderada');
         $admin = User::factory()->create(['role' => 'tenant']);
         Tenants::factory()->create(['user_id' => $admin->id]);
         $this->organization->users()->attach($admin->id, ['role' => OrganizationRole::ADMIN->value]);
 
-        $this->tenantCancel($reservation, $admin)->assertStatus(403);
+        $this->tenantCancel($reservation, $admin)->assertOk();
 
-        $this->assertSame('confirmed', $reservation->fresh()->status);
-        $this->assertCount(0, $this->refunds());
-        $this->assertSame('900.00', $this->balance());
+        $this->assertSame('canceled', $reservation->fresh()->status);
+        $refund = $this->refunds()->sole();
+        $this->assertSame($this->creator->id, $refund->user_id);
+        $this->assertSame('50.00', $refund->amount);
+        $this->assertSame('950.00', $this->balance());
+    }
+
+    public function test_the_admin_own_movements_are_unchanged_and_the_creator_sees_the_refund_alone()
+    {
+        $reservation = $this->paidReservation('100.00', 'moderada');
+        $peer = User::factory()->create(['role' => 'tenant']);
+        Tenants::factory()->create(['user_id' => $peer->id]);
+        $this->organization->users()->attach($peer->id, ['role' => OrganizationRole::MEMBER->value]);
+
+        $this->tenantCancel($reservation)->assertOk();
+
+        $this->assertSame(0, OrganizationWalletMovement::where('user_id', $this->admin->id)->count());
+        $forCreator = $this->movementsFor($this->creator);
+        $this->assertContains('reembolso', array_column($forCreator, 'type'));
+        $this->assertSame([], array_column($this->movementsFor($peer), 'type'));
+    }
+
+    public function test_an_admin_cancelling_own_reservation_is_the_refund_actor()
+    {
+        $adminTenantId = $this->admin->tenant->id;
+        $reservation = $this->paidReservation('100.00', 'moderada', ['tenant_id' => $adminTenantId]);
+
+        $this->tenantCancel($reservation)->assertOk();
+
+        $this->assertSame($this->admin->id, $this->refunds()->sole()->user_id);
+    }
+
+    public function test_the_refund_is_credited_to_the_org_even_when_the_creator_left()
+    {
+        $reservation = $this->paidReservation('100.00', 'moderada');
+        $this->organization->users()->detach($this->creator->id);
+
+        $this->tenantCancel($reservation)->assertOk();
+
+        $refund = $this->refunds()->sole();
+        $this->assertSame($this->creator->id, $refund->user_id);
+        $this->assertSame('50.00', $refund->amount);
+        $this->assertSame('950.00', $this->balance());
     }
 
     public function test_the_gestor_cancel_credits_the_full_amount_attributed_to_the_creator()

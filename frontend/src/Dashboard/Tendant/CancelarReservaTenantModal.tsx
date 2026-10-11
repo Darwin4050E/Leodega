@@ -3,12 +3,16 @@ import { useEffect, useState } from "react";
 import {
   cancelReservationAsTenant,
   getCancellationPreview,
+  type CancellationPreview,
   type TenantReservation,
 } from "../../services/reservations";
 import { asApiError } from "../../api/errors";
 import { formatUSD } from "../../utils/money";
 import { notifyWalletChanged } from "../../utils/walletEvents";
 import { formatReservationCode } from "../../utils/reservationCode";
+import CancelReasonField from "./CancelReasonField";
+import RefundBreakdown from "./RefundBreakdown";
+import { REASON_MIN, reasonLength } from "./cancelReason";
 
 interface CancelarReservaTenantModalProps {
   reservation: TenantReservation;
@@ -33,6 +37,10 @@ const STALE_MESSAGE = "Esta reserva ya no puede cancelarse.";
  * preview line inserted between the body text and the button row, fetched
  * on mount (pattern ref: CancelarReservaModal.tsx's getCancellationRate()
  * effect, frontend/src/Dashboard/GestorReservas/CancelarReservaModal.tsx).
+ *
+ * HUE-06: for an org reservation (admin-only, enforced server-side) the modal
+ * adds a required reason field and the three-line refund box; the personal
+ * path is unchanged.
  */
 const CancelarReservaTenantModal = ({
   reservation,
@@ -41,13 +49,20 @@ const CancelarReservaTenantModal = ({
   onNeedsRefresh,
 }: CancelarReservaTenantModalProps) => {
   const [previewLoading, setPreviewLoading] = useState(true);
-  const [refundAmount, setRefundAmount] = useState<string | null>(null);
+  const [preview, setPreview] = useState<CancellationPreview | null>(null);
   const [previewError, setPreviewError] = useState<string>("");
   const [previewStale, setPreviewStale] = useState(false);
 
   const [submitting, setSubmitting] = useState(false);
   const [confirmError, setConfirmError] = useState<string>("");
   const [confirmStale, setConfirmStale] = useState(false);
+
+  const [reason, setReason] = useState("");
+  const [reasonTouched, setReasonTouched] = useState(false);
+  const [reasonError, setReasonError] = useState("");
+
+  const organization = reservation.organization;
+  const isOrg = Boolean(organization);
 
   const fetchPreview = () => {
     setPreviewLoading(true);
@@ -56,7 +71,7 @@ const CancelarReservaTenantModal = ({
 
     getCancellationPreview(reservation.id)
       .then((res) => {
-        setRefundAmount(res.data.refund_amount);
+        setPreview(res.data);
       })
       .catch((error) => {
         const apiError = asApiError(error);
@@ -79,7 +94,16 @@ const CancelarReservaTenantModal = ({
   const title = reservation.store_rooms?.title ?? "Bodega";
   const code = formatReservationCode(reservation.id);
 
-  const canConfirm = !previewLoading && !previewStale && !previewError && refundAmount !== null && !submitting;
+  const refundAmount = preview?.refund_amount ?? null;
+  const reasonReady = !isOrg || reasonLength(reason) >= REASON_MIN;
+
+  const canConfirm =
+    !previewLoading && !previewStale && !previewError && refundAmount !== null && !submitting && reasonReady;
+
+  const handleReasonChange = (value: string) => {
+    setReason(value);
+    setReasonError("");
+  };
 
   const handleConfirm = async () => {
     if (!canConfirm) return;
@@ -87,21 +111,28 @@ const CancelarReservaTenantModal = ({
     setSubmitting(true);
     setConfirmError("");
     setConfirmStale(false);
+    setReasonError("");
 
     try {
-      const response = await cancelReservationAsTenant(reservation.id);
+      const response = isOrg
+        ? await cancelReservationAsTenant(reservation.id, reason.trim())
+        : await cancelReservationAsTenant(reservation.id);
       const recordedAmount = response.data.reservation.refund_amount ?? refundAmount ?? "0.00";
       // OW-8: an org refund is credited to the wallet in the same transaction.
-      if (reservation.organization) notifyWalletChanged();
+      if (isOrg) notifyWalletChanged();
       onCancelled(String(recordedAmount));
       onClose();
     } catch (error) {
       const apiError = asApiError(error);
       const status = apiError.response?.status;
 
+      const serverReasonError = apiError.response?.data?.errors?.reason?.[0];
+
       if (status === 409) {
         setConfirmStale(true);
         setConfirmError(apiError.response?.data?.message || STALE_MESSAGE);
+      } else if (status === 422 && isOrg && serverReasonError) {
+        setReasonError(serverReasonError);
       } else if (status === 404) {
         onNeedsRefresh();
       } else {
@@ -128,11 +159,24 @@ const CancelarReservaTenantModal = ({
         className="bg-white rounded-2xl w-full max-w-[400px] shadow-2xl overflow-hidden"
       >
         <div className="px-6 pt-6">
-          <h4 className="text-lg font-bold text-gray-900 m-0 mb-2">Cancelar reserva</h4>
-          <p className="text-sm text-gray-500 m-0 leading-relaxed">
-            ¿Seguro que deseas cancelar tu reserva de{" "}
-            <b className="text-gray-900">{title}</b> ({code})? Esta acción no se puede deshacer.
-          </p>
+          {organization ? (
+            <>
+              <h4 className="text-lg font-bold text-gray-900 m-0 mb-2">Cancelar reserva de la organización</h4>
+              <p className="text-sm text-gray-500 m-0 leading-relaxed">
+                Vas a cancelar <b className="text-gray-900">{title}</b> ({code})
+                {reservation.creator_name ? `, reservada por ${reservation.creator_name}` : ""}. Esta acción no se
+                puede deshacer.
+              </p>
+            </>
+          ) : (
+            <>
+              <h4 className="text-lg font-bold text-gray-900 m-0 mb-2">Cancelar reserva</h4>
+              <p className="text-sm text-gray-500 m-0 leading-relaxed">
+                ¿Seguro que deseas cancelar tu reserva de{" "}
+                <b className="text-gray-900">{title}</b> ({code})? Esta acción no se puede deshacer.
+              </p>
+            </>
+          )}
         </div>
 
         <div className="px-6 pt-4">
@@ -154,20 +198,32 @@ const CancelarReservaTenantModal = ({
             </p>
           )}
 
-          {!previewLoading && !previewStale && !previewError && refundAmount !== null && (
+          {!previewLoading && !previewStale && !previewError && preview && organization && (
+            <RefundBreakdown
+              totalAmount={preview.total_amount}
+              penaltyAmount={preview.penalty_amount}
+              refundAmount={preview.refund_amount}
+              organizationName={organization.name}
+            />
+          )}
+
+          {!previewLoading && !previewStale && !previewError && refundAmount !== null && !organization && (
             <p className="text-sm text-gray-700 m-0">
-              {reservation.organization ? (
-                <>
-                  El reembolso de <b className="text-gray-900">{formatUSD(refundAmount, { suffix: true })}</b> se
-                  acreditará al saldo de {reservation.organization.name}.
-                </>
-              ) : (
-                <>
-                  Recibirás un reembolso de{" "}
-                  <b className="text-gray-900">{formatUSD(refundAmount, { suffix: true })}</b>.
-                </>
-              )}
+              Recibirás un reembolso de{" "}
+              <b className="text-gray-900">{formatUSD(refundAmount, { suffix: true })}</b>.
             </p>
+          )}
+
+          {isOrg && !previewStale && (
+            <div className="mt-4">
+              <CancelReasonField
+                value={reason}
+                touched={reasonTouched}
+                serverError={reasonError}
+                onChange={handleReasonChange}
+                onBlur={() => setReasonTouched(true)}
+              />
+            </div>
           )}
 
           {!previewLoading && !previewStale && confirmError && !confirmStale && (
@@ -200,7 +256,7 @@ const CancelarReservaTenantModal = ({
                 canConfirm ? "bg-[#FEE2E2] text-[#DC2626]" : "bg-gray-100 text-gray-400 cursor-not-allowed"
               }`}
             >
-              {submitting ? "Cancelando..." : "Sí, cancelar"}
+              {submitting ? "Cancelando..." : isOrg ? "Cancelar reserva" : "Sí, cancelar"}
             </button>
           )}
         </div>

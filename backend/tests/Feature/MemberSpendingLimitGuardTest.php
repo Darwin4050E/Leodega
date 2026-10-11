@@ -116,6 +116,12 @@ class MemberSpendingLimitGuardTest extends TestCase
         return $this->actingAs($user, 'sanctum')->patchJson("/api/tenant/reservations/{$reservationId}/cancel", ['reason' => 'Ya no la necesito']);
     }
 
+    /** HUE-06: only an organization admin can cancel an organization reservation. */
+    private function adminCancel(Organization $organization, string $reservationId)
+    {
+        return $this->tenantCancel($this->member($organization, null, OrganizationRole::ADMIN), $reservationId);
+    }
+
     // -- ML-3: the rule --
 
     public function test_an_unlimited_member_books_any_total()
@@ -321,7 +327,7 @@ class MemberSpendingLimitGuardTest extends TestCase
         $id = $this->bookSoon($user, $organization, '800.00', 'flexible');
         $this->assertLimitRejected($this->bookLaterInOctober($user, $organization, '300.00'));
 
-        $this->tenantCancel($user, $id)->assertOk();
+        $this->adminCancel($organization, $id)->assertOk();
 
         $this->bookLaterInOctober($user, $organization, '1000.00')->assertStatus(201);
     }
@@ -332,7 +338,7 @@ class MemberSpendingLimitGuardTest extends TestCase
         $user = $this->member($organization, '1000.00');
         $id = $this->bookSoon($user, $organization, '800.00', 'moderada');
 
-        $this->tenantCancel($user, $id)->assertOk();
+        $this->adminCancel($organization, $id)->assertOk();
 
         $this->assertLimitRejected($this->bookLaterInOctober($user, $organization, '600.01'));
         $this->bookLaterInOctober($user, $organization, '600.00')->assertStatus(201);
@@ -344,9 +350,23 @@ class MemberSpendingLimitGuardTest extends TestCase
         $user = $this->member($organization, '1000.00');
         $id = $this->bookSoon($user, $organization, '800.00', 'estricta');
 
-        $this->tenantCancel($user, $id)->assertOk();
+        $this->adminCancel($organization, $id)->assertOk();
 
         $this->assertLimitRejected($this->bookLaterInOctober($user, $organization, '300.00'));
+    }
+
+    public function test_an_admin_cancel_frees_the_creators_allowance_and_leaves_the_admins_spend_alone()
+    {
+        $organization = $this->org();
+        $creator = $this->member($organization, '1000.00');
+        $admin = $this->member($organization, '1000.00', OrganizationRole::ADMIN);
+        $creatorId = $this->bookSoon($creator, $organization, '800.00', 'moderada');
+        $this->bookSoon($admin, $organization, '800.00', 'estricta');
+
+        $this->tenantCancel($admin, $creatorId)->assertOk();
+
+        $this->bookLaterInOctober($creator, $organization, '600.00')->assertStatus(201);
+        $this->assertLimitRejected($this->bookLaterInOctober($admin, $organization, '300.00'));
     }
 
     public function test_a_gestor_cancel_frees_the_whole_amount_of_the_creator_only()
@@ -375,7 +395,7 @@ class MemberSpendingLimitGuardTest extends TestCase
         $this->bookLaterInOctober($user, $organization, '500.00')->assertStatus(201);
         $novemberId = (string) $this->bookOn($user, $this->room('500.00'), $organization, '2026-11-05')->assertStatus(201)->json('reservation.id');
 
-        $this->tenantCancel($user, $novemberId)->assertOk();
+        $this->adminCancel($organization, $novemberId)->assertOk();
 
         $this->assertLimitRejected($this->bookLaterInOctober($user, $organization, '600.00'));
         $this->bookOn($user, $this->room('1000.00'), $organization, '2026-11-10')->assertStatus(201);
@@ -396,7 +416,7 @@ class MemberSpendingLimitGuardTest extends TestCase
         $this->bookOn($user, $this->room('100.00'), $organization, '2026-11-05')->assertStatus(201);
 
         // A refund brings the month back under the limit: 800 - 400 = 400, so 100 fits exactly.
-        $this->tenantCancel($user, $id)->assertOk();
+        $this->adminCancel($organization, $id)->assertOk();
         $this->bookLaterInOctober($user, $organization, '100.00')->assertStatus(201);
     }
 }

@@ -2,6 +2,8 @@
 
 namespace App\Http\Controllers;
 
+use App\Enums\OrganizationRole;
+use App\Http\Requests\CancellationPreviewRequest;
 use App\Http\Requests\CancelReservationAsTenantRequest;
 use App\Http\Requests\CancelReservationRequest;
 use App\Http\Requests\StoreReservationRequest;
@@ -225,9 +227,10 @@ class ReservationsController extends Controller
     }
 
     /**
-     * sdd/tenant-self-cancel: the tenant who owns a reservation cancels it
-     * themselves. Mirrors cancel()'s shape (policy check, then delegate to
-     * the service), keyed on ownership instead of landlord identity.
+     * sdd/tenant-self-cancel: the tenant who owns a personal reservation, or an
+     * admin of the reservation's organization, cancels it. Authorization runs
+     * in CancelReservationAsTenantRequest (before validation), then the work
+     * is delegated to the service.
      */
     public function cancelAsTenant(
         CancelReservationAsTenantRequest $request,
@@ -235,8 +238,6 @@ class ReservationsController extends Controller
         ReservationService $reservationService
     ) {
         $data = $request->validated();
-
-        Gate::authorize('cancelAsTenant', $reservation);
 
         $reservation = $reservationService->cancelByTenant($reservation, $data['reason'] ?? null, auth()->id());
 
@@ -258,22 +259,18 @@ class ReservationsController extends Controller
     /**
      * sdd/tenant-reservations-screen: read-only refund preview, fetched by
      * the cancel modal on open. Reuses cancelAsTenant()'s exact
-     * authorization gate (ReservationsPolicy::cancelAsTenant, ownership
-     * only) and delegates the eligibility check and money math to
+     * authorization (ReservationsPolicy::cancelAsTenant, applied by the
+     * request) and delegates the eligibility check and money math to
      * ReservationService::previewRefund(), which shares its private
      * computeRefund() with cancelByTenant() -- the two call sites can
      * never disagree (design decision #1).
      */
-    public function cancellationPreview(Reservations $reservation, ReservationService $reservationService)
+    public function cancellationPreview(CancellationPreviewRequest $request, Reservations $reservation, ReservationService $reservationService)
     {
-        Gate::authorize('cancelAsTenant', $reservation);
-
-        $refundAmount = $reservationService->previewRefund($reservation);
-
-        return response()->json([
-            'can_be_cancelled' => true,
-            'refund_amount' => $refundAmount,
-        ]);
+        return response()->json(array_merge(
+            ['can_be_cancelled' => true],
+            $reservationService->previewBreakdown($reservation),
+        ));
     }
 
     /**
@@ -294,7 +291,9 @@ class ReservationsController extends Controller
     {
         $user = $request->user();
         $tenant = Tenants::where('user_id', $user->id)->firstOrFail();
-        $organization = ActiveContext::fromRequest($request)->organization;
+        $context = ActiveContext::fromRequest($request);
+        $organization = $context->organization;
+        $isAdmin = $context->role === OrganizationRole::ADMIN;
 
         $scope = $organization
             ? Reservations::where('organization_id', $organization->id)
@@ -317,9 +316,11 @@ class ReservationsController extends Controller
 
         $items = $query->orderBy('start_date')->get();
 
-        $items->each(function (Reservations $item) use ($tenant, $organization) {
+        $items->each(function (Reservations $item) use ($tenant, $organization, $isAdmin) {
             $isCreator = $item->tenant_id === $tenant->id;
-            $item->can_be_cancelled = $isCreator && $item->isCancellableByTenant();
+            $eligible = $item->isCancellableByTenant();
+            $item->can_be_cancelled = $organization ? $isAdmin && $eligible : $isCreator && $eligible;
+            $item->cancel_requires_admin = $organization && ! $isAdmin && $eligible;
             $item->receipt = $isCreator ? ReservationReceipt::build($item) : null;
 
             if ($organization) {

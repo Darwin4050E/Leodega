@@ -5,10 +5,13 @@ import HeaderTendant from "../../Components/HeaderTendant";
 import { getTenantReservations, type TenantReservation } from "../../services/reservations";
 import { useActiveContext } from "../../context/useActiveContext";
 import { asApiError } from "../../api/errors";
+import { formatUSD } from "../../utils/money";
 import { deriveTenantTab, type TenantTab } from "../../utils/reservationVigencia";
 import ReservationCard from "./ReservationCard";
 import CancelarReservaTenantModal from "./CancelarReservaTenantModal";
 import ComprobanteReservaModal from "./ComprobanteReservaModal";
+
+const TOAST_DURATION_MS = 5000;
 
 const RES_TABS: { key: TenantTab; label: string }[] = [
   { key: "activa", label: "Activas" },
@@ -37,6 +40,7 @@ const MisReservas = () => {
   const [tab, setTab] = useState<TenantTab>("activa");
   const [cancelingReservation, setCancelingReservation] = useState<TenantReservation | null>(null);
   const [receiptReservation, setReceiptReservation] = useState<TenantReservation | null>(null);
+  const [toast, setToast] = useState("");
 
   // OR-WS10: a response from a context the user has already switched away
   // from must never overwrite the current one. `requestId` is bumped on
@@ -69,6 +73,12 @@ const MisReservas = () => {
     load();
   }, [contextKey]);
 
+  useEffect(() => {
+    if (!toast) return;
+    const timer = setTimeout(() => setToast(""), TOAST_DURATION_MS);
+    return () => clearTimeout(timer);
+  }, [toast]);
+
   const buckets = useMemo(() => {
     const grouped: Record<TenantTab, TenantReservation[]> = {
       activa: [],
@@ -90,7 +100,16 @@ const MisReservas = () => {
   const list = buckets[tab];
   const activeTabLabel = RES_TABS.find((t) => t.key === tab)?.label.toLowerCase() ?? "";
 
-  const handleCancelled = () => {
+  const handleCancelled = (refundAmount: string) => {
+    // OR-W10: only an org cancel confirms where the money went.
+    if (cancelingReservation?.organization) {
+      const hasRefund = Math.round(Number(refundAmount) * 100) > 0;
+      setToast(
+        hasRefund
+          ? `Reserva cancelada · ${formatUSD(refundAmount, { fixed: true })} reembolsados a la billetera`
+          : "Reserva cancelada"
+      );
+    }
     setCancelingReservation(null);
     setTab("cancelada");
     load();
@@ -183,6 +202,15 @@ const MisReservas = () => {
           </div>
         )}
       </div>
+
+      {toast && (
+        <div
+          role="status"
+          className="fixed bottom-6 left-1/2 -translate-x-1/2 z-[2300] bg-gray-900 text-white text-sm font-medium px-5 py-3 rounded-lg shadow-lg"
+        >
+          {toast}
+        </div>
+      )}
 
       {cancelingReservation && (
         <CancelarReservaTenantModal

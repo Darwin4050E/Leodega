@@ -2,6 +2,7 @@
 
 namespace App\Policies;
 
+use App\Enums\OrganizationRole;
 use App\Models\Landlords;
 use App\Models\Reservations;
 use App\Models\User;
@@ -31,14 +32,18 @@ class ReservationsPolicy
     }
 
     /**
-     * sdd/tenant-self-cancel: ownership-only check for the tenant-initiated
-     * cancel path, mirroring PaymentsPolicy::create's idiom exactly
-     * (`backend/app/Policies/PaymentsPolicy.php:16-21`). Identity only --
-     * eligibility (dates, current status) is ReservationService::
-     * cancelByTenant()'s job, not this policy's.
+     * sdd/tenant-self-cancel: identity-only check for the tenant-initiated
+     * cancel and preview path (eligibility is ReservationService's job).
+     * HUE-06 OR-13/OR-17: an organization reservation is decided by the
+     * caller's live pivot role in THAT organization (admin only, never the
+     * header or the creator); a personal one stays owner-only.
      */
     public function cancelAsTenant(User $user, Reservations $reservation): bool
     {
+        if ($reservation->organization_id !== null) {
+            return $user->roleInOrganization($reservation->organization_id) === OrganizationRole::ADMIN;
+        }
+
         return $this->ownsAsTenant($user, $reservation);
     }
 
