@@ -342,6 +342,34 @@ class ActiveOrganizationContextTest extends TestCase
     }
 
     /**
+     * HUE-06 OR-S53: cancel and preview decide access from the reservation's
+     * own organization, so they must exist (the allow-list above cannot pass
+     * vacuously) and must not carry `org.context`.
+     */
+    public function test_the_tenant_cancel_and_preview_routes_exist_without_org_context()
+    {
+        $routes = collect(Route::getRoutes()->getRoutes())
+            ->filter(fn ($route) => in_array($route->uri(), [
+                'api/tenant/reservations/{reservation}/cancel',
+                'api/tenant/reservations/{reservation}/cancellation-preview',
+            ], true))
+            ->keyBy(fn ($route) => $route->methods()[0].' '.$route->uri());
+
+        $this->assertSame(
+            [
+                'GET api/tenant/reservations/{reservation}/cancellation-preview',
+                'PATCH api/tenant/reservations/{reservation}/cancel',
+            ],
+            $routes->keys()->sort()->values()->all(),
+        );
+
+        foreach ($routes as $route) {
+            $this->assertNotContains('org.context', $route->gatherMiddleware());
+            $this->assertContains('auth.api:sanctum', $route->gatherMiddleware());
+        }
+    }
+
+    /**
      * org-wallet OW-12/OW-S41: the wallet routes address the organization in
      * the path and check membership themselves, so they must exist (the
      * allow-list test above cannot pass vacuously) and must not carry

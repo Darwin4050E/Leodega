@@ -2,24 +2,38 @@
 
 namespace App\Http\Requests;
 
+use App\Http\Requests\Concerns\AuthorizesTenantReservationCancellation;
 use Illuminate\Foundation\Http\FormRequest;
 
 /**
- * sdd/tenant-self-cancel reconciliation #3: `reason` is optional, diverging
- * from the landlord path's `required|min:10` -- the prototype's tenant-cancel
- * modal (`ResCancelModal`) collects no reason text at all.
+ * sdd/tenant-self-cancel reconciliation #3: `reason` is optional for a
+ * personal reservation, diverging from the landlord path's `required|min:10`.
+ * HUE-06 makes it mandatory for an organization reservation (see rules()).
  */
 class CancelReservationAsTenantRequest extends FormRequest
 {
-    public function authorize(): bool
-    {
-        return true;
-    }
+    use AuthorizesTenantReservationCancellation;
+
+    public const REASON_MIN_MESSAGE = 'El motivo debe tener al menos 10 caracteres.';
+
+    public const REASON_MAX_MESSAGE = 'El motivo no puede superar los 200 caracteres.';
 
     public function rules(): array
     {
+        if ($this->route('reservation')->organization_id === null) {
+            return ['reason' => ['nullable', 'string']];
+        }
+
+        return ['reason' => ['required', 'string', 'min:10', 'max:200']];
+    }
+
+    public function messages(): array
+    {
         return [
-            'reason' => ['nullable', 'string'],
+            'reason.required' => self::REASON_MIN_MESSAGE,
+            'reason.string' => self::REASON_MIN_MESSAGE,
+            'reason.min' => self::REASON_MIN_MESSAGE,
+            'reason.max' => self::REASON_MAX_MESSAGE,
         ];
     }
 }

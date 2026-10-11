@@ -2,10 +2,12 @@
 
 namespace App\Models;
 
+use App\Enums\OrganizationRole;
 use App\Notifications\ResetPasswordNotification;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Foundation\Auth\User as Authenticatable;
 use Illuminate\Notifications\Notifiable;
+use Illuminate\Support\Facades\DB;
 use Laravel\Sanctum\HasApiTokens;
 
 class User extends Authenticatable
@@ -98,5 +100,19 @@ class User extends Authenticatable
     {
         return $this->belongsToMany(Organization::class, 'organization_user')
             ->withPivot('role', 'monthly_limit', 'joined_at');
+    }
+
+    /**
+     * Live pivot role, read on every call (never cached) so a demotion applies
+     * immediately. Null when the user does not belong to the organization.
+     */
+    public function roleInOrganization(int $organizationId): ?OrganizationRole
+    {
+        $role = DB::table('organization_user')
+            ->where('user_id', $this->id)
+            ->where('organization_id', $organizationId)
+            ->value('role');
+
+        return OrganizationRole::tryFrom((string) $role);
     }
 }

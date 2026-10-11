@@ -630,12 +630,31 @@ class ReservationService
      */
     public function previewRefund(Reservations $reservation): string
     {
+        return $this->previewBreakdown($reservation)['refund_amount'];
+    }
+
+    /**
+     * HUE-06 OW-8: total, refund and penalty for the cancel modal. Penalty is
+     * derived in integer cents (never stored), so refund + penalty = total.
+     * An unpaid legacy pending reservation previews 0.00 across the board.
+     *
+     * @return array{total_amount: string, refund_amount: string, penalty_amount: string}
+     */
+    public function previewBreakdown(Reservations $reservation): array
+    {
         if (! $reservation->isCancellableByTenant()) {
             throw new ReservationConflictException(
                 'Esta reserva no puede cancelarse: ya fue cancelada, ya inició, o no existe.'
             );
         }
 
-        return $this->computeRefund($reservation);
+        $refund = $this->computeRefund($reservation);
+        $totalCents = $reservation->status === 'confirmed' ? Money::toCents((string) $reservation->total_mount) : 0;
+
+        return [
+            'total_amount' => Money::fromCents($totalCents),
+            'refund_amount' => $refund,
+            'penalty_amount' => Money::fromCents($totalCents - Money::toCents($refund)),
+        ];
     }
 }
