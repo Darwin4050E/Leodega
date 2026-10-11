@@ -20,6 +20,14 @@ vi.mock('../../Components/WalletTopUpModal', () => ({
   ),
 }));
 
+vi.mock('../../Components/MembersLimitsSection', () => ({
+  default: ({ organizationId, isAdmin }: { organizationId: number; isAdmin: boolean }) => (
+    <div data-testid="members-limits-section" data-is-admin={String(isAdmin)}>
+      {`members-limits-for-${organizationId}`}
+    </div>
+  ),
+}));
+
 import BilleteraOrganizacion from './BilleteraOrganizacion';
 import { notifyWalletChanged } from '../../utils/walletEvents';
 
@@ -162,5 +170,41 @@ describe('BilleteraOrganizacion', () => {
     expect(mockGetOrganizationWallet).not.toHaveBeenCalled();
     expect(mockGetWalletMovements).not.toHaveBeenCalled();
     expect(screen.queryByRole('button', { name: 'Recargar saldo' })).not.toBeInTheDocument();
+  });
+
+  it('ML-W1: renders the members and limits section for the active organization, for an admin and for a member', async () => {
+    const view = render(<BilleteraOrganizacion />);
+    expect(await screen.findByText('members-limits-for-7')).toBeInTheDocument();
+    view.unmount();
+
+    mockUseActiveContext.mockReturnValue(orgContext('member', 9));
+    render(<BilleteraOrganizacion />);
+    expect(await screen.findByText('members-limits-for-9')).toBeInTheDocument();
+  });
+
+  it('ML-WS1/WS2: tells the section whether the active role is admin so it can offer Editar límite', async () => {
+    const view = render(<BilleteraOrganizacion />);
+    expect((await screen.findByTestId('members-limits-section')).dataset.isAdmin).toBe('true');
+    view.unmount();
+
+    mockUseActiveContext.mockReturnValue(orgContext('member'));
+    render(<BilleteraOrganizacion />);
+    expect((await screen.findByTestId('members-limits-section')).dataset.isAdmin).toBe('false');
+  });
+
+  it('ML-W1: places the section below the movements', async () => {
+    render(<BilleteraOrganizacion />);
+
+    const movementsHeading = await screen.findByRole('heading', { name: 'Movimientos' });
+    const section = screen.getByTestId('members-limits-section');
+    expect(movementsHeading.compareDocumentPosition(section) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+  });
+
+  it('ML-WS3: personal mode shows no members section', () => {
+    mockUseActiveContext.mockReturnValue(PERSONAL);
+
+    render(<BilleteraOrganizacion />);
+
+    expect(screen.queryByTestId('members-limits-section')).not.toBeInTheDocument();
   });
 });

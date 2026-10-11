@@ -200,7 +200,11 @@ export default function LeodegaUI() {
 
       if (status === 401) goToLoginForReserve();
       else if (status === 409) setError(RESERVATION_OVERLAP_MESSAGE);
-      else if (status === 422 && err.response?.data?.errors?.wallet) {
+      // ML-W3: checked before the wallet branch so a limit rejection never
+      // raises the recharge CTA, whatever the role.
+      else if (status === 422 && err.response?.data?.errors?.monthly_limit) {
+        setError(err.response.data.errors.monthly_limit[0]);
+      } else if (status === 422 && err.response?.data?.errors?.wallet) {
         setError(err.response.data.errors.wallet[0]);
         setWalletShortage(true);
       } else if (status === 422 && err.response?.data?.errors?.organization) {

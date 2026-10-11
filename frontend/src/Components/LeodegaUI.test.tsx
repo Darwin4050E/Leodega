@@ -1340,6 +1340,72 @@ describe('LeodegaUI organization reservation notice (OR-W1/OR-W2)', () => {
     expect(screen.queryByText(/Pide a un administrador/)).not.toBeInTheDocument();
   });
 
+  const LIMIT_MESSAGE = 'Esta reserva supera tu límite mensual. Pide a un administrador que lo aumente.';
+  const limitError = {
+    response: {
+      status: 422,
+      data: { message: LIMIT_MESSAGE, errors: { monthly_limit: [LIMIT_MESSAGE] } },
+    },
+  };
+
+  it('ML-WS11/OW-WS17: an admin gets the limit message, no Recargar saldo CTA, and the modal stays open', async () => {
+    mockUseActiveContext.mockReturnValue(adminOrgContext());
+    mockCreateReservation.mockRejectedValue(limitError);
+
+    await openModal();
+    await submitDates();
+
+    expect(await screen.findByText(LIMIT_MESSAGE)).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Recargar saldo' })).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Confirmar reserva' })).toBeInTheDocument();
+    expect(screen.getByDisplayValue('2030-01-10')).toBeInTheDocument();
+  });
+
+  it('ML-WS12: a member gets the same limit message and no CTA', async () => {
+    mockUseActiveContext.mockReturnValue(orgContext());
+    mockCreateReservation.mockRejectedValue(limitError);
+
+    await openModal();
+    await submitDates();
+
+    expect(await screen.findByText(LIMIT_MESSAGE)).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Recargar saldo' })).not.toBeInTheDocument();
+  });
+
+  it('ML-WS14: any other 422 keeps the generic dates message', async () => {
+    mockUseActiveContext.mockReturnValue(adminOrgContext());
+    mockCreateReservation.mockRejectedValue({
+      response: { status: 422, data: { errors: { end_date: ['bad'] } } },
+    });
+
+    await openModal();
+    await submitDates();
+
+    expect(await screen.findByText('Revisa las fechas ingresadas.')).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Recargar saldo' })).not.toBeInTheDocument();
+  });
+
+  it('ML-WS15: a wallet shortage followed by a limit rejection drops the CTA, and a retry with other dates works', async () => {
+    mockUseActiveContext.mockReturnValue(adminOrgContext());
+    mockCreateReservation
+      .mockRejectedValueOnce(walletError)
+      .mockRejectedValueOnce(limitError)
+      .mockResolvedValueOnce({ data: { message: 'ok', reservation: orgReservation } });
+
+    await openModal();
+    await submitDates();
+    await screen.findByRole('button', { name: 'Recargar saldo' });
+
+    fireEvent.click(screen.getByRole('button', { name: 'Confirmar reserva' }));
+    expect(await screen.findByText(LIMIT_MESSAGE)).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Recargar saldo' })).not.toBeInTheDocument();
+
+    fireEvent.change(screen.getByDisplayValue('2030-02-10'), { target: { value: '2030-01-20' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Confirmar reserva' }));
+
+    await waitFor(() => expect(screen.getByText('¡Reserva confirmada!')).toBeInTheDocument());
+  });
+
   it('clears the message and the CTA on a new attempt that succeeds', async () => {
     mockUseActiveContext.mockReturnValue(adminOrgContext());
     mockCreateReservation

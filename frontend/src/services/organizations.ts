@@ -78,3 +78,25 @@ export function getWalletMovements(organizationId: number) {
 export function topUpWallet(organizationId: number, amount: string) {
   return api.post<TopUpWalletResponse>(`/organizations/${organizationId}/wallet/top-ups`, { amount });
 }
+
+/** One member row of the spending-limit list; money fields are 2-decimal strings. */
+export interface SpendingLimitRow {
+  user_id: number;
+  name: string;
+  role: "admin" | "member";
+  /** `null` means the member has no limit. */
+  monthly_limit: string | null;
+  /** Consumed in the current calendar month. */
+  spent: string;
+}
+
+// Path-addressed like the wallet routes: the X-Organization-Id header is ignored.
+export function getSpendingLimits(organizationId: number) {
+  return api.get<SpendingLimitRow[]>(`/organizations/${organizationId}/spending-limits`);
+}
+
+export function setSpendingLimit(organizationId: number, userId: number, monthlyLimit: string | null) {
+  return api.put<SpendingLimitRow>(`/organizations/${organizationId}/spending-limits/${userId}`, {
+    monthly_limit: monthlyLimit,
+  });
+}
