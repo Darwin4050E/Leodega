@@ -276,6 +276,27 @@ class OrganizationWalletReservationTest extends TestCase
         $this->assertSame(1, Reservations::count());
     }
 
+    public function test_the_monthly_limit_error_takes_precedence_over_an_insufficient_balance()
+    {
+        $organization = $this->funded('50.00');
+        $user = $this->member($organization);
+        $organization->users()->updateExistingPivot($user->id, ['monthly_limit' => '100.00']);
+        $room = $this->room();
+        StorePrices::where('store_room_id', $room->id)->update(['price' => '200.00']);
+        $start = today()->startOfMonth()->addMonth();
+
+        $this->actingAs($user, 'sanctum')->postJson('/api/reservations', [
+            'store_room_id' => $room->id,
+            'start_date' => $start->toDateString(),
+            'end_date' => $start->copy()->addMonth()->toDateString(),
+        ], ['X-Organization-Id' => (string) $organization->id])
+            ->assertStatus(422)
+            ->assertJsonPath('errors.monthly_limit.0', 'Esta reserva supera tu límite mensual. Pide a un administrador que lo aumente.')
+            ->assertJsonMissingPath('errors.wallet');
+
+        $this->assertNothingBooked($organization, '50.00');
+    }
+
     // -- OW-S6: atomicity --
 
     public function test_a_failure_after_the_debit_rolls_back_the_reservation_the_payment_and_the_movement()

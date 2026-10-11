@@ -28,6 +28,7 @@ class ReservationService
     public function __construct(
         private ReservationPricingService $pricingService,
         private WalletService $walletService = new WalletService,
+        private SpendingLimitService $spendingLimitService = new SpendingLimitService,
     ) {}
 
     /**
@@ -162,7 +163,12 @@ class ReservationService
      * already locked: confirm() takes the reservation lock, then the
      * organization row is locked last. The status re-check on that locked row
      * closes the window in which the org was deactivated after being loaded
-     * (D11), and runs before any money moves.
+     * (D11), and runs before any money moves. The monthly-limit guard then
+     * reads the member's spend under that same row lock, so two bookings
+     * cannot both pass; it rejects before the debit, which also gives its
+     * error precedence over an insufficient balance (ML-10).
+     *
+     * @throws \App\Exceptions\MonthlyLimitExceededException
      */
     private function payFromWallet(Reservations $reservation, Organization $organization, Tenants $tenant, string $total, ?int $actingUserId): Reservations
     {
@@ -176,7 +182,7 @@ class ReservationService
             ]);
         }
 
-        $this->assertOrganizationMaySpend($locked, $tenant, $total);
+        $this->assertOrganizationMaySpend($locked, $tenant, $confirmed, $total);
 
         $this->walletService->debitForReservation($locked, $confirmed, $total, $tenant->user_id);
 
@@ -191,12 +197,14 @@ class ReservationService
     }
 
     /**
-     * Intentional no-op hook: the next change (per-member spending limits)
-     * plugs its rule in here, after the organization lock is held and before
-     * the debit, so the check and the debit cannot interleave with another
-     * spend.
+     * Seam between the organization lock and the debit: the check and the
+     * debit cannot interleave with another spend. `$confirmed` is the row
+     * re-read from the database, so its `start_date` is the stored value.
      */
-    private function assertOrganizationMaySpend(Organization $locked, Tenants $tenant, string $total): void {}
+    private function assertOrganizationMaySpend(Organization $locked, Tenants $tenant, Reservations $confirmed, string $total): void
+    {
+        $this->spendingLimitService->assertMaySpend($locked, $tenant->user_id, $confirmed, $total);
+    }
 
     /**
      * Extraído de ReservationsController::updateStatus (rama "confirmed"):
