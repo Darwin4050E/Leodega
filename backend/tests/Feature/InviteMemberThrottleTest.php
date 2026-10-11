@@ -78,8 +78,9 @@ class InviteMemberThrottleTest extends TestCase
         $this->assertSame(['message'], array_keys($response->json()));
         $this->assertNotNull($response->headers->get('Retry-After'));
         $this->assertDatabaseCount('organization_invitations', 10);
-        $this->assertDatabaseCount('notifications', 0);
-        Notification::assertNothingSent();
+        // Only the ten accepted invites left a notification and a mail.
+        $this->assertDatabaseCount('notifications', 10);
+        Notification::assertCount(10);
         Mail::assertNothingSent();
     }
 

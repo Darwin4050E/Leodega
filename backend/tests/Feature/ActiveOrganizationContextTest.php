@@ -430,7 +430,7 @@ class ActiveOrganizationContextTest extends TestCase
     /**
      * hue-01 INV-14/INV-S124: the invitation routes are path-based too, so
      * they must exist (the allow-list test above cannot pass vacuously) and
-     * must not carry `org.context`. The DELETE row joins with the revoke route.
+     * must not carry `org.context`.
      */
     public function test_the_invitation_routes_exist_without_org_context()
     {
@@ -440,6 +440,7 @@ class ActiveOrganizationContextTest extends TestCase
 
         $this->assertSame(
             [
+                'DELETE api/organizations/{organization}/invitations/{invitation}',
                 'GET api/organizations/{organization}/invitations',
                 'POST api/organizations/{organization}/invitations',
             ],

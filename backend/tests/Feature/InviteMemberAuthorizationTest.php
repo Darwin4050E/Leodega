@@ -14,7 +14,7 @@ use Tests\TestCase;
 /**
  * hue-01 U1a: authorization matrix of the invite (POST) and list (GET)
  * endpoints (INV-2). Path based, `org.context` is not mounted, so the
- * X-Organization-Id header plays no role. The DELETE rows come with revoke.
+ * X-Organization-Id header plays no role. The DELETE rows are in RevokeInvitationTest.
  */
 class InviteMemberAuthorizationTest extends TestCase
 {

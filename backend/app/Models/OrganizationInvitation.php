@@ -41,13 +41,14 @@ class OrganizationInvitation extends Model
     /**
      * The status as the rest of the world sees it: a stored `pending` whose
      * `expires_at` is now or past reads as `expired`. Expiry is lazy, so there
-     * is no job that flips the stored value.
+     * is no job that flips the stored value. Not cached: a revoke changes the
+     * stored status on the same instance that was just read.
      */
     protected function effectiveStatus(): Attribute
     {
         return Attribute::get(fn () => $this->status === InvitationStatus::Pending && $this->expires_at->lte(now())
             ? InvitationStatus::Expired
-            : $this->status);
+            : $this->status)->withoutObjectCaching();
     }
 
     public function scopePending(Builder $query): void

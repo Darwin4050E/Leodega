@@ -3,12 +3,15 @@
 namespace App\Services;
 
 use App\Enums\InvitationStatus;
+use App\Exceptions\OrganizationInvitationException;
 use App\Models\Organization;
 use App\Models\OrganizationInvitation;
 use App\Models\User;
 use Illuminate\Database\UniqueConstraintViolationException;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Log;
 use Illuminate\Validation\ValidationException;
+use Throwable;
 
 /**
  * Invitations of registered clients to an organization (hue-01 INV-4..INV-7).
@@ -30,6 +33,8 @@ class OrganizationInvitationService
 
     public const INACTIVE_ORGANIZATION_MESSAGE = 'La organización seleccionada no está activa.';
 
+    public function __construct(private OrganizationInvitationNotifier $notifier) {}
+
     /**
      * Rules run in order, first failure wins: organization active, invitee
      * lookup, account state before role, tenant only, already a member,
@@ -50,7 +55,7 @@ class OrganizationInvitationService
         }
 
         try {
-            return DB::transaction(function () use ($organization, $inviter, $invitee) {
+            $invitation = DB::transaction(function () use ($organization, $inviter, $invitee) {
                 $existing = $organization->invitations()
                     ->where('invited_user_id', $invitee->id)
                     ->where('status', InvitationStatus::Pending->value)
@@ -75,13 +80,62 @@ class OrganizationInvitationService
                     'expires_at' => now()->addDays(OrganizationInvitation::EXPIRY_DAYS),
                 ]);
 
-                return $invitation->setRelation('inviter', $inviter);
+                $invitation->setRelation('inviter', $inviter);
+
+                // Inside the transaction: a failed notification undoes the
+                // invitation, including the closing of a lapsed row.
+                $this->notifier->notifyInApp($invitation);
+
+                return $invitation;
             });
         } catch (UniqueConstraintViolationException) {
             // A concurrent invite committed first. Caught outside the
             // transaction because PostgreSQL aborts it on a unique violation.
             throw $this->pendingExists();
         }
+
+        // Synchronous (no queue worker) and after the commit, so SMTP latency
+        // holds no lock and a mail failure never undoes the invitation.
+        try {
+            $this->notifier->emailInvitee($invitation);
+        } catch (Throwable $e) {
+            Log::error('Failed to send organization invitation email', [
+                'invitation_id' => $invitation->id,
+                'error' => $e->getMessage(),
+            ]);
+        }
+
+        return $invitation;
+    }
+
+    /**
+     * Cancels a pending invitation of this organization. The row stays as the
+     * audit record. A lapsed pending reads as `expired`, so it is refused and
+     * left as stored (revoke never persists the expiry).
+     *
+     * @throws OrganizationInvitationException
+     */
+    public function revoke(Organization $organization, int $invitationId): OrganizationInvitation
+    {
+        return DB::transaction(function () use ($organization, $invitationId) {
+            // Lock order: invitation only, the organization row is never taken.
+            $invitation = $organization->invitations()
+                ->whereKey($invitationId)
+                ->lockForUpdate()
+                ->first();
+
+            if (! $invitation) {
+                throw OrganizationInvitationException::notFound();
+            }
+
+            if ($invitation->effective_status !== InvitationStatus::Pending) {
+                throw OrganizationInvitationException::unavailable();
+            }
+
+            $invitation->update(['status' => InvitationStatus::Cancelled]);
+
+            return $invitation->load('inviter:id,name');
+        });
     }
 
     private function pendingExists(): ValidationException

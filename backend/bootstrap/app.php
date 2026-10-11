@@ -3,6 +3,7 @@
 use App\Exceptions\AccountBlockedException;
 use App\Exceptions\AccountModerationException;
 use App\Exceptions\DuplicateRatingException;
+use App\Exceptions\OrganizationInvitationException;
 use App\Exceptions\ReservationConflictException;
 use App\Exceptions\ReservationPricingException;
 use App\Exceptions\StoreRoomResubmissionException;
@@ -41,6 +42,7 @@ return Application::configure(basePath: dirname(__DIR__))
             AccountBlockedException::class,
             AccountModerationException::class,
             DuplicateRatingException::class,
+            OrganizationInvitationException::class,
             ReservationConflictException::class,
             ReservationPricingException::class,
             StoreRoomResubmissionException::class,

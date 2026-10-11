@@ -53,6 +53,16 @@ class OrganizationInvitationModelTest extends TestCase
         $this->assertSame(InvitationStatus::Pending, $invitation->effective_status);
     }
 
+    public function test_the_effective_status_follows_a_status_change_on_the_same_instance()
+    {
+        $invitation = OrganizationInvitation::factory()->create();
+        $this->assertSame(InvitationStatus::Pending, $invitation->effective_status);
+
+        $invitation->update(['status' => InvitationStatus::Cancelled]);
+
+        $this->assertSame(InvitationStatus::Cancelled, $invitation->effective_status);
+    }
+
     public function test_a_pending_invitation_expiring_exactly_now_is_effectively_expired()
     {
         $invitation = OrganizationInvitation::factory()->create(['expires_at' => now()]);

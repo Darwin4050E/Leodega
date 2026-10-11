@@ -49,6 +49,16 @@ class OrganizationInvitationController extends Controller
     }
 
     /**
+     * Admin check first, so a member never learns whether an id exists.
+     */
+    public function destroy(Request $request, OrganizationInvitationService $invitations, string $organization, string $invitation): JsonResponse
+    {
+        $organization = $this->adminOrFail($request, $organization);
+
+        return response()->json((new InvitationResource($invitations->revoke($organization, (int) $invitation)))->resolve());
+    }
+
+    /**
      * Same two denials as InviteMemberRequest: a non-member (or a missing
      * organization) and a member who is not an admin.
      */

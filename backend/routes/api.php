@@ -254,14 +254,14 @@ Route::middleware(['auth.api:sanctum', 'role:tenant'])
     });
 
 // hue-01 INV-2: invitations are addressed by path like the wallet and the
-// spending limits above, no `org.context`. The invitation id pattern is
-// declared now and used by the revoke route.
+// spending limits above, no `org.context`.
 Route::middleware(['auth.api:sanctum', 'role:tenant'])
     ->where(['organization' => '[1-9][0-9]{0,17}', 'invitation' => '[1-9][0-9]{0,17}'])
     ->group(function () {
         Route::post('/organizations/{organization}/invitations', [OrganizationInvitationController::class, 'store'])
             ->middleware('throttle:org-invitations');
         Route::get('/organizations/{organization}/invitations', [OrganizationInvitationController::class, 'index']);
+        Route::delete('/organizations/{organization}/invitations/{invitation}', [OrganizationInvitationController::class, 'destroy']);
     });
 
 Route::middleware(['auth.api:sanctum', 'role:admin'])->group(function () {
