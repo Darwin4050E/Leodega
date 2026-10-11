@@ -2,6 +2,7 @@ import { describe, it, expect, vi } from 'vitest';
 import { render, screen, fireEvent } from '@testing-library/react';
 
 import ReservationCard from './ReservationCard';
+import { ActiveContext, type ActiveContextValue } from '../../context/activeContextBase';
 import type { TenantReceipt, TenantReservation } from '../../services/reservations';
 
 const receipt: TenantReceipt = {
@@ -240,7 +241,8 @@ describe('ReservationCard', () => {
       expect(screen.queryByText(/Reservada por/)).not.toBeInTheDocument();
     });
 
-    it('OR-WS11: hides both cancel and receipt actions when is_creator is false, even if the server also sent can_be_cancelled/receipt', () => {
+    it('OR-WS11: shows an enabled cancel but hides the receipt on an org row the caller did not create', () => {
+      const onCancelClick = vi.fn();
       render(
         <ReservationCard
           reservation={reservation({
@@ -250,23 +252,26 @@ describe('ReservationCard', () => {
             can_be_cancelled: true,
             receipt,
           })}
-          onCancelClick={vi.fn()}
+          onCancelClick={onCancelClick}
           onReceiptClick={vi.fn()}
         />
       );
 
-      expect(screen.queryByRole('button', { name: 'Cancelar reserva' })).not.toBeInTheDocument();
+      const cancel = screen.getByRole('button', { name: 'Cancelar reserva' });
+      expect(cancel).not.toHaveAttribute('aria-disabled', 'true');
+      fireEvent.click(cancel);
+      expect(onCancelClick).toHaveBeenCalledTimes(1);
       expect(screen.queryByRole('button', { name: 'Ver comprobante' })).not.toBeInTheDocument();
     });
 
-    it('OR-WS12: renders actions normally when is_creator is true', () => {
+    it('OR-WS12: the receipt is creator-only while cancel follows the server flags, not is_creator', () => {
       render(
         <ReservationCard
           reservation={reservation({
             organization: { id: 5, name: 'Andina', ruc: '1792146739001' },
             is_creator: true,
             creator_name: 'Ana Torres',
-            can_be_cancelled: true,
+            can_be_cancelled: false,
             receipt,
           })}
           onCancelClick={vi.fn()}
@@ -274,8 +279,138 @@ describe('ReservationCard', () => {
         />
       );
 
-      expect(screen.getByRole('button', { name: 'Cancelar reserva' })).toBeInTheDocument();
       expect(screen.getByRole('button', { name: 'Ver comprobante' })).toBeInTheDocument();
+      expect(screen.queryByRole('button', { name: 'Cancelar reserva' })).not.toBeInTheDocument();
+    });
+
+    it('OR-WS16: renders an enabled cancel button that opens the modal for an admin on another member row', () => {
+      const onCancelClick = vi.fn();
+      const row = reservation({
+        organization: { id: 5, name: 'Andina', ruc: '1792146739001' },
+        is_creator: false,
+        creator_name: 'Ana Torres',
+        can_be_cancelled: true,
+        cancel_requires_admin: false,
+      });
+      render(<ReservationCard reservation={row} onCancelClick={onCancelClick} onReceiptClick={vi.fn()} />);
+
+      fireEvent.click(screen.getByRole('button', { name: 'Cancelar reserva' }));
+
+      expect(onCancelClick).toHaveBeenCalledWith(row);
+      expect(screen.queryByRole('tooltip', { hidden: true })).not.toBeInTheDocument();
+    });
+
+    it('OR-WS17: renders an aria-disabled cancel button with the admin-only tooltip when cancel_requires_admin is true', () => {
+      const onCancelClick = vi.fn();
+      render(
+        <ReservationCard
+          reservation={reservation({
+            organization: { id: 5, name: 'Andina', ruc: '1792146739001' },
+            is_creator: true,
+            creator_name: 'Ana Torres',
+            can_be_cancelled: false,
+            cancel_requires_admin: true,
+          })}
+          onCancelClick={onCancelClick}
+          onReceiptClick={vi.fn()}
+        />
+      );
+
+      const button = screen.getByRole('button', { name: 'Cancelar reserva' });
+      expect(button).toHaveAttribute('aria-disabled', 'true');
+      expect(button).not.toBeDisabled();
+
+      const tooltip = screen.getByRole('tooltip', { hidden: true });
+      expect(tooltip).toHaveTextContent('Solo el administrador puede cancelar reservas de la organización');
+      expect(button).toHaveAttribute('aria-describedby', tooltip.id);
+      expect(tooltip).not.toBeVisible();
+
+      fireEvent.mouseEnter(button);
+      expect(tooltip).toBeVisible();
+      fireEvent.mouseLeave(button);
+      expect(tooltip).not.toBeVisible();
+
+      fireEvent.focus(button);
+      expect(tooltip).toBeVisible();
+      fireEvent.keyDown(button, { key: 'Escape' });
+      expect(tooltip).not.toBeVisible();
+      fireEvent.blur(button);
+
+      fireEvent.click(button);
+      expect(onCancelClick).not.toHaveBeenCalled();
+    });
+
+    it('OR-WS18: renders no cancel button when both server flags are false', () => {
+      render(
+        <ReservationCard
+          reservation={reservation({
+            organization: { id: 5, name: 'Andina', ruc: '1792146739001' },
+            is_creator: false,
+            can_be_cancelled: false,
+            cancel_requires_admin: false,
+          })}
+          onCancelClick={vi.fn()}
+          onReceiptClick={vi.fn()}
+        />
+      );
+
+      expect(screen.queryByRole('button', { name: 'Cancelar reserva' })).not.toBeInTheDocument();
+      expect(screen.queryByRole('tooltip', { hidden: true })).not.toBeInTheDocument();
+    });
+
+    it('OR-WS19: the row flag wins over a stale cached admin role', () => {
+      const staleAdminContext: ActiveContextValue = {
+        context: { kind: 'organization', organizationId: 5 },
+        activeOrganization: {
+          id: 5,
+          name: 'Andina',
+          ruc: '1792146739001',
+          email: 'a@andina.test',
+          logo: null,
+          status: 'active',
+          role: 'admin',
+        },
+        organizations: [],
+        status: 'ready',
+        enabled: true,
+        selectOrganization: vi.fn(),
+        selectPersonal: vi.fn(),
+        activateOrganization: vi.fn(),
+        reloadOrganizations: vi.fn(),
+      };
+      render(
+        <ActiveContext.Provider value={staleAdminContext}>
+          <ReservationCard
+            reservation={reservation({
+              organization: { id: 5, name: 'Andina', ruc: '1792146739001' },
+              is_creator: true,
+              can_be_cancelled: false,
+              cancel_requires_admin: true,
+            })}
+            onCancelClick={vi.fn()}
+            onReceiptClick={vi.fn()}
+          />
+        </ActiveContext.Provider>
+      );
+
+      expect(screen.getByRole('button', { name: 'Cancelar reserva' })).toHaveAttribute('aria-disabled', 'true');
+    });
+
+    it('OR-WS20: a personal row keeps its cancel label, gating and no tooltip', () => {
+      const onCancelClick = vi.fn();
+      render(
+        <ReservationCard
+          reservation={reservation({ can_be_cancelled: true })}
+          onCancelClick={onCancelClick}
+          onReceiptClick={vi.fn()}
+        />
+      );
+
+      const button = screen.getByRole('button', { name: 'Cancelar reserva' });
+      expect(button).not.toHaveAttribute('aria-disabled');
+      fireEvent.click(button);
+      expect(onCancelClick).toHaveBeenCalledTimes(1);
+      expect(screen.queryByRole('tooltip', { hidden: true })).not.toBeInTheDocument();
     });
 
     it('OR-WS12: offers no pay action on a paid organization row (payment happens at creation)', () => {

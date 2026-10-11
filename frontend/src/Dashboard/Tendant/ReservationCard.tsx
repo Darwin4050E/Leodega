@@ -1,4 +1,5 @@
-import { FileText, ImageOff, MapPin, X } from "lucide-react";
+import { useState } from "react";
+import { FileText, ImageOff, Lock, MapPin, X } from "lucide-react";
 
 import { formatReservationCode } from "../../utils/reservationCode";
 import { formatUSD } from "../../utils/money";
@@ -17,16 +18,21 @@ interface ReservationCardProps {
   onReceiptClick: (reservation: TenantReservation) => void;
 }
 
+const ADMIN_ONLY_TOOLTIP = "Solo el administrador puede cancelar reservas de la organización";
+
 /**
  * Presentational card for the tenant reservations list. Mirrors ResCard
  * (PrototipoLeodega-main/js/TenantReservasPage.jsx:166-195) -- thumbnail,
  * title, badge, direction/city/size line, Período/Monto/Reserva stat row --
- * minus review/report actions (out of scope, spec #351). The cancel button
- * is gated exclusively on `reservation.can_be_cancelled` (server-computed),
- * never client-side date math. "Ver comprobante" shows iff the server sent a
- * non-null `reservation.receipt`.
+ * minus review/report actions (out of scope, spec #351). Cancel is gated
+ * exclusively on the server flags (`can_be_cancelled`, and on org rows
+ * `cancel_requires_admin` for the disabled state), never on client-side date
+ * math, `is_creator` or the cached organization role. "Ver comprobante"
+ * shows iff the server sent a non-null `reservation.receipt` and the caller
+ * is the creator.
  */
 const ReservationCard = ({ reservation, onCancelClick, onReceiptClick }: ReservationCardProps) => {
+  const [tooltipOpen, setTooltipOpen] = useState(false);
   const tab = deriveTenantTab(reservation);
   const badge = RES_BADGE[tab];
   const title = reservation.store_rooms?.title ?? "Bodega";
@@ -35,12 +41,14 @@ const ReservationCard = ({ reservation, onCancelClick, onReceiptClick }: Reserva
   const direction = reservation.store_rooms?.direction ?? "";
   const city = reservation.store_rooms?.city ?? "";
   const size = reservation.store_rooms?.size ?? "";
-  // HUE-05 OR-W5 (D6/D13): the server already gates can_be_cancelled/receipt
-  // for non-creators (defense in depth here, ~5 lines). `is_creator` is
-  // absent on a personal row, where every row is trivially the caller's own.
-  const canActOnReservation = reservation.is_creator !== false;
-  const showCancelButton = reservation.can_be_cancelled && canActOnReservation;
-  const showReceiptButton = Boolean(reservation.receipt) && canActOnReservation;
+  // HUE-06 OR-W5: org cancel follows the server flags only. `is_creator` still
+  // gates the receipt (creator-only) and is absent on a personal row.
+  const isOrgRow = Boolean(reservation.organization);
+  const isCreatorOrPersonal = reservation.is_creator !== false;
+  const showCancelButton = reservation.can_be_cancelled && (isOrgRow || isCreatorOrPersonal);
+  const showDisabledCancel = isOrgRow && reservation.cancel_requires_admin === true;
+  const showReceiptButton = Boolean(reservation.receipt) && isCreatorOrPersonal;
+  const tooltipId = `cancel-tooltip-${reservation.id}`;
 
   return (
     <div className="bg-white border border-gray-200 rounded-2xl shadow-sm overflow-hidden">
@@ -115,7 +123,7 @@ const ReservationCard = ({ reservation, onCancelClick, onReceiptClick }: Reserva
           </div>
         </div>
       </div>
-      {(showReceiptButton || showCancelButton) && (
+      {(showReceiptButton || showCancelButton || showDisabledCancel) && (
         <div className="px-4 pb-4">
           <div className="border-t border-gray-100 pt-3.5 flex gap-2.5 flex-wrap">
             {showReceiptButton && (
@@ -135,6 +143,34 @@ const ReservationCard = ({ reservation, onCancelClick, onReceiptClick }: Reserva
                 <X size={14} color="#DC2626" />
                 Cancelar reserva
               </button>
+            )}
+            {showDisabledCancel && (
+              <div className="relative">
+                <button
+                  type="button"
+                  aria-disabled="true"
+                  aria-describedby={tooltipId}
+                  onMouseEnter={() => setTooltipOpen(true)}
+                  onMouseLeave={() => setTooltipOpen(false)}
+                  onFocus={() => setTooltipOpen(true)}
+                  onBlur={() => setTooltipOpen(false)}
+                  onKeyDown={(e) => {
+                    if (e.key === "Escape") setTooltipOpen(false);
+                  }}
+                  className="inline-flex items-center gap-1.5 px-4 py-2 bg-gray-50 text-gray-400 border border-gray-200 rounded-lg text-sm font-semibold cursor-not-allowed"
+                >
+                  <Lock size={14} color="#9CA3AF" />
+                  Cancelar reserva
+                </button>
+                <span
+                  id={tooltipId}
+                  role="tooltip"
+                  hidden={!tooltipOpen}
+                  className="absolute bottom-full left-0 mb-2 w-64 px-3 py-2 bg-gray-900 text-white text-xs rounded-lg shadow-lg z-10"
+                >
+                  {ADMIN_ONLY_TOOLTIP}
+                </span>
+              </div>
             )}
           </div>
         </div>

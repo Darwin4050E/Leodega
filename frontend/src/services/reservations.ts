@@ -192,6 +192,11 @@ export interface TenantReservation {
   /** Org-context rows only — absent for personal rows. */
   is_creator?: boolean;
   creator_name?: string | null;
+  /**
+   * HUE-06 OR-18: true on an eligible org row when the caller is not an org
+   * admin. Authoritative: the web never derives it from `activeOrganization.role`.
+   */
+  cancel_requires_admin?: boolean;
 }
 
 export function getTenantReservations() {
@@ -205,17 +210,20 @@ export function getTenantReservations() {
  */
 export interface CancellationPreview {
   can_be_cancelled: boolean;
+  total_amount: string;
   refund_amount: string;
+  penalty_amount: string;
 }
 
 export function getCancellationPreview(id: number | string) {
   return api.get<CancellationPreview>(`/tenant/reservations/${id}/cancellation-preview`);
 }
 
-export function cancelReservationAsTenant(id: number | string) {
+/** `reason` is required by the server for org reservations only; personal cancels send `{}`. */
+export function cancelReservationAsTenant(id: number | string, reason?: string) {
   return api.patch<{ message: string; reservation: TenantReservation }>(
     `/tenant/reservations/${id}/cancel`,
-    {}
+    reason === undefined ? {} : { reason }
   );
 }
 
