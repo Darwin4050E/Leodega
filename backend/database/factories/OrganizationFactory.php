@@ -33,13 +33,14 @@ class OrganizationFactory extends Factory
     /**
      * Attaches the user to the organization once it is created. Chain it to
      * add several members; the role defaults to admin, the creator's role.
+     * `$limit` is the member's monthly spending limit (null = unlimited).
      */
-    public function withMember(User $user, string|OrganizationRole $role = OrganizationRole::ADMIN): static
+    public function withMember(User $user, string|OrganizationRole $role = OrganizationRole::ADMIN, ?string $limit = null): static
     {
         $role = $role instanceof OrganizationRole ? $role->value : $role;
 
-        return $this->afterCreating(function (Organization $organization) use ($user, $role) {
-            $organization->users()->attach($user->id, ['role' => $role]);
+        return $this->afterCreating(function (Organization $organization) use ($user, $role, $limit) {
+            $organization->users()->attach($user->id, ['role' => $role, 'monthly_limit' => $limit]);
         });
     }
 

@@ -371,6 +371,34 @@ class ActiveOrganizationContextTest extends TestCase
         }
     }
 
+    /**
+     * member-spending-limit ML-15/ML-S58: the limit routes are path-based like
+     * the wallet ones, so they must exist (the allow-list test above cannot
+     * pass vacuously) and must not carry `org.context`.
+     */
+    public function test_the_spending_limit_routes_exist_without_org_context()
+    {
+        $limits = collect(Route::getRoutes()->getRoutes())
+            ->filter(fn ($route) => str_starts_with($route->uri(), 'api/organizations/{organization}/spending-limits'))
+            ->keyBy(fn ($route) => $route->methods()[0].' '.$route->uri());
+
+        $this->assertSame(
+            [
+                'GET api/organizations/{organization}/spending-limits',
+                'PUT api/organizations/{organization}/spending-limits/{user}',
+            ],
+            $limits->keys()->sort()->values()->all(),
+        );
+
+        foreach ($limits as $route) {
+            $middleware = $route->gatherMiddleware();
+
+            $this->assertNotContains('org.context', $middleware);
+            $this->assertContains('auth.api:sanctum', $middleware);
+            $this->assertContains('role:tenant', $middleware);
+        }
+    }
+
     public function test_the_alias_maps_to_the_middleware_class()
     {
         $this->assertSame(

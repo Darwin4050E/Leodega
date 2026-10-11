@@ -593,8 +593,14 @@ class OrganizationTest extends TestCase
 
         $this->assertNotEmpty($organizationRoutes);
         foreach ($organizationRoutes as $route) {
+            // member-spending-limit ML-14: setting a member's limit is the one
+            // PUT allowed under api/organizations; it never touches the
+            // organization itself.
+            $isSpendingLimitPut = $route->uri() === 'api/organizations/{organization}/spending-limits/{user}'
+                && array_values(array_diff($route->methods(), ['HEAD'])) === ['PUT'];
+
             $this->assertEmpty(
-                array_intersect($route->methods(), ['PUT', 'PATCH', 'DELETE']),
+                $isSpendingLimitPut ? [] : array_intersect($route->methods(), ['PUT', 'PATCH', 'DELETE']),
                 "Unexpected write verb on {$route->uri()}"
             );
             $this->assertStringNotContainsString('logo', $route->uri());

@@ -94,4 +94,32 @@ class DemoDataSeederTest extends TestCase
         $this->assertSame('0.00', $other->fresh()->wallet_balance);
         $this->assertSame(0, $other->walletMovements()->count());
     }
+
+    // ML-S65
+    public function test_it_seeds_a_limited_and_an_unlimited_demo_member()
+    {
+        $this->seed(DemoDataSeeder::class);
+
+        $organization = Organization::where('name', 'Andina Logistica')->sole();
+        $limits = $organization->users->mapWithKeys(fn ($user) => [$user->email => $user->pivot->monthly_limit])->all();
+
+        $this->assertNull($limits['cliente@leodega.com']);
+        $this->assertEquals(1500, $limits['cliente2@leodega.com']);
+    }
+
+    public function test_reseeding_never_overwrites_an_edited_limit()
+    {
+        $this->seed(DemoDataSeeder::class);
+        $organization = Organization::where('name', 'Andina Logistica')->sole();
+        $admin = User::where('email', 'cliente@leodega.com')->sole();
+        $member = User::where('email', 'cliente2@leodega.com')->sole();
+        $organization->users()->updateExistingPivot($admin->id, ['monthly_limit' => '2500.00']);
+        $organization->users()->updateExistingPivot($member->id, ['monthly_limit' => null]);
+
+        $this->seed(DemoDataSeeder::class);
+
+        $organization = $organization->fresh();
+        $this->assertEquals(2500, $organization->users()->whereKey($admin->id)->first()->pivot->monthly_limit);
+        $this->assertNull($organization->users()->whereKey($member->id)->first()->pivot->monthly_limit);
+    }
 }

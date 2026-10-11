@@ -35,7 +35,7 @@ class Organization extends Model
     public function users()
     {
         return $this->belongsToMany(User::class, 'organization_user')
-            ->withPivot('role', 'joined_at');
+            ->withPivot('role', 'monthly_limit', 'joined_at');
     }
 
     public function walletMovements()

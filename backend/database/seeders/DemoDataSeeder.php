@@ -72,7 +72,9 @@ class DemoDataSeeder extends Seeder
     /**
      * Demo organization with a starting wallet balance. Funded through
      * WalletService (balance + ledger row together) and only when the row is
-     * first created, so re-seeding never funds it twice.
+     * first created, so re-seeding never funds it twice. The member gets a
+     * monthly spending limit the same way: only when their membership row is
+     * new, so re-seeding never overwrites a limit an admin has edited.
      */
     private function organization(User $admin, User $member): void
     {
@@ -86,10 +88,14 @@ class DemoDataSeeder extends Seeder
             ],
         );
 
-        $organization->users()->syncWithoutDetaching([
+        $changes = $organization->users()->syncWithoutDetaching([
             $admin->id => ['role' => OrganizationRole::ADMIN->value],
             $member->id => ['role' => OrganizationRole::MEMBER->value],
         ]);
+
+        if (in_array($member->id, $changes['attached'], true)) {
+            $organization->users()->updateExistingPivot($member->id, ['monthly_limit' => '1500.00']);
+        }
 
         if ($organization->wasRecentlyCreated) {
             (new WalletService)->topUp($organization, $admin, '5000.00');

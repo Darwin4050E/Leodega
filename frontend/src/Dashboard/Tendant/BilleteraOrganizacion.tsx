@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 
 import HeaderTendant from "../../Components/HeaderTendant";
+import MembersLimitsSection from "../../Components/MembersLimitsSection";
 import WalletTopUpModal from "../../Components/WalletTopUpModal";
 import { useActiveContext } from "../../context/useActiveContext";
 import { useOrganizationWallet, WALLET_STATUS } from "../../hooks/useOrganizationWallet";
@@ -151,6 +152,8 @@ const BilleteraOrganizacion = () => {
             </table>
           </div>
         )}
+
+        <MembersLimitsSection organizationId={organizationId} isAdmin={isAdmin} />
       </div>
 
       {topUpOpen && <WalletTopUpModal organizationId={organizationId} onClose={() => setTopUpOpen(false)} />}
