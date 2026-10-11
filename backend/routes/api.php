@@ -259,7 +259,8 @@ Route::middleware(['auth.api:sanctum', 'role:tenant'])
 Route::middleware(['auth.api:sanctum', 'role:tenant'])
     ->where(['organization' => '[1-9][0-9]{0,17}', 'invitation' => '[1-9][0-9]{0,17}'])
     ->group(function () {
-        Route::post('/organizations/{organization}/invitations', [OrganizationInvitationController::class, 'store']);
+        Route::post('/organizations/{organization}/invitations', [OrganizationInvitationController::class, 'store'])
+            ->middleware('throttle:org-invitations');
         Route::get('/organizations/{organization}/invitations', [OrganizationInvitationController::class, 'index']);
     });
 

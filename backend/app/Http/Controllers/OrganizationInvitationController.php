@@ -5,7 +5,9 @@ namespace App\Http\Controllers;
 use App\Enums\OrganizationRole;
 use App\Http\Middleware\ResolveActiveOrganization;
 use App\Http\Requests\InviteMemberRequest;
+use App\Http\Resources\InvitationResource;
 use App\Models\Organization;
+use App\Services\OrganizationInvitationService;
 use Illuminate\Http\Exceptions\HttpResponseException;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -19,18 +21,31 @@ use Illuminate\Http\Request;
  */
 class OrganizationInvitationController extends Controller
 {
-    public function store(InviteMemberRequest $request): JsonResponse
+    private const PER_PAGE = 20;
+
+    public function store(InviteMemberRequest $request, OrganizationInvitationService $invitations): JsonResponse
     {
-        // Interim shell: only authorization and validation are wired (U1a-1).
-        return response()->json(['message' => 'No implementado'], 501);
+        $invitation = $invitations->invite($request->organization(), $request->user(), $request->validated('email'));
+
+        return response()->json((new InvitationResource($invitation))->resolve(), 201);
     }
 
     public function index(Request $request, string $organization): JsonResponse
     {
-        $this->adminOrFail($request, $organization);
+        $organization = $this->adminOrFail($request, $organization);
 
-        // Interim shell: the paginated list arrives with INV-9.
-        return response()->json(['data' => []]);
+        $invitations = $organization->invitations()
+            ->with('inviter:id,name')
+            ->orderByDesc('created_at')
+            ->orderByDesc('id')
+            ->paginate(self::PER_PAGE)
+            ->through(fn ($invitation) => (new InvitationResource($invitation))->resolve());
+
+        // The page rows cannot give the header counter, so the whole
+        // organization's effective-pending count travels with the paginator.
+        return response()->json($invitations->toArray() + [
+            'pending_count' => $organization->invitations()->pending()->count(),
+        ]);
     }
 
     /**

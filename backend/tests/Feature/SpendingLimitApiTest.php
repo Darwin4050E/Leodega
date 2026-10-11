@@ -5,6 +5,7 @@ namespace Tests\Feature;
 use App\Enums\OrganizationRole;
 use App\Enums\WalletMovementType;
 use App\Models\Organization;
+use App\Models\OrganizationInvitation;
 use App\Models\OrganizationWalletMovement;
 use App\Models\Reservations;
 use App\Models\User;
@@ -200,6 +201,18 @@ class SpendingLimitApiTest extends TestCase
             ['user_id' => $this->member->id, 'name' => $this->member->name, 'role' => 'member', 'monthly_limit' => '500.00', 'spent' => '300.00'],
         ]);
         $this->assertNotContains($foreign->users()->first()->id, array_column($response->json(), 'user_id'));
+    }
+
+    // hue-01 INV-S126: an invitee is not a member, so a pending invitation
+    // never shows up in the member list.
+    public function test_a_pending_invitation_does_not_add_a_row_to_the_member_list()
+    {
+        OrganizationInvitation::factory()->create(['organization_id' => $this->organization->id]);
+
+        $response = $this->list($this->admin);
+
+        $response->assertStatus(200);
+        $this->assertSame([$this->admin->id, $this->member->id], array_column($response->json(), 'user_id'));
     }
 
     public function test_a_member_sees_exactly_their_own_row()
