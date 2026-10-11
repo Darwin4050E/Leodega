@@ -1,8 +1,10 @@
 import { useState } from "react";
+import { useNavigate } from "react-router-dom";
 
 import { SPENDING_LIMITS_STATUS, useSpendingLimits } from "../hooks/useSpendingLimits";
 import type { SpendingLimitRow } from "../services/organizations";
 import { formatUSD } from "../utils/money";
+import { INVITATION_COPY } from "../utils/invitationCopy";
 import { SPENDING_LIMIT_COPY } from "../utils/spendingLimitCopy";
 import LimitModal from "./LimitModal";
 
@@ -20,10 +22,21 @@ interface MembersLimitsSectionProps {
 const MembersLimitsSection = ({ organizationId, isAdmin }: MembersLimitsSectionProps) => {
   const { status, rows, refresh } = useSpendingLimits(organizationId);
   const [editing, setEditing] = useState<SpendingLimitRow | null>(null);
+  const navigate = useNavigate();
 
   return (
     <section className="mt-6">
-      <h2 className="text-lg font-bold text-gray-900 m-0 mb-3">{SPENDING_LIMIT_COPY.sectionTitle}</h2>
+      <div className="flex items-center justify-between gap-3 mb-3">
+        <h2 className="text-lg font-bold text-gray-900 m-0">{SPENDING_LIMIT_COPY.sectionTitle}</h2>
+        {isAdmin && (
+          <button
+            onClick={() => navigate("/organizacion/miembros")}
+            className="px-4 py-2 bg-leodega-600 text-white rounded-lg text-sm font-semibold border-none cursor-pointer"
+          >
+            {INVITATION_COPY.entryButton}
+          </button>
+        )}
+      </div>
 
       {status === SPENDING_LIMITS_STATUS.LOADING && (
         <p className="text-sm text-gray-500 m-0">{SPENDING_LIMIT_COPY.loading}</p>

@@ -191,4 +191,27 @@ describe('NotificationsDropdown', () => {
     expect(await screen.findByText('Ana Torres')).toBeInTheDocument();
     expect(screen.queryByText(/Andina/)).not.toBeInTheDocument();
   });
+
+  // HUE-01 INV-WS55: characterization of the existing unknown-type fallback.
+  it('INV-WS55: shows the title and body of an organization_invitation notification and a click does not navigate', async () => {
+    const invitation = {
+      id: 6,
+      title: 'Te invitaron a unirte a una organización',
+      body: 'Ana Pérez te invitó a unirte a Andina como miembro.',
+      type: 'organization_invitation',
+      is_read: false,
+      data: { invitation_id: 3, organization_id: 7 },
+    };
+    mockGetNotifications.mockResolvedValue({ data: [invitation] });
+    const user = userEvent.setup();
+
+    render(<NotificationsDropdown onUnreadChange={vi.fn()} />);
+    expect(await screen.findByText(invitation.title)).toBeInTheDocument();
+    expect(screen.getByText(invitation.body)).toBeInTheDocument();
+
+    await user.click(screen.getByText(invitation.title));
+
+    await waitFor(() => expect(mockMarkNotificationRead).toHaveBeenCalledWith(6));
+    expect(mockNavigate).not.toHaveBeenCalled();
+  });
 });

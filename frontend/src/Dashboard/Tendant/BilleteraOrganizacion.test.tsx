@@ -206,5 +206,6 @@ describe('BilleteraOrganizacion', () => {
     render(<BilleteraOrganizacion />);
 
     expect(screen.queryByTestId('members-limits-section')).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Invitar' })).not.toBeInTheDocument();
   });
 });
