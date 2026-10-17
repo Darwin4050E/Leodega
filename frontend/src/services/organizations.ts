@@ -100,3 +100,55 @@ export function setSpendingLimit(organizationId: number, userId: number, monthly
     monthly_limit: monthlyLimit,
   });
 }
+
+export const InvitationStatus = {
+  PENDING: "pending",
+  ACCEPTED: "accepted",
+  REJECTED: "rejected",
+  EXPIRED: "expired",
+  CANCELLED: "cancelled",
+} as const;
+
+export type InvitationStatus = (typeof InvitationStatus)[keyof typeof InvitationStatus];
+
+/**
+ * One invitation as the organization admins see it. `status` is the server's
+ * effective status (a lapsed pending already reads `expired`), and
+ * `can_be_revoked` is the only per-row permission flag: the web never derives
+ * either from its own clock. Dates are ISO 8601 strings.
+ */
+export interface OrganizationInvitation {
+  id: number;
+  email: string;
+  status: InvitationStatus;
+  expires_at: string;
+  created_at: string;
+  responded_at: string | null;
+  invited_by_name: string | null;
+  can_be_revoked: boolean;
+}
+
+/** Laravel's flat paginator (page size 20, newest first); `links` is ignored. */
+export interface PaginatedInvitations {
+  data: OrganizationInvitation[];
+  current_page: number;
+  last_page: number;
+  per_page: number;
+  total: number;
+  /** Effective-pending invitations of the whole organization, not just this page. */
+  pending_count: number;
+}
+
+// Path-addressed like the wallet and spending-limit routes: the
+// X-Organization-Id header is ignored.
+export function inviteMember(organizationId: number, email: string) {
+  return api.post<OrganizationInvitation>(`/organizations/${organizationId}/invitations`, { email });
+}
+
+export function getInvitations(organizationId: number, page: number) {
+  return api.get<PaginatedInvitations>(`/organizations/${organizationId}/invitations`, { params: { page } });
+}
+
+export function revokeInvitation(organizationId: number, invitationId: number) {
+  return api.delete<OrganizationInvitation>(`/organizations/${organizationId}/invitations/${invitationId}`);
+}

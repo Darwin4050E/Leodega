@@ -427,6 +427,35 @@ class ActiveOrganizationContextTest extends TestCase
         }
     }
 
+    /**
+     * hue-01 INV-14/INV-S124: the invitation routes are path-based too, so
+     * they must exist (the allow-list test above cannot pass vacuously) and
+     * must not carry `org.context`.
+     */
+    public function test_the_invitation_routes_exist_without_org_context()
+    {
+        $invitations = collect(Route::getRoutes()->getRoutes())
+            ->filter(fn ($route) => str_starts_with($route->uri(), 'api/organizations/{organization}/invitations'))
+            ->keyBy(fn ($route) => $route->methods()[0].' '.$route->uri());
+
+        $this->assertSame(
+            [
+                'DELETE api/organizations/{organization}/invitations/{invitation}',
+                'GET api/organizations/{organization}/invitations',
+                'POST api/organizations/{organization}/invitations',
+            ],
+            $invitations->keys()->sort()->values()->all(),
+        );
+
+        foreach ($invitations as $route) {
+            $middleware = $route->gatherMiddleware();
+
+            $this->assertNotContains('org.context', $middleware);
+            $this->assertContains('auth.api:sanctum', $middleware);
+            $this->assertContains('role:tenant', $middleware);
+        }
+    }
+
     public function test_the_alias_maps_to_the_middleware_class()
     {
         $this->assertSame(

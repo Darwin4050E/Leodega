@@ -3,8 +3,14 @@ import { act, fireEvent, render, screen, waitFor, within } from '@testing-librar
 
 const mockGetSpendingLimits = vi.hoisted(() => vi.fn());
 const mockSetSpendingLimit = vi.hoisted(() => vi.fn());
+const mockNavigate = vi.hoisted(() => vi.fn());
 
-vi.mock('../services/organizations', () => ({
+vi.mock('react-router-dom', () => ({
+  useNavigate: () => mockNavigate,
+}));
+
+vi.mock('../services/organizations', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../services/organizations')>()),
   getSpendingLimits: mockGetSpendingLimits,
   setSpendingLimit: mockSetSpendingLimit,
 }));
@@ -177,5 +183,42 @@ describe('MembersLimitsSection (admin edit)', () => {
     act(() => notifyWalletChanged());
 
     await waitFor(() => expect(bodyRows()[0]).toHaveTextContent('$420.00'));
+  });
+
+  it('INV-WS7: an admin sees an Invitar button that navigates to the members page', async () => {
+    render(<MembersLimitsSection organizationId={7} isAdmin />);
+    await screen.findByRole('table');
+
+    fireEvent.click(screen.getByRole('button', { name: 'Invitar' }));
+
+    expect(mockNavigate).toHaveBeenCalledTimes(1);
+    expect(mockNavigate).toHaveBeenCalledWith('/organizacion/miembros');
+  });
+
+  it('INV-WS7: the Invitar button sits in the section header, before the table', async () => {
+    render(<MembersLimitsSection organizationId={7} isAdmin />);
+
+    const heading = screen.getByRole('heading', { name: 'Miembros y límites' });
+    const button = screen.getByRole('button', { name: 'Invitar' });
+    expect(heading.compareDocumentPosition(button) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(heading.parentElement).toContainElement(button);
+    await screen.findByRole('table');
+  });
+
+  it('INV-WS7: the Invitar button is available even when the member list fails to load', async () => {
+    mockGetSpendingLimits.mockRejectedValue({ response: { status: 500 } });
+
+    render(<MembersLimitsSection organizationId={7} isAdmin />);
+
+    await screen.findByRole('alert');
+    expect(screen.getByRole('button', { name: 'Invitar' })).toBeInTheDocument();
+  });
+
+  it('INV-WS8: a member sees no Invitar button', async () => {
+    render(<MembersLimitsSection organizationId={7} isAdmin={false} />);
+    await screen.findByRole('table');
+
+    expect(screen.queryByRole('button', { name: 'Invitar' })).not.toBeInTheDocument();
+    expect(mockNavigate).not.toHaveBeenCalled();
   });
 });

@@ -156,11 +156,11 @@ class OrganizationWalletSchemaTest extends TestCase
 
     public function test_rolling_back_the_three_migrations_keeps_organizations_and_reservations()
     {
-        // Step 5: the reservation-events and member-spending-limit migrations sit on top of the three wallet ones.
+        // Step 6: the reservation-events, member-spending-limit and organization-invitations migrations sit on top of the three wallet ones.
         $organization = Organization::factory()->create();
         $reservation = Reservations::factory()->forOrganization($organization)->create();
 
-        $this->artisan('migrate:rollback', ['--step' => 5])->assertExitCode(0);
+        $this->artisan('migrate:rollback', ['--step' => 6])->assertExitCode(0);
 
         $this->assertFalse(Schema::hasTable('organization_wallet_movements'));
         $this->assertFalse(Schema::hasColumn('organizations', 'wallet_balance'));

@@ -19,4 +19,5 @@ enum NotificationType: string
     case STORE_EDITED = 'store_edited';
     case ACCOUNT_BLOCKED = 'account_blocked';
     case ACCOUNT_REACTIVATED = 'account_reactivated';
+    case ORGANIZATION_INVITATION = 'organization_invitation';
 }

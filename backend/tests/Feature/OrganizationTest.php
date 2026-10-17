@@ -599,8 +599,14 @@ class OrganizationTest extends TestCase
             $isSpendingLimitPut = $route->uri() === 'api/organizations/{organization}/spending-limits/{user}'
                 && array_values(array_diff($route->methods(), ['HEAD'])) === ['PUT'];
 
+            // hue-01 INV-13: revoking an invitation is the one DELETE allowed
+            // under api/organizations; it cancels an invitation row and never
+            // touches the organization itself.
+            $isInvitationRevoke = $route->uri() === 'api/organizations/{organization}/invitations/{invitation}'
+                && array_values(array_diff($route->methods(), ['HEAD'])) === ['DELETE'];
+
             $this->assertEmpty(
-                $isSpendingLimitPut ? [] : array_intersect($route->methods(), ['PUT', 'PATCH', 'DELETE']),
+                $isSpendingLimitPut || $isInvitationRevoke ? [] : array_intersect($route->methods(), ['PUT', 'PATCH', 'DELETE']),
                 "Unexpected write verb on {$route->uri()}"
             );
             $this->assertStringNotContainsString('logo', $route->uri());

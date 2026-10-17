@@ -43,6 +43,11 @@ class Organization extends Model
         return $this->hasMany(OrganizationWalletMovement::class);
     }
 
+    public function invitations()
+    {
+        return $this->hasMany(OrganizationInvitation::class);
+    }
+
     public function creator()
     {
         return $this->belongsTo(User::class, 'created_by');
