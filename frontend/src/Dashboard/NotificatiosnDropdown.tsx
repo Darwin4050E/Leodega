@@ -8,13 +8,16 @@ import {
 } from "../services/notifications";
 import { formatUSD } from "../utils/money";
 import { organizationIdentityLine } from "../utils/organization";
+import { resolveNotificationRoute } from "../utils/notificationRoutes";
 import { useEffect, useState, type Dispatch, type SetStateAction } from "react";
 
 interface NotificationsDropdownProps {
+    /** Called before navigating, so the host can close the dropdown. */
+    onClose?: () => void;
     onUnreadChange: Dispatch<SetStateAction<number>>;
 }
 
-const NotificationsDropdown = ({ onUnreadChange }: NotificationsDropdownProps) => {
+const NotificationsDropdown = ({ onClose, onUnreadChange }: NotificationsDropdownProps) => {
     const navigate = useNavigate();
     const [notifications, setNotifications] = useState<AppNotification[]>([]);
 
@@ -33,10 +36,10 @@ const NotificationsDropdown = ({ onUnreadChange }: NotificationsDropdownProps) =
         }
 
         // REDIRIGIR según tipo
-        if (n.type === "store_reported") {
-            navigate("/admin/solicitudes");
-        } else if (n.type === "reservation_booked_and_paid" || n.type === "reservation_expired") {
-            navigate("/arrendador/solicitudes");
+        const path = resolveNotificationRoute(n.type);
+        if (path !== null) {
+            onClose?.();
+            navigate(path);
         }
     };
 

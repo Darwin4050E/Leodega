@@ -5,6 +5,17 @@ import userEvent from '@testing-library/user-event';
 const mockGetNotifications = vi.hoisted(() => vi.fn());
 const mockMarkNotificationRead = vi.hoisted(() => vi.fn());
 const mockNavigate = vi.hoisted(() => vi.fn());
+const mockSelectOrganization = vi.hoisted(() => vi.fn());
+const mockSelectPersonal = vi.hoisted(() => vi.fn());
+const mockActivateOrganization = vi.hoisted(() => vi.fn());
+
+vi.mock('../context/useActiveContext', () => ({
+  useActiveContext: () => ({
+    selectOrganization: mockSelectOrganization,
+    selectPersonal: mockSelectPersonal,
+    activateOrganization: mockActivateOrganization,
+  }),
+}));
 
 vi.mock('../services/notifications', async (importOriginal) => {
   const actual = await importOriginal<typeof import('../services/notifications')>();
@@ -192,8 +203,8 @@ describe('NotificationsDropdown', () => {
     expect(screen.queryByText(/Andina/)).not.toBeInTheDocument();
   });
 
-  // HUE-01 INV-WS55: characterization of the existing unknown-type fallback.
-  it('INV-WS55: shows the title and body of an organization_invitation notification and a click does not navigate', async () => {
+  // HUC-14 INV-W7: the HUE-01 no-navigation characterization is rewritten in place.
+  it('INV-WS55: an organization_invitation click marks it read, closes the dropdown and opens the invitee inbox', async () => {
     const invitation = {
       id: 6,
       title: 'Te invitaron a unirte a una organización',
@@ -203,15 +214,122 @@ describe('NotificationsDropdown', () => {
       data: { invitation_id: 3, organization_id: 7 },
     };
     mockGetNotifications.mockResolvedValue({ data: [invitation] });
+    const onClose = vi.fn();
     const user = userEvent.setup();
 
-    render(<NotificationsDropdown onUnreadChange={vi.fn()} />);
+    render(<NotificationsDropdown onUnreadChange={vi.fn()} onClose={onClose} />);
     expect(await screen.findByText(invitation.title)).toBeInTheDocument();
     expect(screen.getByText(invitation.body)).toBeInTheDocument();
 
     await user.click(screen.getByText(invitation.title));
 
-    await waitFor(() => expect(mockMarkNotificationRead).toHaveBeenCalledWith(6));
+    await waitFor(() => expect(mockNavigate).toHaveBeenCalledWith('/mi-cuenta/invitaciones'));
+    expect(mockMarkNotificationRead).toHaveBeenCalledWith(6);
+    expect(onClose).toHaveBeenCalledTimes(1);
+  });
+
+  it('WS121: an unknown future type shows title and body and neither navigates nor closes', async () => {
+    const unknown = { id: 9, title: 'Algo nuevo', body: 'Detalle', type: 'something_new', is_read: true, data: null };
+    mockGetNotifications.mockResolvedValue({ data: [unknown] });
+    const onClose = vi.fn();
+    const user = userEvent.setup();
+
+    render(<NotificationsDropdown onUnreadChange={vi.fn()} onClose={onClose} />);
+    await user.click(await screen.findByText('Algo nuevo'));
+
+    expect(screen.getByText('Detalle')).toBeInTheDocument();
     expect(mockNavigate).not.toHaveBeenCalled();
+    expect(onClose).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    ['organization_invitation_accepted', 'Invitación aceptada', 'Ana Pérez se unió a la organización Andina.'],
+    [
+      'organization_invitation_rejected',
+      'Invitación rechazada',
+      'ana@example.com rechazó la invitación a unirse a Andina.',
+    ],
+  ])('WS122 WS123 WS125: %s renders as stored and opens the members page', async (type, title, body) => {
+    const notification = { id: 11, title, body, type, is_read: false, data: { invitation_id: 3, organization_id: 7 } };
+    mockGetNotifications.mockResolvedValue({ data: [notification] });
+    const onUnreadChange = vi.fn();
+    const onClose = vi.fn();
+    const user = userEvent.setup();
+
+    render(<NotificationsDropdown onUnreadChange={onUnreadChange} onClose={onClose} />);
+    expect(await screen.findByText(title)).toBeInTheDocument();
+    expect(screen.getByText(body)).toBeInTheDocument();
+
+    await user.click(screen.getByText(title));
+
+    await waitFor(() => expect(mockNavigate).toHaveBeenCalledWith('/organizacion/miembros'));
+    expect(mockMarkNotificationRead).toHaveBeenCalledWith(11);
+    expect(onUnreadChange).toHaveBeenCalledTimes(1);
+    expect(onClose).toHaveBeenCalledTimes(1);
+  });
+
+  it('WS124: following an admin response notification never touches the active context', async () => {
+    const notification = {
+      id: 12,
+      title: 'Invitación aceptada',
+      body: 'Detalle',
+      type: 'organization_invitation_accepted',
+      is_read: true,
+      data: { invitation_id: 3, organization_id: 99 },
+    };
+    mockGetNotifications.mockResolvedValue({ data: [notification] });
+    const user = userEvent.setup();
+
+    render(<NotificationsDropdown onUnreadChange={vi.fn()} />);
+    await user.click(await screen.findByText('Invitación aceptada'));
+
+    await waitFor(() => expect(mockNavigate).toHaveBeenCalledWith('/organizacion/miembros'));
+    expect(mockSelectOrganization).not.toHaveBeenCalled();
+    expect(mockSelectPersonal).not.toHaveBeenCalled();
+    expect(mockActivateOrganization).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    ['null', null],
+    ['undefined', undefined],
+    ['a string', 'corrupted'],
+    ['an array', [1, 2]],
+  ])('WS126: navigation survives data that is %s', async (_label, data) => {
+    const notification = {
+      id: 13,
+      title: 'Invitación rechazada',
+      body: 'Detalle',
+      type: 'organization_invitation_rejected',
+      is_read: true,
+      data,
+    };
+    mockGetNotifications.mockResolvedValue({ data: [notification] });
+    const user = userEvent.setup();
+
+    render(<NotificationsDropdown onUnreadChange={vi.fn()} />);
+    await user.click(await screen.findByText('Invitación rechazada'));
+
+    await waitFor(() => expect(mockNavigate).toHaveBeenCalledWith('/organizacion/miembros'));
+  });
+
+  it('WS127: store_reported keeps navigating to the admin requests', async () => {
+    const reported = { id: 14, title: 'Bodega reportada', body: 'x', type: 'store_reported', is_read: true, data: null };
+    mockGetNotifications.mockResolvedValue({ data: [reported] });
+    const user = userEvent.setup();
+
+    render(<NotificationsDropdown onUnreadChange={vi.fn()} />);
+    await user.click(await screen.findByText('Bodega reportada'));
+
+    await waitFor(() => expect(mockNavigate).toHaveBeenCalledWith('/admin/solicitudes'));
+  });
+
+  it('the onClose prop is optional: clicking a navigable notification without it still navigates', async () => {
+    mockGetNotifications.mockResolvedValue({ data: [expiredNoData] });
+    const user = userEvent.setup();
+
+    render(<NotificationsDropdown onUnreadChange={vi.fn()} />);
+    await user.click(await screen.findByText(expiredNoData.body));
+
+    await waitFor(() => expect(mockNavigate).toHaveBeenCalledWith('/arrendador/solicitudes'));
   });
 });

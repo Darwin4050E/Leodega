@@ -1,9 +1,11 @@
-import { Check, ChevronDown, Plus, User } from 'lucide-react';
+import { Check, ChevronDown, Mail, Plus, User } from 'lucide-react';
 import { useEffect, useId, useRef, useState, type KeyboardEvent } from 'react';
 import { Link } from 'react-router-dom';
 import { CONTEXT_KIND } from '../utils/activeContext';
 import { ORGANIZATIONS_STATUS } from '../context/activeContextBase';
 import { useActiveContext } from '../context/useActiveContext';
+import { useInvitationsInbox } from '../context/useInvitationsInbox';
+import { INVITATION_COPY } from '../utils/invitationCopy';
 import {
   organizationInitials,
   organizationRoleLabel,
@@ -46,6 +48,7 @@ const ContextSwitcher = ({ placement }: ContextSwitcherProps) => {
     selectPersonal,
     reloadOrganizations,
   } = useActiveContext();
+  const { pendingCount, joinedOrganizationIds } = useInvitationsInbox();
   const [open, setOpen] = useState(false);
   const panelId = useId();
   const containerRef = useRef<HTMLDivElement>(null);
@@ -144,6 +147,9 @@ const ContextSwitcher = ({ placement }: ContextSwitcherProps) => {
                   <span className="block text-xs text-gray-500">
                     {organizationRoleLabel(organization.role)}
                   </span>
+                  {joinedOrganizationIds.includes(organization.id) && (
+                    <span className="block text-xs font-medium text-green-600">{INVITATION_COPY.justJoined}</span>
+                  )}
                 </span>
                 {isActive && <Check size={16} className="text-leodega-600" />}
               </button>
@@ -174,6 +180,22 @@ const ContextSwitcher = ({ placement }: ContextSwitcherProps) => {
           >
             <Plus size={16} />
             Crear organización
+          </Link>
+          <Link
+            to="/mi-cuenta/invitaciones"
+            onClick={() => setOpen(false)}
+            className={`${ROW_CLASSES} font-medium text-leodega-700`}
+          >
+            <Mail size={16} />
+            <span className="flex-1">{INVITATION_COPY.switcherEntry}</span>
+            {pendingCount > 0 && (
+              <span
+                data-testid="invitations-badge"
+                className="flex h-5 min-w-5 items-center justify-center rounded-full bg-leodega-600 px-1.5 text-xs font-semibold text-white"
+              >
+                {pendingCount}
+              </span>
+            )}
           </Link>
         </div>
       )}

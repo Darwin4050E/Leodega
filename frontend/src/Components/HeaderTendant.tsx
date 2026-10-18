@@ -5,12 +5,15 @@ import { Link } from "react-router-dom";
 import { getProfile } from "../services/profile";
 import { getUnreadNotificationsCount } from "../services/notifications";
 import { useAuth } from "../context/useAuth";
+import { useInvitationsInbox } from "../context/useInvitationsInbox";
+import { INVITATION_COPY } from "../utils/invitationCopy";
 import NotificationsDropdown from "../Dashboard/NotificatiosnDropdown";
 import ContextSwitcher from "./ContextSwitcher";
 import ActiveContextRibbon from "./ActiveContextRibbon";
 
 const HeaderTendant = () => {
     const { logout } = useAuth();
+    const { pendingCount } = useInvitationsInbox();
     const [mobileDrawerOpen, setMobileDrawerOpen] = useState(false);
     const [userName, setUserName] = useState(null);
     const [userLastName, setUserLastName] = useState("");
@@ -133,6 +136,9 @@ const HeaderTendant = () => {
                                     <a href={item.href}>{item.label}</a>
                                 </li>
                             ))}
+                            <li className='py-2 w-full text-center border-b'>
+                                <Link to="/mi-cuenta/invitaciones">{INVITATION_COPY.drawerEntry(pendingCount)}</Link>
+                            </li>
                         </ul>
                     </div>
                 )}

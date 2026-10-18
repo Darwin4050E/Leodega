@@ -1,6 +1,7 @@
 import { BrowserRouter as Router, Routes, Route } from 'react-router-dom'
 import { AuthProvider } from './context/AuthContext'
 import { ActiveContextProvider } from './context/ActiveContext'
+import { InvitationsInboxProvider } from './context/InvitationsInboxContext'
 import { WizardProvider } from './context/WizardContext'
 import './App.css'
 import Header from './Components/Header'
@@ -59,6 +60,7 @@ function App() {
   return (
     <AuthProvider>
     <ActiveContextProvider>
+    <InvitationsInboxProvider>
     <Router>
       <Routes>
         <Route path="/register" element={<Register />} />
@@ -148,6 +150,7 @@ function App() {
         </Route>
       </Routes>
     </Router>
+    </InvitationsInboxProvider>
     </ActiveContextProvider>
     </AuthProvider>
   )

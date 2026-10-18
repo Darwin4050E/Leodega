@@ -4,9 +4,13 @@ import userEvent from '@testing-library/user-event';
 import { MemoryRouter, useLocation } from 'react-router-dom';
 import type { Organization } from '../services/organizations';
 import type { ActiveContextValue } from '../context/activeContextBase';
+import type { InvitationsInboxValue } from '../context/invitationsInboxBase';
 
 const mockUseActiveContext = vi.hoisted(() => vi.fn());
 vi.mock('../context/useActiveContext', () => ({ useActiveContext: mockUseActiveContext }));
+
+const mockUseInvitationsInbox = vi.hoisted(() => vi.fn());
+vi.mock('../context/useInvitationsInbox', () => ({ useInvitationsInbox: mockUseInvitationsInbox }));
 
 import ContextSwitcher from './ContextSwitcher';
 
@@ -46,6 +50,18 @@ function setContext(overrides: Partial<ActiveContextValue> = {}) {
     reloadOrganizations,
     ...overrides,
   } satisfies ActiveContextValue);
+  setInbox();
+}
+
+function setInbox(overrides: Partial<InvitationsInboxValue> = {}) {
+  mockUseInvitationsInbox.mockReturnValue({
+    pendingCount: 0,
+    joinedOrganizationIds: [],
+    refreshPendingCount: vi.fn(),
+    setPendingCount: vi.fn(),
+    markJoinedOrganization: vi.fn(),
+    ...overrides,
+  } satisfies InvitationsInboxValue);
 }
 
 function renderSwitcher(placement: 'header' | 'drawer' = 'header') {
@@ -379,5 +395,126 @@ describe('ContextSwitcher list states', () => {
 
     expect(screen.queryByText('Cargando organizaciones…')).not.toBeInTheDocument();
     expect(screen.queryByText('No pudimos cargar tus organizaciones')).not.toBeInTheDocument();
+  });
+});
+
+describe('ContextSwitcher invitations entry', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    setContext();
+  });
+
+  const invitationsLink = () => within(panel()).getByRole('link', { name: /Mis invitaciones/ });
+
+  it('WS112: shows Mis invitaciones directly after Crear organización', async () => {
+    renderSwitcher();
+    await open();
+
+    const links = within(panel()).getAllByRole('link');
+    expect(links.map((link) => link.textContent)).toEqual(['Crear organización', 'Mis invitaciones']);
+    expect(invitationsLink()).toHaveAttribute('href', '/mi-cuenta/invitaciones');
+  });
+
+  it('WS112: shows the row in an organization context too', async () => {
+    setContext({ context: { kind: 'organization', organizationId: 7 }, activeOrganization: andina });
+    renderSwitcher();
+    await open();
+
+    expect(invitationsLink()).toBeInTheDocument();
+  });
+
+  it('WS113: navigates to the inbox without changing the context and closes the menu', async () => {
+    render(
+      <MemoryRouter initialEntries={['/arrendatario/dashboard']}>
+        <ContextSwitcher placement="header" />
+        <LocationDisplay />
+      </MemoryRouter>,
+    );
+    const user = await open();
+
+    await user.click(invitationsLink());
+
+    expect(screen.getByTestId('location')).toHaveTextContent('/mi-cuenta/invitaciones');
+    expect(screen.queryByRole('group', { name: 'Cambiar contexto' })).not.toBeInTheDocument();
+    expect(selectOrganization).not.toHaveBeenCalled();
+    expect(selectPersonal).not.toHaveBeenCalled();
+  });
+
+  it('WS114: shows the pending count as a badge on the row', async () => {
+    setInbox({ pendingCount: 3 });
+    renderSwitcher();
+    await open();
+
+    expect(within(invitationsLink()).getByTestId('invitations-badge')).toHaveTextContent('3');
+  });
+
+  it('WS114 WS119: shows neither a badge nor a zero when nothing is pending', async () => {
+    setInbox({ pendingCount: 0 });
+    renderSwitcher();
+    await open();
+
+    expect(screen.queryByTestId('invitations-badge')).not.toBeInTheDocument();
+    expect(invitationsLink()).toHaveTextContent(/^Mis invitaciones$/);
+  });
+
+  it('WS118: keeps the row and shows no error UI when the count is unknown', async () => {
+    setInbox({ pendingCount: 0 });
+    renderSwitcher();
+    await open();
+
+    expect(invitationsLink()).toBeInTheDocument();
+    expect(within(panel()).queryByRole('alert')).not.toBeInTheDocument();
+  });
+
+  it('WS120: keeps the row when the organization list failed to load', async () => {
+    setContext({ status: 'error', organizations: [] });
+    renderSwitcher();
+    await open();
+
+    expect(within(panel()).getByText('No pudimos cargar tus organizaciones')).toBeInTheDocument();
+    expect(invitationsLink()).toBeInTheDocument();
+  });
+
+  it('does not render the row when the switcher itself is hidden', () => {
+    setContext({ enabled: false, status: 'idle', organizations: [] });
+    setInbox({ pendingCount: 2 });
+
+    renderSwitcher();
+
+    expect(screen.queryByTestId('invitations-badge')).not.toBeInTheDocument();
+  });
+});
+
+describe('ContextSwitcher just-joined organization', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    setContext();
+  });
+
+  it('WS98: lists the joined organization with the Miembro role label', async () => {
+    setInbox({ joinedOrganizationIds: [8] });
+    renderSwitcher();
+    await open();
+
+    const row = within(panel()).getByRole('button', { name: /Norte Cía\. Ltda\./ });
+    expect(row).toHaveTextContent('Miembro');
+  });
+
+  it('WS105: marks only the just-joined organization with Recién te uniste', async () => {
+    setInbox({ joinedOrganizationIds: [8] });
+    renderSwitcher();
+    await open();
+
+    expect(within(panel()).getByRole('button', { name: /Norte Cía\. Ltda\./ })).toHaveTextContent('Recién te uniste');
+    expect(within(panel()).getByRole('button', { name: /Importadora Andina/ })).not.toHaveTextContent(
+      'Recién te uniste',
+    );
+  });
+
+  it('WS105: shows no Recién te uniste when nothing was joined', async () => {
+    renderSwitcher();
+    await open();
+
+    expect(within(panel()).queryByText('Recién te uniste')).not.toBeInTheDocument();
   });
 });
