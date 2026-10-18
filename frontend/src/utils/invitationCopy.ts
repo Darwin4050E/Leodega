@@ -51,6 +51,49 @@ export const INVITATION_COPY = {
   previousPage: "Anterior",
   nextPage: "Siguiente",
   pageOf: (page: number, lastPage: number) => `Página ${page} de ${lastPage}`,
+  // Invitee side (IC-48..IC-79). Server-sent refusals (IC-80..IC-84) are not
+  // listed: they are rendered verbatim from the response.
+  inboxTitle: "Invitaciones",
+  inboxSubtitle: "Organizaciones que te invitaron a operar en su nombre.",
+  inboxEyebrow: "Te invitaron a unirte",
+  inboxInvitedBy: (name: string) => `Invitada por ${name}`,
+  inboxRoleLabel: "Rol",
+  inboxRoleValue: "Miembro",
+  inboxPermissionLabel: "Al aceptar podrás",
+  inboxPermissionValue: "Reservar a nombre de la empresa",
+  inboxExpiresLabel: "Vence",
+  inboxExpiresInDays: (days: number) => `en ${days} días`,
+  inboxExpiresInOneDay: "en 1 día",
+  acceptInvitation: "Aceptar invitación",
+  rejectInvitation: "Rechazar",
+  expiredNoticeTitle: "Esta invitación ya no está disponible",
+  expiredNoticeBody: (shortName: string) =>
+    `La invitación expiró. Pide al administrador de ${shortName} que te envíe una nueva.`,
+  emptyTitle: "No tienes invitaciones",
+  emptyBody: "Cuando una empresa te invite, aparecerá aquí.",
+  rejectedEmptyTitle: "No tienes invitaciones pendientes",
+  rejectedEmptyBody:
+    "Rechazaste la invitación. No hubo ningún cambio en tu cuenta y seguirás operando en modo personal.",
+  joinedTitle: (shortName: string) => `Te uniste a ${shortName}`,
+  /** Split around the organization name so the card can render it in bold. */
+  joinedBody: (organizationName: string) => ({
+    lead: "Ya eres miembro de ",
+    name: organizationName,
+    tail: ". El selector de contexto, arriba a la derecha, ahora te deja operar en su nombre.",
+  }),
+  joinedRole: "Rol: Miembro",
+  joinedBadge: "Unido",
+  stayPersonal: "Seguir en personal",
+  operateAs: (shortName: string) => `Operar como ${shortName}`,
+  switcherEntry: "Mis invitaciones",
+  /** The count is appended only when there is something pending. */
+  drawerEntry: (pending: number) => (pending > 0 ? `Mis invitaciones (${pending})` : "Mis invitaciones"),
+  justJoined: "Recién te uniste",
+  accepting: "Aceptando...",
+  rejecting: "Rechazando...",
+  acceptError: "No se pudo aceptar la invitación. Intenta nuevamente.",
+  rejectError: "No se pudo rechazar la invitación. Intenta nuevamente.",
+  inboxRetry: "Reintentar",
 } as const;
 
 const dateFormatter = new Intl.DateTimeFormat("es-EC", { day: "2-digit", month: "short", year: "numeric" });
@@ -63,6 +106,21 @@ export function formatInvitationDate(iso: string): string {
   const parsed = new Date(iso);
   if (Number.isNaN(parsed.getTime())) return "";
   return dateFormatter.format(parsed).replaceAll(".", "");
+}
+
+const MS_PER_DAY = 24 * 60 * 60 * 1000;
+
+/**
+ * "en 5 días" / "en 1 día" for the invitee card. Whole days are rounded up and
+ * never drop below one; the status itself always comes from the server, so a
+ * deadline already past still reads "en 1 día" rather than a negative count.
+ */
+export function formatInvitationExpiry(expiresAtIso: string, now: Date = new Date()): string {
+  const expiresAt = new Date(expiresAtIso);
+  if (Number.isNaN(expiresAt.getTime())) return "";
+
+  const days = Math.ceil((expiresAt.getTime() - now.getTime()) / MS_PER_DAY);
+  return days <= 1 ? INVITATION_COPY.inboxExpiresInOneDay : INVITATION_COPY.inboxExpiresInDays(days);
 }
 
 export const INVITATION_FAILURE = {
@@ -96,4 +154,36 @@ export function resolveInvitationFailure(error: unknown, fallback: string): Invi
   }
 
   return { kind: INVITATION_FAILURE.MESSAGE, message: fallback };
+}
+
+export const RESPOND_ACTION = {
+  ACCEPT: "accept",
+  REJECT: "reject",
+} as const;
+
+export type RespondAction = (typeof RESPOND_ACTION)[keyof typeof RESPOND_ACTION];
+
+export interface RespondFailure {
+  message: string;
+  /** The row is stale (already answered, expired or gone): the page reloads the inbox. */
+  reload: boolean;
+}
+
+// Only these two statuses carry a deliberate server refusal on accept/reject.
+const RESPOND_TEXT_STATUSES = new Set([404, 409]);
+
+/**
+ * Maps a failed accept or reject request to what the card renders. A 404/409
+ * shows the server text verbatim and asks the page to reload the inbox; every
+ * other failure (403, 422, 5xx, network) shows the generic copy of the action.
+ */
+export function resolveRespondFailure(error: unknown, action: RespondAction): RespondFailure {
+  const fallback = action === RESPOND_ACTION.ACCEPT ? INVITATION_COPY.acceptError : INVITATION_COPY.rejectError;
+  const response = asApiError(error).response;
+
+  if (response?.status !== undefined && RESPOND_TEXT_STATUSES.has(response.status)) {
+    return { message: response.data?.message || fallback, reload: true };
+  }
+
+  return { message: fallback, reload: false };
 }

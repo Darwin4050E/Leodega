@@ -3,10 +3,12 @@
 namespace App\Services;
 
 use App\Enums\InvitationStatus;
+use App\Enums\OrganizationRole;
 use App\Exceptions\OrganizationInvitationException;
 use App\Models\Organization;
 use App\Models\OrganizationInvitation;
 use App\Models\User;
+use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Database\UniqueConstraintViolationException;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
@@ -32,6 +34,11 @@ class OrganizationInvitationService
     public const PENDING_EXISTS_MESSAGE = 'Ya hay una invitación pendiente para este usuario en tu organización.';
 
     public const INACTIVE_ORGANIZATION_MESSAGE = 'La organización seleccionada no está activa.';
+
+    // Expired rows stay in the inbox but only the most recent ones (huc-14 Q5).
+    private const INBOX_EXPIRED_LIMIT = 20;
+
+    private const INBOX_RELATIONS = ['organization:id,name', 'inviter:id,name'];
 
     public function __construct(private OrganizationInvitationNotifier $notifier) {}
 
@@ -136,6 +143,166 @@ class OrganizationInvitationService
 
             return $invitation->load('inviter:id,name');
         });
+    }
+
+    /**
+     * The invitee inbox (huc-14 INV-16): every effective-pending invitation of
+     * the user, newest first, then the most recent expired ones. Accepted,
+     * rejected and cancelled rows are not part of it. Two portable queries
+     * joined in PHP keep it identical on SQLite and PostgreSQL; nothing is
+     * written, a lapsed pending row only reads as expired.
+     *
+     * @return array{invitations: Collection<int, OrganizationInvitation>, pending_count: int}
+     */
+    public function listForInvitee(User $invitee): array
+    {
+        $pending = OrganizationInvitation::query()
+            ->where('invited_user_id', $invitee->id)
+            ->pending()
+            ->with(self::INBOX_RELATIONS)
+            ->orderByDesc('created_at')
+            ->orderByDesc('id')
+            ->get();
+
+        $expired = OrganizationInvitation::query()
+            ->where('invited_user_id', $invitee->id)
+            ->where(fn ($query) => $query
+                ->where('status', InvitationStatus::Expired->value)
+                ->orWhere(fn ($lapsed) => $lapsed
+                    ->where('status', InvitationStatus::Pending->value)
+                    ->where('expires_at', '<=', now())))
+            ->with(self::INBOX_RELATIONS)
+            ->orderByDesc('expires_at')
+            ->orderByDesc('id')
+            ->limit(self::INBOX_EXPIRED_LIMIT)
+            ->get();
+
+        return [
+            'invitations' => $pending->concat($expired)->values(),
+            'pending_count' => $pending->count(),
+        ];
+    }
+
+    /**
+     * The invitee turns an invitation down (huc-14 INV-18). The row stays as
+     * `rejected`. Organization status and account state never matter here, and
+     * only the invitation row is locked. A refused attempt writes nothing, so a
+     * lapsed pending is left as stored. The admins are told inside the same
+     * transaction: a failed notification leaves the invitation pending.
+     *
+     * @throws OrganizationInvitationException
+     */
+    public function reject(User $invitee, int $invitationId): OrganizationInvitation
+    {
+        return DB::transaction(function () use ($invitee, $invitationId) {
+            $invitation = $this->lockInvitation($invitee, $invitationId);
+
+            $this->assertOpen($invitation);
+
+            $invitation->update([
+                'status' => InvitationStatus::Rejected,
+                'responded_at' => now(),
+            ]);
+
+            $this->notifier->notifyAdminsOfResponse($invitation, $invitee, InvitationStatus::Rejected);
+
+            return $invitation->load(self::INBOX_RELATIONS);
+        });
+    }
+
+    /**
+     * The invitee joins the organization (huc-14 INV-17) as a plain member with
+     * no spending limit. Lock order is invitation, then organization, the same
+     * invitation lock revoke takes. Checks run in order and the first failure
+     * wins: the invitation status, then organization active, account active and
+     * not already a member. Nothing but the membership, the invitation and the
+     * admin notifications is written, all in one transaction.
+     *
+     * @throws OrganizationInvitationException
+     */
+    public function accept(User $invitee, int $invitationId): Organization
+    {
+        try {
+            return DB::transaction(function () use ($invitee, $invitationId) {
+                $invitation = $this->lockInvitation($invitee, $invitationId);
+                $organization = $this->lockOrganization($invitation);
+
+                $this->assertOpen($invitation);
+
+                if ($organization->status !== 'active'
+                    || $invitee->state !== 'active'
+                    || $organization->users()->whereKey($invitee->id)->exists()) {
+                    throw OrganizationInvitationException::unavailable();
+                }
+
+                $organization->users()->attach($invitee->id, [
+                    'role' => OrganizationRole::MEMBER->value,
+                    'monthly_limit' => null,
+                    'joined_at' => now(),
+                ]);
+
+                $invitation->update([
+                    'status' => InvitationStatus::Accepted,
+                    'responded_at' => now(),
+                ]);
+
+                $this->notifier->notifyAdminsOfResponse($invitation, $invitee, InvitationStatus::Accepted);
+
+                // Re-query through the user's relation so `pivot` carries the role.
+                return $invitee->organizations()->whereKey($organization->id)->firstOrFail();
+            });
+        } catch (UniqueConstraintViolationException) {
+            // A concurrent accept added the membership first. Caught outside the
+            // transaction because PostgreSQL aborts it on a unique violation.
+            throw OrganizationInvitationException::unavailable();
+        }
+    }
+
+    /**
+     * Scoped to the caller: a foreign and a nonexistent id are the same 404.
+     *
+     * @throws OrganizationInvitationException
+     */
+    private function lockInvitation(User $invitee, int $invitationId): OrganizationInvitation
+    {
+        $invitation = OrganizationInvitation::query()
+            ->where('invited_user_id', $invitee->id)
+            ->whereKey($invitationId)
+            ->lockForUpdate()
+            ->first();
+
+        return $invitation ?? throw OrganizationInvitationException::notFound();
+    }
+
+    /**
+     * Always taken after the invitation lock, never before it (revoke holds the
+     * invitation first), so the two orders cannot deadlock.
+     *
+     * @throws OrganizationInvitationException
+     */
+    private function lockOrganization(OrganizationInvitation $invitation): Organization
+    {
+        $organization = Organization::query()
+            ->whereKey($invitation->organization_id)
+            ->lockForUpdate()
+            ->first();
+
+        return $organization ?? throw OrganizationInvitationException::notFound();
+    }
+
+    /**
+     * Only an effective pending invitation can be answered: a repeat answer
+     * says so, a cancelled or lapsed one is simply unavailable.
+     *
+     * @throws OrganizationInvitationException
+     */
+    private function assertOpen(OrganizationInvitation $invitation): void
+    {
+        match ($invitation->effective_status) {
+            InvitationStatus::Pending => null,
+            InvitationStatus::Accepted, InvitationStatus::Rejected => throw OrganizationInvitationException::alreadyResponded(),
+            default => throw OrganizationInvitationException::unavailable(),
+        };
     }
 
     private function pendingExists(): ValidationException

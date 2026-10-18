@@ -152,3 +152,46 @@ export function getInvitations(organizationId: number, page: number) {
 export function revokeInvitation(organizationId: number, invitationId: number) {
   return api.delete<OrganizationInvitation>(`/organizations/${organizationId}/invitations/${invitationId}`);
 }
+
+/**
+ * One invitation as the invitee sees it in the inbox. `status` is the server's
+ * effective status (a lapsed pending already reads `expired`) and `can_respond`
+ * is the only permission flag: the web never derives either from its own
+ * clock. `role` is always `member`. Dates are ISO 8601 strings.
+ */
+export interface InboxInvitation {
+  id: number;
+  organization_id: number;
+  organization_name: string;
+  invited_by_name: string | null;
+  role: "member";
+  status: InvitationStatus;
+  expires_at: string;
+  created_at: string;
+  responded_at: string | null;
+  can_respond: boolean;
+}
+
+/**
+ * Pending invitations first, then the most recent expired ones, in the order
+ * the server sent them. `pending_count` counts effective-pending only, so it
+ * can be lower than `data.length`.
+ */
+export interface InvitationInbox {
+  data: InboxInvitation[];
+  pending_count: number;
+}
+
+// Personal-scope routes: the caller is the invitee, so no organization id is
+// sent and the X-Organization-Id header is ignored by the server.
+export function getMyInvitations() {
+  return api.get<InvitationInbox>("/invitations");
+}
+
+export function acceptInvitation(invitationId: number) {
+  return api.post<Organization>(`/invitations/${invitationId}/accept`);
+}
+
+export function rejectInvitation(invitationId: number) {
+  return api.post<InboxInvitation>(`/invitations/${invitationId}/reject`);
+}

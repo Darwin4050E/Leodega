@@ -22,6 +22,9 @@ vi.mock('../Dashboard/NotificatiosnDropdown', () => ({
   default: () => <div data-testid="notifications-dropdown" />,
 }));
 
+const mockUseInvitationsInbox = vi.hoisted(() => vi.fn());
+vi.mock('../context/useInvitationsInbox', () => ({ useInvitationsInbox: mockUseInvitationsInbox }));
+
 vi.mock('./ContextSwitcher', () => ({
   default: ({ placement }: { placement: string }) => (
     <div data-testid="context-switcher" data-placement={placement} />
@@ -33,6 +36,24 @@ vi.mock('./ActiveContextRibbon', () => ({
 }));
 
 import HeaderTendant from './HeaderTendant';
+
+function setPendingCount(pendingCount: number) {
+  mockUseInvitationsInbox.mockReturnValue({
+    pendingCount,
+    joinedOrganizationIds: [],
+    refreshPendingCount: vi.fn(),
+    setPendingCount: vi.fn(),
+    markJoinedOrganization: vi.fn(),
+  });
+}
+
+async function openDrawer() {
+  const user = userEvent.setup();
+  renderHeader();
+  await screen.findAllByText('Ana');
+  await user.click(screen.getAllByRole('button').at(-1)!);
+  return user;
+}
 
 function renderHeader() {
   return render(
@@ -47,6 +68,7 @@ describe('HeaderTendant', () => {
     vi.clearAllMocks();
     mockGetProfile.mockResolvedValue({ data: { name: 'Ana', lastname: 'Pérez' } });
     mockGetUnreadNotificationsCount.mockResolvedValue({ data: { count: 0 } });
+    setPendingCount(0);
   });
 
   it('no longer lists Crear organización as a navigation entry', async () => {
@@ -96,5 +118,47 @@ describe('HeaderTendant', () => {
     const ribbon = screen.getByTestId('active-context-ribbon');
     const nav = container.querySelector('nav')!;
     expect(nav.nextElementSibling).toBe(ribbon);
+  });
+});
+
+describe('HeaderTendant drawer invitations entry', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mockGetProfile.mockResolvedValue({ data: { name: 'Ana', lastname: 'Pérez' } });
+    mockGetUnreadNotificationsCount.mockResolvedValue({ data: { count: 0 } });
+  });
+
+  it('WS115: appends the pending count to the drawer item', async () => {
+    setPendingCount(2);
+    await openDrawer();
+
+    expect(screen.getByRole('link', { name: 'Mis invitaciones (2)' })).toHaveAttribute(
+      'href',
+      '/mi-cuenta/invitaciones',
+    );
+  });
+
+  it('WS115: shows the bare label when nothing is pending', async () => {
+    setPendingCount(0);
+    await openDrawer();
+
+    expect(screen.getByRole('link', { name: 'Mis invitaciones' })).toBeInTheDocument();
+    expect(screen.queryByText(/\(0\)/)).not.toBeInTheDocument();
+  });
+
+  it('keeps the drawer item out of the closed header', async () => {
+    setPendingCount(2);
+    renderHeader();
+    await screen.findAllByText('Ana');
+
+    expect(screen.queryByRole('link', { name: /Mis invitaciones/ })).not.toBeInTheDocument();
+  });
+
+  it('lists the item after the existing navigation entries', async () => {
+    setPendingCount(1);
+    await openDrawer();
+
+    const labels = screen.getAllByRole('listitem').map((item) => item.textContent);
+    expect(labels.at(-1)).toBe('Mis invitaciones (1)');
   });
 });

@@ -29,9 +29,16 @@ vi.mock('./Dashboard/Tendant/CrearOrganizacion', () => ({
   default: () => <div>Crear organización</div>,
 }));
 
+vi.mock('./Dashboard/Tendant/MisInvitaciones', () => ({
+  default: () => <div>Mis invitaciones</div>,
+}));
+
 const mockGetOrganizations = vi.hoisted(() => vi.fn());
-vi.mock('./services/organizations', () => ({
+const mockGetMyInvitations = vi.hoisted(() => vi.fn());
+vi.mock('./services/organizations', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('./services/organizations')>()),
   getOrganizations: mockGetOrganizations,
+  getMyInvitations: mockGetMyInvitations,
 }));
 
 import App from './App';
@@ -56,6 +63,7 @@ const TENANT_ROUTES: [string, string][] = [
   ['/arrendatario/calendario', 'Calendario del arrendatario'],
   ['/arrendatario/mis-reservas', 'Mis reservas'],
   ['/mi-cuenta/crear-organizacion', 'Crear organización'],
+  ['/mi-cuenta/invitaciones', 'Mis invitaciones'],
   ['/organizacion/billetera', 'Billetera de la organización'],
   ['/organizacion/miembros', 'Miembros de la organización'],
 ];
@@ -65,6 +73,8 @@ describe('tenant routes auth guard', () => {
     localStorage.clear();
     mockGetOrganizations.mockReset();
     mockGetOrganizations.mockResolvedValue({ data: [] });
+    mockGetMyInvitations.mockReset();
+    mockGetMyInvitations.mockResolvedValue({ data: { data: [], pending_count: 0 } });
   });
 
   afterEach(() => {
@@ -96,6 +106,8 @@ describe('active context provider mounting', () => {
     localStorage.clear();
     mockGetOrganizations.mockReset();
     mockGetOrganizations.mockResolvedValue({ data: [] });
+    mockGetMyInvitations.mockReset();
+    mockGetMyInvitations.mockResolvedValue({ data: { data: [], pending_count: 0 } });
   });
 
   afterEach(() => {
@@ -116,5 +128,45 @@ describe('active context provider mounting', () => {
 
     expect(await screen.findByText('Pantalla de inicio de sesión')).toBeInTheDocument();
     expect(mockGetOrganizations).not.toHaveBeenCalled();
+  });
+});
+
+describe('invitations inbox provider mounting', () => {
+  beforeEach(() => {
+    localStorage.clear();
+    mockGetOrganizations.mockReset();
+    mockGetOrganizations.mockResolvedValue({ data: [] });
+    mockGetMyInvitations.mockReset();
+    mockGetMyInvitations.mockResolvedValue({ data: { data: [], pending_count: 0 } });
+  });
+
+  afterEach(() => {
+    window.history.pushState({}, '', '/');
+  });
+
+  it('WS116: requests the invitee inbox once when the tenant shell mounts', async () => {
+    localStorage.setItem('auth_token', 'test-token');
+    localStorage.setItem('auth_user', JSON.stringify({ id: 1, role: 'tenant' }));
+
+    visit('/arrendatario/dashboard');
+
+    await waitFor(() => expect(mockGetMyInvitations).toHaveBeenCalledTimes(1));
+  });
+
+  it.each(['landlord', 'admin'])('WS120: a %s session never requests the invitee inbox', async (role) => {
+    localStorage.setItem('auth_token', 'test-token');
+    localStorage.setItem('auth_user', JSON.stringify({ id: 1, role }));
+
+    visit('/arrendador/mensajes');
+
+    await waitFor(() => expect(mockGetOrganizations).not.toHaveBeenCalled());
+    expect(mockGetMyInvitations).not.toHaveBeenCalled();
+  });
+
+  it('does not request the inbox for an anonymous visitor on a public page', async () => {
+    visit('/login');
+
+    expect(await screen.findByText('Pantalla de inicio de sesión')).toBeInTheDocument();
+    expect(mockGetMyInvitations).not.toHaveBeenCalled();
   });
 });

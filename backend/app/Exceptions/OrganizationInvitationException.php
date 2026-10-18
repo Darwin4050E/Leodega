@@ -7,14 +7,17 @@ use Illuminate\Http\Request;
 use RuntimeException;
 
 /**
- * A revoke that cannot proceed: the invitation is not in this organization
- * (404) or it is no longer pending (409). Both bodies are a bare message.
+ * An invitation action that cannot proceed: the invitation is not reachable by
+ * the caller (404), it is no longer open (409 unavailable) or the invitee
+ * already answered it (409 already responded). Every body is a bare message.
  */
 class OrganizationInvitationException extends RuntimeException
 {
     public const NOT_FOUND_MESSAGE = 'Invitación no encontrada';
 
     public const UNAVAILABLE_MESSAGE = 'Esta invitación ya no está disponible';
+
+    public const ALREADY_RESPONDED_MESSAGE = 'Ya respondiste esta invitación';
 
     private function __construct(string $message, private int $status)
     {
@@ -29,6 +32,11 @@ class OrganizationInvitationException extends RuntimeException
     public static function unavailable(): self
     {
         return new self(self::UNAVAILABLE_MESSAGE, 409);
+    }
+
+    public static function alreadyResponded(): self
+    {
+        return new self(self::ALREADY_RESPONDED_MESSAGE, 409);
     }
 
     public function render(Request $request): JsonResponse
