@@ -74,6 +74,24 @@ function apiError(status: number, data: unknown = {}) {
   return { response: { status, data } };
 }
 
+function paginator<T>(rows: T[], overrides = {}) {
+  return { data: rows, current_page: 1, last_page: 1, per_page: 20, total: rows.length, ...overrides };
+}
+
+function reservation(overrides = {}) {
+  return {
+    id: 11,
+    warehouse_name: 'Bodega Norte',
+    member_name: 'Ana Pérez',
+    start_date: '2026-11-01',
+    end_date: '2026-11-30',
+    status: 'confirmed',
+    total: '120.00',
+    paid_with_wallet: true,
+    ...overrides,
+  };
+}
+
 function deferred<T>() {
   let resolve!: (value: T) => void;
   const promise = new Promise<T>((done) => {
@@ -88,6 +106,8 @@ describe('PanelOrganizacion', () => {
     mocks.useActiveContext.mockReturnValue(orgContext());
     mocks.getPanelSummary.mockResolvedValue(summary());
     mocks.getPanelMembers.mockResolvedValue({ data: [] });
+    mocks.getPanelReservations.mockResolvedValue({ data: paginator([]) });
+    mocks.getPanelHistory.mockResolvedValue({ data: paginator([]) });
     mocks.getOrganizationWallet.mockResolvedValue({ data: { organization_id: 7, balance: '80.50' } });
   });
 
@@ -231,9 +251,9 @@ describe('PanelOrganizacion', () => {
 
       render(<PanelOrganizacion />);
 
-      // One polite status per loading section: cards, wallet and members.
+      // One polite status per loading section: cards, wallet, members and reservations.
       const statuses = screen.getAllByRole('status');
-      expect(statuses).toHaveLength(3);
+      expect(statuses).toHaveLength(4);
       statuses.forEach((status) => expect(status).toHaveTextContent('Cargando…'));
       expect(screen.getByText('Acme S.A.')).toBeInTheDocument();
 
@@ -257,7 +277,7 @@ describe('PanelOrganizacion', () => {
       expect(await screen.findByRole('group', { name: 'Miembros activos' })).toBeInTheDocument();
       expect(mocks.getPanelSummary).toHaveBeenCalledTimes(2);
       expect(mocks.getPanelMembers).toHaveBeenCalledTimes(1);
-      expect(mocks.getPanelReservations).not.toHaveBeenCalled();
+      expect(mocks.getPanelReservations).toHaveBeenCalledTimes(1);
       expect(mocks.getPanelHistory).not.toHaveBeenCalled();
     });
   });
@@ -492,7 +512,93 @@ describe('PanelOrganizacion', () => {
       await screen.findByRole('table', { name: 'Miembros' });
       expect(screen.queryByRole('textbox')).not.toBeInTheDocument();
       expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
-      expect(screen.queryByRole('button')).not.toBeInTheDocument();
+      // Pagination and retry are buttons; nothing may mutate or destroy.
+      expect(screen.queryByRole('button', { name: /cancelar|editar|quitar|recargar|eliminar|guardar/i })).not.toBeInTheDocument();
+    });
+  });
+
+  describe('reservations section', () => {
+    it('WS8: requests page 1 of the active organization and renders the rows below the members', async () => {
+      mocks.getPanelReservations.mockResolvedValue({ data: paginator([reservation()]) });
+
+      render(<PanelOrganizacion />);
+
+      const table = await screen.findByRole('table', { name: 'Reservas a nombre de la empresa' });
+      expect(within(table).getByText('Bodega Norte')).toBeInTheDocument();
+      expect(mocks.getPanelReservations).toHaveBeenCalledWith(7, 1);
+      const headings = screen.getAllByRole('heading', { level: 2 }).map((heading) => heading.textContent);
+      expect(headings.indexOf('Reservas a nombre de la empresa')).toBeGreaterThan(headings.indexOf('Miembros'));
+    });
+
+    it('a member gets the reduced subtitle from the same section', async () => {
+      mocks.useActiveContext.mockReturnValue(orgContext({ role: 'member' }));
+      mocks.getPanelSummary.mockResolvedValue(memberSummary());
+
+      render(<PanelOrganizacion />);
+
+      expect(await screen.findByText(/Solo ves las reservas que hiciste/)).toBeInTheDocument();
+      expect(screen.getByText('Aún no tienes reservas a nombre de la empresa.')).toBeInTheDocument();
+    });
+
+    it('WS12: moving to page 2 requests page 2 and shows only its rows (the late-response guard is covered in the hook)', async () => {
+      mocks.getPanelReservations
+        .mockResolvedValueOnce({ data: paginator([reservation()], { last_page: 2 }) })
+        .mockResolvedValueOnce({
+          data: paginator([reservation({ id: 12, warehouse_name: 'Bodega Sur' })], { current_page: 2, last_page: 2 }),
+        });
+
+      render(<PanelOrganizacion />);
+      await userEvent.click(await screen.findByRole('button', { name: 'Siguiente' }));
+
+      expect(await screen.findByText('Bodega Sur')).toBeInTheDocument();
+      expect(mocks.getPanelReservations).toHaveBeenLastCalledWith(7, 2);
+      expect(screen.queryByText('Bodega Norte')).not.toBeInTheDocument();
+      expect(screen.getByText('Página 2 de 2')).toBeInTheDocument();
+    });
+
+    it('WS10: switching organization returns to page 1 of the new one and clears the rows', async () => {
+      const second = deferred<{ data: ReturnType<typeof paginator> }>();
+      mocks.getPanelReservations
+        .mockResolvedValueOnce({ data: paginator([reservation()]) })
+        .mockReturnValueOnce(second.promise);
+
+      const { rerender } = render(<PanelOrganizacion />);
+      expect(await screen.findByText('Bodega Norte')).toBeInTheDocument();
+
+      mocks.useActiveContext.mockReturnValue(orgContext({ id: 8, name: 'Beta Ltda.' }));
+      rerender(<PanelOrganizacion />);
+
+      expect(screen.queryByText('Bodega Norte')).not.toBeInTheDocument();
+      expect(mocks.getPanelReservations).toHaveBeenLastCalledWith(8, 1);
+      second.resolve({ data: paginator([reservation({ id: 30, warehouse_name: 'Bodega Beta' })]) });
+      expect(await screen.findByText('Bodega Beta')).toBeInTheDocument();
+    });
+
+    it('WS59 / WS61: a failure stays in this section and Reintentar refetches only the reservations', async () => {
+      mocks.getPanelReservations.mockRejectedValueOnce(apiError(500, { message: 'SQLSTATE[HY000] boom' }));
+
+      render(<PanelOrganizacion />);
+
+      expect(await screen.findByText('No pudimos cargar las reservas')).toBeInTheDocument();
+      expect(screen.queryByText(/SQLSTATE/)).not.toBeInTheDocument();
+      expect(screen.getByRole('group', { name: 'Miembros activos' })).toBeInTheDocument();
+
+      mocks.getPanelReservations.mockResolvedValue({ data: paginator([reservation()]) });
+      await userEvent.click(screen.getByRole('button', { name: 'Reintentar' }));
+
+      expect(await screen.findByText('Bodega Norte')).toBeInTheDocument();
+      expect(mocks.getPanelReservations).toHaveBeenCalledTimes(2);
+      expect(mocks.getPanelSummary).toHaveBeenCalledTimes(1);
+      expect(mocks.getPanelMembers).toHaveBeenCalledTimes(1);
+    });
+
+    it('WS67: the link to the caller reservations only navigates', async () => {
+      render(<PanelOrganizacion />);
+
+      expect(await screen.findByRole('link', { name: 'Ver mis reservas' })).toHaveAttribute(
+        'href',
+        '/arrendatario/mis-reservas',
+      );
     });
   });
 });

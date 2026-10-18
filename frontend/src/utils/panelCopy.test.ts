@@ -81,3 +81,33 @@ describe('PANEL_COPY (wallet and members chunk, PC-19..PC-40)', () => {
     expect(PANEL_COPY.spentOfLimit('$40.00', '$100.00')).toBe('$40.00 de $100.00');
   });
 });
+
+describe('PANEL_COPY (reservations chunk, PC-41..PC-51 and PC-62)', () => {
+  it.each([
+    ['reservationsTitle', 'Reservas a nombre de la empresa'],
+    ['reservationsSubtitleAdmin', 'Visibles para todos los miembros · se pagan con el saldo de la billetera'],
+    ['reservationsSubtitleMember', 'Solo ves las reservas que hiciste · se pagan con el saldo de la billetera'],
+    ['warehouseColumn', 'Bodega'],
+    ['periodColumn', 'Período'],
+    ['amountColumn', 'Monto'],
+    ['paidWithWalletColumn', 'Pagado con saldo'],
+    ['statusColumn', 'Estado'],
+    ['statusPending', 'Pendiente'],
+    ['statusActive', 'Activa'],
+    ['paidByCard', 'Tarjeta'],
+    ['hiddenAmount', '—'],
+    [
+      'reservationsEmptyAdmin',
+      'Aún no hay reservas a nombre de la empresa. Reserva en contexto de empresa desde el catálogo.',
+    ],
+    ['reservationsEmptyMember', 'Aún no tienes reservas a nombre de la empresa.'],
+    ['myReservationsLink', 'Ver mis reservas'],
+    ['reservationsError', 'No pudimos cargar las reservas'],
+  ] as const)('PC %s resolves to the approved text', (key, expected) => {
+    expect(PANEL_COPY[key]).toBe(expected);
+  });
+
+  it('PC-45 composes the reservation period', () => {
+    expect(PANEL_COPY.period('01 nov', '30 nov')).toBe('01 nov — 30 nov');
+  });
+});
