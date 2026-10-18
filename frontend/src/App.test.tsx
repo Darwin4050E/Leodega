@@ -29,6 +29,10 @@ vi.mock('./Dashboard/Tendant/CrearOrganizacion', () => ({
   default: () => <div>Crear organización</div>,
 }));
 
+vi.mock('./Dashboard/Tendant/MisInvitaciones', () => ({
+  default: () => <div>Mis invitaciones</div>,
+}));
+
 const mockGetOrganizations = vi.hoisted(() => vi.fn());
 const mockGetMyInvitations = vi.hoisted(() => vi.fn());
 vi.mock('./services/organizations', async (importOriginal) => ({
@@ -59,6 +63,7 @@ const TENANT_ROUTES: [string, string][] = [
   ['/arrendatario/calendario', 'Calendario del arrendatario'],
   ['/arrendatario/mis-reservas', 'Mis reservas'],
   ['/mi-cuenta/crear-organizacion', 'Crear organización'],
+  ['/mi-cuenta/invitaciones', 'Mis invitaciones'],
   ['/organizacion/billetera', 'Billetera de la organización'],
   ['/organizacion/miembros', 'Miembros de la organización'],
 ];

@@ -55,6 +55,7 @@ import MisReservas from './Dashboard/Tendant/MisReservas'
 import CrearOrganizacion from './Dashboard/Tendant/CrearOrganizacion'
 import BilleteraOrganizacion from './Dashboard/Tendant/BilleteraOrganizacion'
 import MiembrosOrganizacion from './Dashboard/Tendant/MiembrosOrganizacion'
+import MisInvitaciones from './Dashboard/Tendant/MisInvitaciones'
 
 function App() {
   return (
@@ -145,6 +146,7 @@ function App() {
           <Route path="/arrendatario/calendario" element={<CalendarioTendant />} />
           <Route path="/arrendatario/mis-reservas" element={<MisReservas />} />
           <Route path="/mi-cuenta/crear-organizacion" element={<CrearOrganizacion />} />
+          <Route path="/mi-cuenta/invitaciones" element={<MisInvitaciones />} />
           <Route path="/organizacion/billetera" element={<BilleteraOrganizacion />} />
           <Route path="/organizacion/miembros" element={<MiembrosOrganizacion />} />
         </Route>

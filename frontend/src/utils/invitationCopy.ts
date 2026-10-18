@@ -93,6 +93,7 @@ export const INVITATION_COPY = {
   rejecting: "Rechazando...",
   acceptError: "No se pudo aceptar la invitación. Intenta nuevamente.",
   rejectError: "No se pudo rechazar la invitación. Intenta nuevamente.",
+  inboxRetry: "Reintentar",
 } as const;
 
 const dateFormatter = new Intl.DateTimeFormat("es-EC", { day: "2-digit", month: "short", year: "numeric" });

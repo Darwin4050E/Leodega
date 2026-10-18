@@ -203,6 +203,7 @@ describe('INVITATION_COPY invitee inbox (IC-48..IC-79)', () => {
     ['justJoined', 'Recién te uniste'],
     ['accepting', 'Aceptando...'],
     ['rejecting', 'Rechazando...'],
+    ['inboxRetry', 'Reintentar'],
     ['acceptError', 'No se pudo aceptar la invitación. Intenta nuevamente.'],
     ['rejectError', 'No se pudo rechazar la invitación. Intenta nuevamente.'],
   ] as const)('WS62: %s resolves to the approved string', (key, expected) => {
