@@ -3,6 +3,7 @@
 namespace App\Services;
 
 use App\Enums\InvitationStatus;
+use App\Enums\OrganizationRole;
 use App\Exceptions\OrganizationInvitationException;
 use App\Models\Organization;
 use App\Models\OrganizationInvitation;
@@ -210,6 +211,54 @@ class OrganizationInvitationService
     }
 
     /**
+     * The invitee joins the organization (huc-14 INV-17) as a plain member with
+     * no spending limit. Lock order is invitation, then organization, the same
+     * invitation lock revoke takes. Checks run in order and the first failure
+     * wins: the invitation status, then organization active, account active and
+     * not already a member. Nothing but the membership, the invitation and the
+     * admin notifications is written, all in one transaction.
+     *
+     * @throws OrganizationInvitationException
+     */
+    public function accept(User $invitee, int $invitationId): Organization
+    {
+        try {
+            return DB::transaction(function () use ($invitee, $invitationId) {
+                $invitation = $this->lockInvitation($invitee, $invitationId);
+                $organization = $this->lockOrganization($invitation);
+
+                $this->assertOpen($invitation);
+
+                if ($organization->status !== 'active'
+                    || $invitee->state !== 'active'
+                    || $organization->users()->whereKey($invitee->id)->exists()) {
+                    throw OrganizationInvitationException::unavailable();
+                }
+
+                $organization->users()->attach($invitee->id, [
+                    'role' => OrganizationRole::MEMBER->value,
+                    'monthly_limit' => null,
+                    'joined_at' => now(),
+                ]);
+
+                $invitation->update([
+                    'status' => InvitationStatus::Accepted,
+                    'responded_at' => now(),
+                ]);
+
+                $this->notifier->notifyAdminsOfResponse($invitation, $invitee, InvitationStatus::Accepted);
+
+                // Re-query through the user's relation so `pivot` carries the role.
+                return $invitee->organizations()->whereKey($organization->id)->firstOrFail();
+            });
+        } catch (UniqueConstraintViolationException) {
+            // A concurrent accept added the membership first. Caught outside the
+            // transaction because PostgreSQL aborts it on a unique violation.
+            throw OrganizationInvitationException::unavailable();
+        }
+    }
+
+    /**
      * Scoped to the caller: a foreign and a nonexistent id are the same 404.
      *
      * @throws OrganizationInvitationException
@@ -223,6 +272,22 @@ class OrganizationInvitationService
             ->first();
 
         return $invitation ?? throw OrganizationInvitationException::notFound();
+    }
+
+    /**
+     * Always taken after the invitation lock, never before it (revoke holds the
+     * invitation first), so the two orders cannot deadlock.
+     *
+     * @throws OrganizationInvitationException
+     */
+    private function lockOrganization(OrganizationInvitation $invitation): Organization
+    {
+        $organization = Organization::query()
+            ->whereKey($invitation->organization_id)
+            ->lockForUpdate()
+            ->first();
+
+        return $organization ?? throw OrganizationInvitationException::notFound();
     }
 
     /**

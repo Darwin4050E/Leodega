@@ -3,6 +3,7 @@
 namespace App\Http\Controllers;
 
 use App\Http\Resources\InvitationInboxItemResource;
+use App\Http\Resources\OrganizationResource;
 use App\Services\OrganizationInvitationService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -23,6 +24,13 @@ class InvitationInboxController extends Controller
             'data' => InvitationInboxItemResource::collection($inbox['invitations'])->resolve($request),
             'pending_count' => $inbox['pending_count'],
         ]);
+    }
+
+    public function accept(Request $request, OrganizationInvitationService $invitations, string $invitation): JsonResponse
+    {
+        $organization = $invitations->accept($request->user(), (int) $invitation);
+
+        return response()->json((new OrganizationResource($organization))->resolve($request));
     }
 
     public function reject(Request $request, OrganizationInvitationService $invitations, string $invitation): JsonResponse

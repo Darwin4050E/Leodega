@@ -273,6 +273,7 @@ Route::middleware(['auth.api:sanctum', 'role:tenant'])
     ->where(['invitation' => '[1-9][0-9]{0,17}'])
     ->group(function () {
         Route::get('/invitations', [InvitationInboxController::class, 'index']);
+        Route::post('/invitations/{invitation}/accept', [InvitationInboxController::class, 'accept']);
         Route::post('/invitations/{invitation}/reject', [InvitationInboxController::class, 'reject']);
     });
 

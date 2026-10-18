@@ -9,15 +9,15 @@ use App\Models\Organization;
 use App\Models\OrganizationInvitation;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\Route;
 use Illuminate\Testing\TestResponse;
 use PHPUnit\Framework\Attributes\DataProvider;
 use Tests\TestCase;
 
 /**
- * huc-14 U1a INV-15 (list and reject halves; the accept target joins the data
- * providers in U1b): the personal invitee routes sit behind auth + the tenant
- * role, are scoped to the caller, and treat a foreign, a nonexistent and a
- * malformed id identically.
+ * huc-14 INV-15 (U1a list and reject, U1b accept and the route table): the
+ * personal invitee routes sit behind auth + the tenant role, are scoped to the
+ * caller, and treat a foreign, a nonexistent and a malformed id identically.
  */
 class InvitationInboxAuthorizationTest extends TestCase
 {
@@ -68,17 +68,18 @@ class InvitationInboxAuthorizationTest extends TestCase
         return match ($target) {
             'list' => $request->getJson('/api/invitations'),
             'reject' => $request->postJson("/api/invitations/{$invitationId}/reject"),
+            'accept' => $request->postJson("/api/invitations/{$invitationId}/accept"),
         };
     }
 
     public static function allTargets(): array
     {
-        return ['list' => ['list'], 'reject' => ['reject']];
+        return ['list' => ['list'], 'reject' => ['reject'], 'accept' => ['accept']];
     }
 
     public static function idTargets(): array
     {
-        return ['reject' => ['reject']];
+        return ['reject' => ['reject'], 'accept' => ['accept']];
     }
 
     private function assertNothingWritten(OrganizationInvitation $invitation): void
@@ -106,6 +107,8 @@ class InvitationInboxAuthorizationTest extends TestCase
             'list as platform admin' => ['list', 'admin'],
             'reject as landlord' => ['reject', 'landlord'],
             'reject as platform admin' => ['reject', 'admin'],
+            'accept as landlord' => ['accept', 'landlord'],
+            'accept as platform admin' => ['accept', 'admin'],
         ];
     }
 
@@ -153,6 +156,9 @@ class InvitationInboxAuthorizationTest extends TestCase
             'reject 0' => ['reject', '0'],
             'reject abc' => ['reject', 'abc'],
             'reject 19 digits' => ['reject', '1234567890123456789'],
+            'accept 0' => ['accept', '0'],
+            'accept abc' => ['accept', 'abc'],
+            'accept 19 digits' => ['accept', '1234567890123456789'],
         ];
     }
 
@@ -182,7 +188,7 @@ class InvitationInboxAuthorizationTest extends TestCase
     // INV-S137: the active-organization header plays no role
     public static function headerTargets(): array
     {
-        return ['list' => ['list', 200], 'reject' => ['reject', 404]];
+        return ['list' => ['list', 200], 'reject' => ['reject', 404], 'accept' => ['accept', 404]];
     }
 
     #[DataProvider('headerTargets')]
@@ -239,10 +245,50 @@ class InvitationInboxAuthorizationTest extends TestCase
             $this->hit('reject', $this->user('admin'), $invitation->id),
             $this->hit('reject', $this->invitee, 987654),
             $this->hit('reject', $this->admin, $invitation->id),
+            $this->hit('accept', null, $invitation->id),
+            $this->hit('accept', $this->user('landlord'), $invitation->id),
+            $this->hit('accept', $this->invitee, 987654),
+            $this->hit('accept', $this->admin, $invitation->id),
         ];
 
         foreach ($responses as $response) {
             $this->assertSame(['message'], array_keys($response->json()));
         }
+    }
+
+    // INV-S141
+    public function test_the_three_routes_carry_auth_and_the_tenant_role_and_never_the_org_context()
+    {
+        $routes = collect(Route::getRoutes()->getRoutes())
+            ->filter(fn ($route) => str_starts_with($route->uri(), 'api/invitations'))
+            ->keyBy(fn ($route) => $route->methods()[0].' '.$route->uri());
+
+        $this->assertSame(
+            [
+                'GET api/invitations',
+                'POST api/invitations/{invitation}/accept',
+                'POST api/invitations/{invitation}/reject',
+            ],
+            $routes->keys()->sort()->values()->all(),
+        );
+
+        foreach ($routes as $route) {
+            $middleware = $route->gatherMiddleware();
+
+            $this->assertContains('auth.api:sanctum', $middleware);
+            $this->assertContains('role:tenant', $middleware);
+            $this->assertNotContains('org.context', $middleware);
+        }
+
+        $mounted = collect(Route::getRoutes()->getRoutes())
+            ->reject(fn ($route) => str_starts_with($route->uri(), 'api/_probe/'))
+            ->filter(fn ($route) => in_array('org.context', $route->gatherMiddleware(), true))
+            ->flatMap(fn ($route) => collect($route->methods())
+                ->reject(fn ($method) => $method === 'HEAD')
+                ->map(fn ($method) => $method.' '.$route->uri()))
+            ->sort()
+            ->values()
+            ->all();
+        $this->assertSame(['GET api/tenant/reservations', 'POST api/reservations'], $mounted);
     }
 }
