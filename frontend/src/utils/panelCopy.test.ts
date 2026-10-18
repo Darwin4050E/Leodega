@@ -111,3 +111,25 @@ describe('PANEL_COPY (reservations chunk, PC-41..PC-51 and PC-62)', () => {
     expect(PANEL_COPY.period('01 nov', '30 nov')).toBe('01 nov — 30 nov');
   });
 });
+
+describe('PANEL_COPY (history chunk, PC-52..PC-61)', () => {
+  it.each([
+    ['historyTitle', 'Historial de acciones'],
+    ['historySubtitle', 'Reservas, billetera y miembros — con fecha y autor'],
+    ['historyReservationCreated', '{actor} reservó {bodega}'],
+    ['historyReservationCancelled', '{actor} canceló la reserva de {bodega}'],
+    ['historyWalletTopup', '{actor} recargó la billetera con {monto}'],
+    ['historyWalletRefund', 'Se reembolsaron {monto} a la billetera por la reserva de {bodega}'],
+    ['historyMemberJoined', '{actor} se unió a la organización'],
+    ['historyUnknownActor', 'Un usuario que ya no está'],
+    ['historyUnknownWarehouse', 'una bodega que ya no está disponible'],
+    ['historyEmpty', 'Aún no hay actividad en la empresa.'],
+    ['historyError', 'No pudimos cargar el historial'],
+  ] as const)('PC %s resolves to the approved text', (key, expected) => {
+    expect(PANEL_COPY[key]).toBe(expected);
+  });
+
+  it('keeps a neutral line for a kind the web does not know yet (not part of the PC table)', () => {
+    expect(PANEL_COPY.historyUnknownKind).toBe('Actividad registrada en la organización');
+  });
+});

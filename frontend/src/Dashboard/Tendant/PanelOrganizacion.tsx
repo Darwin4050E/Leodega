@@ -1,12 +1,19 @@
-import type { ReactNode } from "react";
+import { useState, type ReactNode } from "react";
 
 import HeaderTendant from "../../Components/HeaderTendant";
+import PanelHistoryFeed from "../../Components/PanelHistoryFeed";
 import PanelMembersTable from "../../Components/PanelMembersTable";
 import PanelReservationsTable from "../../Components/PanelReservationsTable";
 import PanelSummaryCards from "../../Components/PanelSummaryCards";
 import PanelWalletSummary from "../../Components/PanelWalletSummary";
 import { useActiveContext } from "../../context/useActiveContext";
-import { PANEL_STATUS, usePanelMembers, usePanelReservations, usePanelSummary } from "../../hooks/useOrganizationPanel";
+import {
+  PANEL_STATUS,
+  usePanelHistory,
+  usePanelMembers,
+  usePanelReservations,
+  usePanelSummary,
+} from "../../hooks/useOrganizationPanel";
 import type { Organization } from "../../services/organizations";
 import { ORGANIZATION_FORBIDDEN_MESSAGE } from "../../utils/activeContext";
 import { organizationInitials, organizationShortName } from "../../utils/organization";
@@ -85,6 +92,19 @@ const PanelOrganizacion = () => {
   const members = usePanelMembers(activeOrganization?.id ?? null);
   const reservations = usePanelReservations(activeOrganization?.id ?? null);
 
+  // The history hook takes its page as a parameter, so the page returns to 1 here when the organization changes.
+  const organizationId = activeOrganization?.id ?? null;
+  const [historyOrganizationId, setHistoryOrganizationId] = useState(organizationId);
+  const [historyPage, setHistoryPage] = useState(1);
+  if (historyOrganizationId !== organizationId) {
+    setHistoryOrganizationId(organizationId);
+    setHistoryPage(1);
+  }
+
+  // The cached role only decides whether the first request is made; the summary role replaces it (A11).
+  const isAdmin = (summary.data?.role ?? activeOrganization?.role) === "admin";
+  const history = usePanelHistory(organizationId, isAdmin, historyPage);
+
   if (activeOrganization === null) {
     return (
       <PageShell>
@@ -103,8 +123,6 @@ const PanelOrganizacion = () => {
     );
   }
 
-  const isAdmin = (summary.data?.role ?? activeOrganization.role) === "admin";
-
   return (
     <PageShell shortName={organizationShortName(activeOrganization.name)}>
       <PanelHeader organization={activeOrganization} isAdmin={isAdmin} />
@@ -120,6 +138,15 @@ const PanelOrganizacion = () => {
         onPageChange={reservations.goToPage}
         onRetry={reservations.reload}
       />
+      {isAdmin && (
+        <PanelHistoryFeed
+          status={history.status}
+          history={history.data}
+          page={historyPage}
+          onPageChange={setHistoryPage}
+          onRetry={history.reload}
+        />
+      )}
     </PageShell>
   );
 };

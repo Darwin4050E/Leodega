@@ -67,4 +67,18 @@ export const PANEL_COPY = {
   reservationsEmptyMember: "Aún no tienes reservas a nombre de la empresa.",
   myReservationsLink: "Ver mis reservas",
   reservationsError: "No pudimos cargar las reservas",
+  historyTitle: "Historial de acciones",
+  historySubtitle: "Reservas, billetera y miembros — con fecha y autor",
+  // Sentence templates keep the spec placeholders so the composer can emphasise the actor and the warehouse.
+  historyReservationCreated: "{actor} reservó {bodega}",
+  historyReservationCancelled: "{actor} canceló la reserva de {bodega}",
+  historyWalletTopup: "{actor} recargó la billetera con {monto}",
+  historyWalletRefund: "Se reembolsaron {monto} a la billetera por la reserva de {bodega}",
+  historyMemberJoined: "{actor} se unió a la organización",
+  historyUnknownActor: "Un usuario que ya no está",
+  historyUnknownWarehouse: "una bodega que ya no está disponible",
+  historyEmpty: "Aún no hay actividad en la empresa.",
+  historyError: "No pudimos cargar el historial",
+  // Not in the PC table: the line for a kind the web does not know yet (WS50).
+  historyUnknownKind: "Actividad registrada en la organización",
 } as const;

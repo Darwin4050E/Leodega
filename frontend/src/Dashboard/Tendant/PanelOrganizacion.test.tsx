@@ -92,12 +92,26 @@ function reservation(overrides = {}) {
   };
 }
 
+function historyEntry(overrides = {}) {
+  return {
+    id: 'reservation_created:1',
+    kind: 'reservation_created',
+    occurred_at: new Date(2026, 5, 8, 9, 12).toISOString(),
+    actor_name: 'Ana Pérez',
+    target_label: 'Bodega Norte',
+    amount: null,
+    ...overrides,
+  };
+}
+
 function deferred<T>() {
   let resolve!: (value: T) => void;
-  const promise = new Promise<T>((done) => {
+  let reject!: (reason: unknown) => void;
+  const promise = new Promise<T>((done, fail) => {
     resolve = done;
+    reject = fail;
   });
-  return { promise, resolve };
+  return { promise, resolve, reject };
 }
 
 describe('PanelOrganizacion', () => {
@@ -240,7 +254,9 @@ describe('PanelOrganizacion', () => {
       expect(screen.getByText('Miembro')).toBeInTheDocument();
       expect(screen.queryByText('Administrador')).not.toBeInTheDocument();
       expect(screen.queryByText('Invitaciones pendientes')).not.toBeInTheDocument();
-      expect(mocks.getPanelHistory).not.toHaveBeenCalled();
+      expect(screen.queryByText('Historial de acciones')).not.toBeInTheDocument();
+      // The cached admin hint asks once for the feed; once the summary says member it is never asked again.
+      expect(mocks.getPanelHistory).toHaveBeenCalledTimes(1);
     });
   });
 
@@ -251,9 +267,9 @@ describe('PanelOrganizacion', () => {
 
       render(<PanelOrganizacion />);
 
-      // One polite status per loading section: cards, wallet, members and reservations.
+      // One polite status per loading section: cards, wallet, members, reservations and (admin) history.
       const statuses = screen.getAllByRole('status');
-      expect(statuses).toHaveLength(4);
+      expect(statuses).toHaveLength(5);
       statuses.forEach((status) => expect(status).toHaveTextContent('Cargando…'));
       expect(screen.getByText('Acme S.A.')).toBeInTheDocument();
 
@@ -278,7 +294,8 @@ describe('PanelOrganizacion', () => {
       expect(mocks.getPanelSummary).toHaveBeenCalledTimes(2);
       expect(mocks.getPanelMembers).toHaveBeenCalledTimes(1);
       expect(mocks.getPanelReservations).toHaveBeenCalledTimes(1);
-      expect(mocks.getPanelHistory).not.toHaveBeenCalled();
+      // The cached admin hint requested the feed once; retrying the summary does not refetch it.
+      expect(mocks.getPanelHistory).toHaveBeenCalledTimes(1);
     });
   });
 
@@ -341,7 +358,9 @@ describe('PanelOrganizacion', () => {
       await waitFor(() => expect(screen.getByText('Vista de miembro')).toBeInTheDocument());
       expect(await screen.findByRole('group', { name: 'Miembros activos' })).toBeInTheDocument();
       expect(screen.queryByText('Invitaciones pendientes')).not.toBeInTheDocument();
-      expect(mocks.getPanelHistory).not.toHaveBeenCalled();
+      expect(screen.queryByText('Historial de acciones')).not.toBeInTheDocument();
+      expect(mocks.getPanelHistory).toHaveBeenCalledTimes(1);
+      expect(mocks.getPanelHistory).toHaveBeenCalledWith(7, 1);
     });
   });
 
@@ -599,6 +618,190 @@ describe('PanelOrganizacion', () => {
         'href',
         '/arrendatario/mis-reservas',
       );
+    });
+  });
+
+  describe('history section', () => {
+    it('WS8 / WS44: an admin requests page 1 of the history of the active organization and sees it below the reservations', async () => {
+      mocks.getPanelHistory.mockResolvedValue({ data: paginator([historyEntry()]) });
+
+      render(<PanelOrganizacion />);
+
+      const section = await screen.findByRole('region', { name: 'Historial de acciones' });
+      expect(within(section).getByText('Bodega Norte')).toBeInTheDocument();
+      expect(mocks.getPanelHistory).toHaveBeenCalledWith(7, 1);
+      const headings = screen.getAllByRole('heading', { level: 2 }).map((heading) => heading.textContent);
+      expect(headings.indexOf('Historial de acciones')).toBeGreaterThan(headings.indexOf('Reservas a nombre de la empresa'));
+    });
+
+    it('WS54 / WS56: a member never requests the history, has no heading and no admin-only control', async () => {
+      mocks.useActiveContext.mockReturnValue(orgContext({ role: 'member' }));
+      mocks.getPanelSummary.mockResolvedValue(memberSummary());
+
+      render(<PanelOrganizacion />);
+
+      await screen.findByRole('group', { name: 'Miembros activos' });
+      expect(mocks.getPanelHistory).not.toHaveBeenCalled();
+      expect(screen.queryByText('Historial de acciones')).not.toBeInTheDocument();
+      expect(
+        screen.queryByRole('button', { name: /invitar|recargar|editar límite|quitar|cancelar/i }),
+      ).not.toBeInTheDocument();
+      expect(
+        screen.queryByRole('link', { name: /invitar|recargar|editar límite|quitar|cancelar|gestionar límites/i }),
+      ).not.toBeInTheDocument();
+    });
+
+    it('WS9: a cached admin turned member loses the section and a late history refusal stays silent', async () => {
+      const history = deferred<{ data: ReturnType<typeof paginator> }>();
+      mocks.getPanelHistory.mockReturnValue(history.promise);
+      mocks.getPanelSummary.mockResolvedValue(memberSummary());
+
+      render(<PanelOrganizacion />);
+      expect(await screen.findByText('Vista de miembro')).toBeInTheDocument();
+      expect(screen.queryByText('Historial de acciones')).not.toBeInTheDocument();
+
+      history.reject(apiError(403, { message: 'No autorizado' }));
+      await waitFor(() => expect(mocks.getPanelHistory).toHaveBeenCalledTimes(1));
+      expect(screen.queryByText('Historial de acciones')).not.toBeInTheDocument();
+      expect(screen.queryByText('No autorizado')).not.toBeInTheDocument();
+      expect(screen.queryByText('No pudimos cargar el historial')).not.toBeInTheDocument();
+    });
+
+    it('WS52: a 403 on the history removes only that section, silently', async () => {
+      mocks.getPanelHistory.mockRejectedValue(apiError(403, { message: 'No autorizado' }));
+
+      render(<PanelOrganizacion />);
+
+      expect(await screen.findByRole('group', { name: 'Miembros activos' })).toBeInTheDocument();
+      await waitFor(() => expect(mocks.getPanelHistory).toHaveBeenCalled());
+      expect(screen.queryByText('Historial de acciones')).not.toBeInTheDocument();
+      expect(screen.queryByText('No autorizado')).not.toBeInTheDocument();
+      expect(screen.queryByText('No pudimos cargar el historial')).not.toBeInTheDocument();
+      expect(screen.getByRole('heading', { level: 2, name: 'Reservas a nombre de la empresa' })).toBeInTheDocument();
+    });
+
+    it('moving to page 2 requests page 2 of the history only', async () => {
+      mocks.getPanelHistory
+        .mockResolvedValueOnce({ data: paginator([historyEntry()], { last_page: 2 }) })
+        .mockResolvedValueOnce({
+          data: paginator([historyEntry({ id: 'member_joined:2', kind: 'member_joined', actor_name: 'Luis Mora' })], {
+            current_page: 2,
+            last_page: 2,
+          }),
+        });
+
+      render(<PanelOrganizacion />);
+      await userEvent.click(await screen.findByRole('button', { name: 'Siguiente' }));
+
+      expect(await screen.findByText('Luis Mora')).toBeInTheDocument();
+      expect(mocks.getPanelHistory).toHaveBeenLastCalledWith(7, 2);
+      expect(mocks.getPanelReservations).toHaveBeenCalledTimes(1);
+      expect(screen.getByText('Página 2 de 2')).toBeInTheDocument();
+    });
+
+    it('WS10 / WS11: switching organization returns the history to page 1, clears the rows and discards a late org-7 answer', async () => {
+      const late = deferred<{ data: ReturnType<typeof paginator> }>();
+      mocks.getPanelHistory
+        .mockResolvedValueOnce({ data: paginator([historyEntry()], { last_page: 2 }) })
+        .mockReturnValueOnce(late.promise)
+        .mockResolvedValue({
+          data: paginator([historyEntry({ id: 'member_joined:9', kind: 'member_joined', actor_name: 'Rosa Vega' })]),
+        });
+
+      const { rerender } = render(<PanelOrganizacion />);
+      await userEvent.click(await screen.findByRole('button', { name: 'Siguiente' }));
+      expect(mocks.getPanelHistory).toHaveBeenLastCalledWith(7, 2);
+
+      mocks.useActiveContext.mockReturnValue(orgContext({ id: 8, name: 'Beta Ltda.' }));
+      rerender(<PanelOrganizacion />);
+
+      expect(screen.queryByText('Bodega Norte')).not.toBeInTheDocument();
+      expect(mocks.getPanelHistory).toHaveBeenLastCalledWith(8, 1);
+      expect(await screen.findByText('Rosa Vega')).toBeInTheDocument();
+
+      // The page-2 answer of org 7 arrives after the switch and must not replace what org 8 shows.
+      late.resolve({ data: paginator([historyEntry({ actor_name: 'Fantasma' })], { current_page: 2, last_page: 2 }) });
+      await waitFor(() => expect(mocks.getPanelHistory).toHaveBeenCalledTimes(3));
+      expect(screen.getByText('Rosa Vega')).toBeInTheDocument();
+      expect(screen.queryByText('Fantasma')).not.toBeInTheDocument();
+    });
+
+    it('WS59 / WS61: a failure stays in this section and Reintentar refetches only the history', async () => {
+      mocks.getPanelHistory.mockRejectedValueOnce(apiError(500, { message: 'SQLSTATE[HY000] boom' }));
+
+      render(<PanelOrganizacion />);
+
+      expect(await screen.findByText('No pudimos cargar el historial')).toBeInTheDocument();
+      expect(screen.queryByText(/SQLSTATE/)).not.toBeInTheDocument();
+      expect(screen.getByRole('group', { name: 'Miembros activos' })).toBeInTheDocument();
+
+      mocks.getPanelHistory.mockResolvedValue({ data: paginator([historyEntry()]) });
+      await userEvent.click(screen.getByRole('button', { name: 'Reintentar' }));
+
+      expect(await screen.findByText('Bodega Norte')).toBeInTheDocument();
+      expect(mocks.getPanelHistory).toHaveBeenCalledTimes(2);
+      expect(mocks.getPanelSummary).toHaveBeenCalledTimes(1);
+      expect(mocks.getPanelMembers).toHaveBeenCalledTimes(1);
+      expect(mocks.getPanelReservations).toHaveBeenCalledTimes(1);
+    });
+
+    it('WS62: an empty history and empty reservations each show their own text while cards, wallet and members stay', async () => {
+      render(<PanelOrganizacion />);
+
+      expect(await screen.findByText('Aún no hay actividad en la empresa.')).toBeInTheDocument();
+      expect(
+        screen.getByText('Aún no hay reservas a nombre de la empresa. Reserva en contexto de empresa desde el catálogo.'),
+      ).toBeInTheDocument();
+      expect(screen.getByRole('group', { name: 'Miembros activos' })).toBeInTheDocument();
+      expect(await screen.findByText('$80.50')).toBeInTheDocument();
+      expect(screen.getByRole('heading', { level: 2, name: 'Miembros' })).toBeInTheDocument();
+    });
+
+    it('WS63: an organization with only its creator shows one member row and the cards 1 / 0 / 0', async () => {
+      mocks.getPanelSummary.mockResolvedValue(
+        summary({ members_count: 1, active_reservations_count: 0, pending_invitations_count: 0 }),
+      );
+      mocks.getPanelMembers.mockResolvedValue({
+        data: [
+          {
+            user_id: 1,
+            name: 'Ana Pérez',
+            role: 'admin',
+            joined_at: '2026-06-08T12:00:00Z',
+            is_self: true,
+            email: 'ana@acme.test',
+            monthly_limit: null,
+            spent: '0.00',
+          },
+        ],
+      });
+      mocks.getPanelHistory.mockResolvedValue({
+        data: paginator([historyEntry({ id: 'member_joined:1', kind: 'member_joined', target_label: null })]),
+      });
+
+      render(<PanelOrganizacion />);
+
+      const table = await screen.findByRole('table', { name: 'Miembros' });
+      expect(within(table).getAllByRole('row')).toHaveLength(2);
+      expect(within(screen.getByRole('group', { name: 'Miembros activos' })).getByText('1')).toBeInTheDocument();
+      expect(within(screen.getByRole('group', { name: 'Reservas vigentes' })).getByText('0')).toBeInTheDocument();
+      expect(within(screen.getByRole('group', { name: 'Invitaciones pendientes' })).getByText('0')).toBeInTheDocument();
+      expect(await screen.findByText('se unió a la organización', { exact: false })).toBeInTheDocument();
+    });
+
+    it('WS65 / WS66: with every section populated the page still has no form, input, dialog or destructive button', async () => {
+      mocks.getPanelReservations.mockResolvedValue({ data: paginator([reservation()]) });
+      mocks.getPanelHistory.mockResolvedValue({ data: paginator([historyEntry()], { last_page: 2 }) });
+
+      render(<PanelOrganizacion />);
+
+      await screen.findByRole('region', { name: 'Historial de acciones' });
+      expect(screen.queryByRole('textbox')).not.toBeInTheDocument();
+      expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+      expect(screen.queryByRole('form')).not.toBeInTheDocument();
+      expect(
+        screen.queryByRole('button', { name: /cancelar|editar|quitar|recargar|eliminar|guardar/i }),
+      ).not.toBeInTheDocument();
     });
   });
 });
