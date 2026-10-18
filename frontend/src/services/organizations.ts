@@ -195,3 +195,120 @@ export function acceptInvitation(invitationId: number) {
 export function rejectInvitation(invitationId: number) {
   return api.post<InboxInvitation>(`/invitations/${invitationId}/reject`);
 }
+
+export const PANEL_HISTORY_KIND = {
+  RESERVATION_CREATED: "reservation_created",
+  RESERVATION_CANCELLED: "reservation_cancelled",
+  WALLET_TOPUP: "wallet_topup",
+  WALLET_REFUND: "wallet_refund",
+  MEMBER_JOINED: "member_joined",
+} as const;
+
+export type PanelHistoryKind = (typeof PANEL_HISTORY_KIND)[keyof typeof PANEL_HISTORY_KIND];
+
+const PANEL_HISTORY_KINDS: readonly string[] = Object.values(PANEL_HISTORY_KIND);
+
+/** The history feed can grow new kinds on the server; narrow before switching on one. */
+export function isPanelHistoryKind(value: string): value is PanelHistoryKind {
+  return PANEL_HISTORY_KINDS.includes(value);
+}
+
+export const PANEL_RESERVATION_STATUS = {
+  CONFIRMED: "confirmed",
+  PENDING: "pending",
+} as const;
+
+export type PanelReservationStatus = (typeof PANEL_RESERVATION_STATUS)[keyof typeof PANEL_RESERVATION_STATUS];
+
+/**
+ * Control panel summary. `role` is the caller's role in THIS organization and
+ * is authoritative over any cached one. `pending_invitations_count` is absent
+ * (not null) for members.
+ */
+export interface PanelSummary {
+  organization_id: number;
+  role: "admin" | "member";
+  members_count: number;
+  active_reservations_count: number;
+  pending_invitations_count?: number;
+}
+
+/**
+ * One member row. A key the caller may not see is ABSENT, never null:
+ * `email` is admin-only; `monthly_limit` and `spent` are sent to admins for
+ * every row and to a member for their own row only. Where `monthly_limit` is
+ * present, `null` means "no limit". Money is a 2-decimal string.
+ */
+export interface PanelMember {
+  user_id: number;
+  name: string;
+  role: "admin" | "member";
+  joined_at: string | null;
+  is_self: boolean;
+  email?: string;
+  monthly_limit?: string | null;
+  spent?: string;
+}
+
+/** Active reservation row; dates are `Y-m-d`, `total` a 2-decimal string. */
+export interface PanelReservation {
+  id: number;
+  warehouse_name: string | null;
+  member_name: string | null;
+  start_date: string;
+  end_date: string;
+  status: PanelReservationStatus;
+  total: string;
+  paid_with_wallet: boolean;
+}
+
+/**
+ * Derived history row, admin only. `kind` stays a plain string on the wire so
+ * an unknown future kind still type-checks; `amount` is set for created,
+ * top-up and refund rows only.
+ */
+export interface PanelHistoryEntry {
+  id: string;
+  kind: string;
+  occurred_at: string;
+  actor_name: string | null;
+  target_label: string | null;
+  amount: string | null;
+}
+
+/** Laravel's flat paginator (page size 20); `links` is ignored. */
+export interface PaginatedPanelReservations {
+  data: PanelReservation[];
+  current_page: number;
+  last_page: number;
+  per_page: number;
+  total: number;
+}
+
+export interface PaginatedPanelHistory {
+  data: PanelHistoryEntry[];
+  current_page: number;
+  last_page: number;
+  per_page: number;
+  total: number;
+}
+
+// Read-only and path-addressed like the wallet and invitation routes: the
+// X-Organization-Id header is ignored.
+export function getPanelSummary(organizationId: number) {
+  return api.get<PanelSummary>(`/organizations/${organizationId}/panel/summary`);
+}
+
+export function getPanelMembers(organizationId: number) {
+  return api.get<PanelMember[]>(`/organizations/${organizationId}/panel/members`);
+}
+
+export function getPanelReservations(organizationId: number, page: number) {
+  return api.get<PaginatedPanelReservations>(`/organizations/${organizationId}/panel/reservations`, {
+    params: { page },
+  });
+}
+
+export function getPanelHistory(organizationId: number, page: number) {
+  return api.get<PaginatedPanelHistory>(`/organizations/${organizationId}/panel/history`, { params: { page } });
+}
