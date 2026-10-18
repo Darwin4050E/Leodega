@@ -5,6 +5,7 @@ use App\Http\Controllers\AuthController;
 use App\Http\Controllers\CancelationsPolicesController;
 use App\Http\Controllers\ConversationController;
 use App\Http\Controllers\DashboardController;
+use App\Http\Controllers\InvitationInboxController;
 use App\Http\Controllers\LandlordsController;
 use App\Http\Controllers\MessageController;
 use App\Http\Controllers\NotificationsController;
@@ -262,6 +263,17 @@ Route::middleware(['auth.api:sanctum', 'role:tenant'])
             ->middleware('throttle:org-invitations');
         Route::get('/organizations/{organization}/invitations', [OrganizationInvitationController::class, 'index']);
         Route::delete('/organizations/{organization}/invitations/{invitation}', [OrganizationInvitationController::class, 'destroy']);
+    });
+
+// huc-14 INV-15: the invitee side of an invitation is personal, not organization
+// addressed: no `org.context`, X-Organization-Id is ignored. {invitation} stays
+// a raw id (no model binding) so a foreign, a nonexistent and a malformed id
+// all end in the same 404; the pattern keeps it inside int64.
+Route::middleware(['auth.api:sanctum', 'role:tenant'])
+    ->where(['invitation' => '[1-9][0-9]{0,17}'])
+    ->group(function () {
+        Route::get('/invitations', [InvitationInboxController::class, 'index']);
+        Route::post('/invitations/{invitation}/reject', [InvitationInboxController::class, 'reject']);
     });
 
 Route::middleware(['auth.api:sanctum', 'role:admin'])->group(function () {
