@@ -1,12 +1,15 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { render, screen, waitFor, within } from '@testing-library/react';
+import { render as renderWithoutRouter, screen, waitFor, within } from '@testing-library/react';
+import type { ReactElement } from 'react';
 import userEvent from '@testing-library/user-event';
+import { MemoryRouter } from 'react-router-dom';
 
 const mocks = vi.hoisted(() => ({
   getPanelSummary: vi.fn(),
   getPanelMembers: vi.fn(),
   getPanelReservations: vi.fn(),
   getPanelHistory: vi.fn(),
+  getOrganizationWallet: vi.fn(),
   useActiveContext: vi.fn(),
 }));
 
@@ -16,6 +19,7 @@ vi.mock('../../services/organizations', async (importOriginal) => ({
   getPanelMembers: mocks.getPanelMembers,
   getPanelReservations: mocks.getPanelReservations,
   getPanelHistory: mocks.getPanelHistory,
+  getOrganizationWallet: mocks.getOrganizationWallet,
 }));
 vi.mock('../../context/useActiveContext', () => ({ useActiveContext: mocks.useActiveContext }));
 vi.mock('../../Components/HeaderTendant', () => ({ default: () => <div data-testid="header-tendant" /> }));
@@ -23,6 +27,9 @@ vi.mock('../../Components/HeaderTendant', () => ({ default: () => <div data-test
 import PanelOrganizacion from './PanelOrganizacion';
 import { PANEL_COPY } from '../../utils/panelCopy';
 import { ORGANIZATION_FORBIDDEN_MESSAGE } from '../../utils/activeContext';
+
+// The sections link to other pages, so every render needs a router.
+const render = (ui: ReactElement) => renderWithoutRouter(ui, { wrapper: MemoryRouter });
 
 function organization(overrides = {}) {
   return {
@@ -80,6 +87,8 @@ describe('PanelOrganizacion', () => {
     vi.clearAllMocks();
     mocks.useActiveContext.mockReturnValue(orgContext());
     mocks.getPanelSummary.mockResolvedValue(summary());
+    mocks.getPanelMembers.mockResolvedValue({ data: [] });
+    mocks.getOrganizationWallet.mockResolvedValue({ data: { organization_id: 7, balance: '80.50' } });
   });
 
   afterEach(() => {
@@ -222,13 +231,16 @@ describe('PanelOrganizacion', () => {
 
       render(<PanelOrganizacion />);
 
-      expect(screen.getByRole('status')).toHaveTextContent('Cargando…');
+      // One polite status per loading section: cards, wallet and members.
+      const statuses = screen.getAllByRole('status');
+      expect(statuses).toHaveLength(3);
+      statuses.forEach((status) => expect(status).toHaveTextContent('Cargando…'));
       expect(screen.getByText('Acme S.A.')).toBeInTheDocument();
 
       pending.resolve(summary());
 
       expect(await screen.findByRole('group', { name: 'Reservas vigentes' })).toBeInTheDocument();
-      expect(screen.queryByRole('status')).not.toBeInTheDocument();
+      await waitFor(() => expect(screen.queryByRole('status')).not.toBeInTheDocument());
     });
 
     it('a server error shows the summary error and keeps the header; Reintentar refetches only the summary', async () => {
@@ -244,7 +256,7 @@ describe('PanelOrganizacion', () => {
 
       expect(await screen.findByRole('group', { name: 'Miembros activos' })).toBeInTheDocument();
       expect(mocks.getPanelSummary).toHaveBeenCalledTimes(2);
-      expect(mocks.getPanelMembers).not.toHaveBeenCalled();
+      expect(mocks.getPanelMembers).toHaveBeenCalledTimes(1);
       expect(mocks.getPanelReservations).not.toHaveBeenCalled();
       expect(mocks.getPanelHistory).not.toHaveBeenCalled();
     });
@@ -283,7 +295,7 @@ describe('PanelOrganizacion', () => {
       rerender(<PanelOrganizacion />);
 
       expect(screen.queryByText('41')).not.toBeInTheDocument();
-      expect(screen.getByRole('status')).toHaveTextContent('Cargando…');
+      expect(screen.getAllByRole('status')[0]).toHaveTextContent('Cargando…');
       expect(screen.getByText('Beta Ltda.')).toBeInTheDocument();
       expect(mocks.getPanelSummary).toHaveBeenLastCalledWith(8);
 
@@ -310,6 +322,177 @@ describe('PanelOrganizacion', () => {
       expect(await screen.findByRole('group', { name: 'Miembros activos' })).toBeInTheDocument();
       expect(screen.queryByText('Invitaciones pendientes')).not.toBeInTheDocument();
       expect(mocks.getPanelHistory).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('wallet and members sections', () => {
+    const ADMIN_MEMBERS = [
+      {
+        user_id: 1,
+        name: 'Ana Pérez',
+        role: 'admin',
+        joined_at: '2026-06-08T12:00:00Z',
+        is_self: true,
+        email: 'ana@acme.test',
+        monthly_limit: '100.00',
+        spent: '40.00',
+      },
+      {
+        user_id: 2,
+        name: 'Luis Mora',
+        role: 'member',
+        joined_at: '2026-07-15T12:00:00Z',
+        is_self: false,
+        email: 'luis@acme.test',
+        monthly_limit: null,
+        spent: '25.50',
+      },
+    ];
+
+    const MEMBER_VIEW_MEMBERS = [
+      { user_id: 1, name: 'Ana Pérez', role: 'admin', joined_at: '2026-06-08T12:00:00Z', is_self: false },
+      {
+        user_id: 2,
+        name: 'Luis Mora',
+        role: 'member',
+        joined_at: '2026-07-15T12:00:00Z',
+        is_self: true,
+        monthly_limit: '50.00',
+        spent: '10.00',
+      },
+    ];
+
+    it('mounts the wallet balance and the members of the active organization', async () => {
+      mocks.getPanelMembers.mockResolvedValue({ data: ADMIN_MEMBERS });
+
+      render(<PanelOrganizacion />);
+
+      expect(await screen.findByText('$80.50')).toBeInTheDocument();
+      expect(screen.getByRole('heading', { level: 2, name: 'Billetera de la empresa' })).toBeInTheDocument();
+      expect(await screen.findByRole('table', { name: 'Miembros' })).toBeInTheDocument();
+      expect(mocks.getPanelMembers).toHaveBeenCalledWith(7);
+      expect(mocks.getOrganizationWallet).toHaveBeenCalledWith(7);
+    });
+
+    it('the admin sees the invite and manage-limits links, emails and limits', async () => {
+      mocks.getPanelMembers.mockResolvedValue({ data: ADMIN_MEMBERS });
+
+      render(<PanelOrganizacion />);
+
+      expect(await screen.findByText(/ana@acme\.test/)).toBeInTheDocument();
+      expect(screen.getByRole('link', { name: 'Invitar' })).toHaveAttribute('href', '/organizacion/miembros');
+      expect(screen.getByRole('link', { name: 'Gestionar límites' })).toHaveAttribute('href', '/organizacion/billetera');
+      expect(screen.getByText('$100.00 /mes')).toBeInTheDocument();
+    });
+
+    it('WS55: a member sees no email value and no admin links, only their own limit', async () => {
+      mocks.useActiveContext.mockReturnValue(orgContext({ role: 'member' }));
+      mocks.getPanelSummary.mockResolvedValue(memberSummary());
+      mocks.getPanelMembers.mockResolvedValue({ data: MEMBER_VIEW_MEMBERS });
+
+      render(<PanelOrganizacion />);
+
+      expect(await screen.findByText('$50.00 /mes')).toBeInTheDocument();
+      expect(screen.getByText('Solo ves tu propio consumo mensual')).toBeInTheDocument();
+      expect(screen.queryByText(/ana@acme\.test|luis@acme\.test/)).not.toBeInTheDocument();
+      expect(screen.queryByRole('link', { name: 'Invitar' })).not.toBeInTheDocument();
+      expect(screen.queryByRole('link', { name: 'Gestionar límites' })).not.toBeInTheDocument();
+    });
+
+    it('WS9: a cached admin whose summary says member loses the admin links', async () => {
+      mocks.getPanelSummary.mockResolvedValue(memberSummary());
+      mocks.getPanelMembers.mockResolvedValue({ data: MEMBER_VIEW_MEMBERS });
+
+      render(<PanelOrganizacion />);
+
+      expect(await screen.findByText('Vista de miembro')).toBeInTheDocument();
+      await screen.findByRole('table', { name: 'Miembros' });
+      expect(screen.queryByRole('link', { name: 'Invitar' })).not.toBeInTheDocument();
+      expect(screen.queryByRole('link', { name: 'Gestionar límites' })).not.toBeInTheDocument();
+    });
+
+    it('WS59 / WS61: a members failure shows its error in that section only; Reintentar refetches only the members', async () => {
+      mocks.getPanelMembers.mockRejectedValueOnce(apiError(500, { message: 'SQLSTATE[HY000] boom' }));
+
+      render(<PanelOrganizacion />);
+
+      expect(await screen.findByText('No pudimos cargar los miembros')).toBeInTheDocument();
+      expect(screen.queryByText(/SQLSTATE/)).not.toBeInTheDocument();
+      expect(screen.getByRole('group', { name: 'Miembros activos' })).toBeInTheDocument();
+      expect(await screen.findByText('$80.50')).toBeInTheDocument();
+
+      mocks.getPanelMembers.mockResolvedValue({ data: ADMIN_MEMBERS });
+      await userEvent.click(screen.getByRole('button', { name: 'Reintentar' }));
+
+      expect(await screen.findByRole('table', { name: 'Miembros' })).toBeInTheDocument();
+      expect(mocks.getPanelMembers).toHaveBeenCalledTimes(2);
+      expect(mocks.getPanelSummary).toHaveBeenCalledTimes(1);
+    });
+
+    it('WS26: a wallet failure shows its error in that section only', async () => {
+      mocks.getOrganizationWallet.mockRejectedValue(apiError(500));
+      mocks.getPanelMembers.mockResolvedValue({ data: ADMIN_MEMBERS });
+
+      render(<PanelOrganizacion />);
+
+      expect(await screen.findByText('No pudimos cargar el saldo')).toBeInTheDocument();
+      expect(screen.getByRole('group', { name: 'Miembros activos' })).toBeInTheDocument();
+      expect(await screen.findByRole('table', { name: 'Miembros' })).toBeInTheDocument();
+    });
+
+    it('WS58: sections load independently, so the members and the balance show while the summary is pending', async () => {
+      const pending = deferred<ReturnType<typeof summary>>();
+      mocks.getPanelSummary.mockReturnValue(pending.promise);
+      mocks.getPanelMembers.mockResolvedValue({ data: ADMIN_MEMBERS });
+
+      render(<PanelOrganizacion />);
+
+      expect(await screen.findByText('$80.50')).toBeInTheDocument();
+      expect(await screen.findByRole('table', { name: 'Miembros' })).toBeInTheDocument();
+      expect(screen.getByRole('status')).toHaveTextContent('Cargando…');
+      expect(screen.queryByRole('group', { name: 'Miembros activos' })).not.toBeInTheDocument();
+
+      pending.resolve(summary());
+      expect(await screen.findByRole('group', { name: 'Miembros activos' })).toBeInTheDocument();
+    });
+
+    it('WS10: switching organization clears the members and the balance of the previous one', async () => {
+      const members = deferred<{ data: typeof ADMIN_MEMBERS }>();
+      const wallet = deferred<{ data: { organization_id: number; balance: string } }>();
+      mocks.getPanelMembers.mockResolvedValueOnce({ data: ADMIN_MEMBERS }).mockReturnValueOnce(members.promise);
+      mocks.getOrganizationWallet
+        .mockResolvedValueOnce({ data: { organization_id: 7, balance: '80.50' } })
+        .mockReturnValueOnce(wallet.promise);
+
+      const { rerender } = render(<PanelOrganizacion />);
+      expect(await screen.findByText('Luis Mora')).toBeInTheDocument();
+      expect(await screen.findByText('$80.50')).toBeInTheDocument();
+
+      mocks.useActiveContext.mockReturnValue(orgContext({ id: 8, name: 'Beta Ltda.' }));
+      rerender(<PanelOrganizacion />);
+
+      expect(screen.queryByText('Luis Mora')).not.toBeInTheDocument();
+      expect(screen.queryByText('$80.50')).not.toBeInTheDocument();
+      expect(mocks.getPanelMembers).toHaveBeenLastCalledWith(8);
+      expect(mocks.getOrganizationWallet).toHaveBeenLastCalledWith(8);
+
+      members.resolve({ data: [{ ...ADMIN_MEMBERS[1], name: 'Rosa Vega' }] });
+      wallet.resolve({ data: { organization_id: 8, balance: '12.00' } });
+
+      expect(await screen.findByText('Rosa Vega')).toBeInTheDocument();
+      expect(await screen.findByText('$12.00')).toBeInTheDocument();
+      expect(screen.queryByText('Luis Mora')).not.toBeInTheDocument();
+    });
+
+    it('WS65 / WS66: the panel offers no form, input or modal', async () => {
+      mocks.getPanelMembers.mockResolvedValue({ data: ADMIN_MEMBERS });
+
+      render(<PanelOrganizacion />);
+
+      await screen.findByRole('table', { name: 'Miembros' });
+      expect(screen.queryByRole('textbox')).not.toBeInTheDocument();
+      expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+      expect(screen.queryByRole('button')).not.toBeInTheDocument();
     });
   });
 });

@@ -2,6 +2,8 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { MemoryRouter } from 'react-router-dom';
+import type { Organization } from '../services/organizations';
+import type { ActiveContextValue } from '../context/activeContextBase';
 
 const mockGetProfile = vi.hoisted(() => vi.fn());
 const mockGetUnreadNotificationsCount = vi.hoisted(() => vi.fn());
@@ -25,6 +27,9 @@ vi.mock('../Dashboard/NotificatiosnDropdown', () => ({
 const mockUseInvitationsInbox = vi.hoisted(() => vi.fn());
 vi.mock('../context/useInvitationsInbox', () => ({ useInvitationsInbox: mockUseInvitationsInbox }));
 
+const mockUseActiveContext = vi.hoisted(() => vi.fn());
+vi.mock('../context/useActiveContext', () => ({ useActiveContext: mockUseActiveContext }));
+
 vi.mock('./ContextSwitcher', () => ({
   default: ({ placement }: { placement: string }) => (
     <div data-testid="context-switcher" data-placement={placement} />
@@ -36,6 +41,36 @@ vi.mock('./ActiveContextRibbon', () => ({
 }));
 
 import HeaderTendant from './HeaderTendant';
+
+const andina: Organization = {
+  id: 7,
+  name: 'Importadora Andina S.A.',
+  ruc: '1790012345001',
+  email: 'ops@andina.test',
+  logo: null,
+  status: 'active',
+  role: 'admin',
+};
+
+function setActiveOrganization(activeOrganization: Organization | null) {
+  mockUseActiveContext.mockReturnValue({
+    context: activeOrganization
+      ? { kind: 'organization', organizationId: activeOrganization.id }
+      : { kind: 'personal' },
+    activeOrganization,
+    organizations: activeOrganization ? [activeOrganization] : [],
+    status: 'ready',
+    enabled: true,
+    selectOrganization: vi.fn(),
+    selectPersonal: vi.fn(),
+    activateOrganization: vi.fn(),
+    reloadOrganizations: vi.fn(),
+  } satisfies ActiveContextValue);
+}
+
+beforeEach(() => {
+  setActiveOrganization(null);
+});
 
 function setPendingCount(pendingCount: number) {
   mockUseInvitationsInbox.mockReturnValue({
@@ -160,5 +195,54 @@ describe('HeaderTendant drawer invitations entry', () => {
 
     const labels = screen.getAllByRole('listitem').map((item) => item.textContent);
     expect(labels.at(-1)).toBe('Mis invitaciones (1)');
+  });
+});
+
+describe('HeaderTendant panel entry', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mockGetProfile.mockResolvedValue({ data: { name: 'Ana', lastname: 'Pérez' } });
+    mockGetUnreadNotificationsCount.mockResolvedValue({ data: { count: 0 } });
+    setPendingCount(0);
+  });
+
+  it('WS68: lists Panel de la empresa in the desktop navigation while an organization is active', async () => {
+    setActiveOrganization(andina);
+    renderHeader();
+    await screen.findAllByText('Ana');
+
+    expect(screen.getByRole('link', { name: 'Panel de la empresa' })).toHaveAttribute('href', '/organizacion/panel');
+  });
+
+  it('WS69: lists the same entry in the mobile drawer', async () => {
+    setActiveOrganization(andina);
+    await openDrawer();
+
+    const entries = screen.getAllByRole('link', { name: 'Panel de la empresa' });
+    expect(entries).toHaveLength(2);
+    entries.forEach((entry) => expect(entry).toHaveAttribute('href', '/organizacion/panel'));
+  });
+
+  it('WS70: personal context shows the entry in neither the desktop list nor the drawer', async () => {
+    setActiveOrganization(null);
+    renderHeader();
+    await screen.findAllByText('Ana');
+    expect(screen.queryByRole('link', { name: 'Panel de la empresa' })).not.toBeInTheDocument();
+
+    await userEvent.click(screen.getAllByRole('button').at(-1)!);
+
+    expect(screen.queryByRole('link', { name: 'Panel de la empresa' })).not.toBeInTheDocument();
+  });
+
+  it('WS72: keeps the existing entries and the drawer invitations entry next to it', async () => {
+    setActiveOrganization(andina);
+    setPendingCount(2);
+    await openDrawer();
+
+    expect(screen.getAllByRole('link', { name: 'Bodegas populares' })).toHaveLength(2);
+    expect(screen.getByRole('link', { name: 'Mis invitaciones (2)' })).toHaveAttribute(
+      'href',
+      '/mi-cuenta/invitaciones',
+    );
   });
 });

@@ -1,9 +1,11 @@
 import type { ReactNode } from "react";
 
 import HeaderTendant from "../../Components/HeaderTendant";
+import PanelMembersTable from "../../Components/PanelMembersTable";
 import PanelSummaryCards from "../../Components/PanelSummaryCards";
+import PanelWalletSummary from "../../Components/PanelWalletSummary";
 import { useActiveContext } from "../../context/useActiveContext";
-import { PANEL_STATUS, usePanelSummary } from "../../hooks/useOrganizationPanel";
+import { PANEL_STATUS, usePanelMembers, usePanelSummary } from "../../hooks/useOrganizationPanel";
 import type { Organization } from "../../services/organizations";
 import { ORGANIZATION_FORBIDDEN_MESSAGE } from "../../utils/activeContext";
 import { organizationInitials, organizationShortName } from "../../utils/organization";
@@ -79,6 +81,7 @@ const MemberNotice = () => (
 const PanelOrganizacion = () => {
   const { activeOrganization } = useActiveContext();
   const summary = usePanelSummary(activeOrganization?.id ?? null);
+  const members = usePanelMembers(activeOrganization?.id ?? null);
 
   if (activeOrganization === null) {
     return (
@@ -105,6 +108,8 @@ const PanelOrganizacion = () => {
       <PanelHeader organization={activeOrganization} isAdmin={isAdmin} />
       {!isAdmin && <MemberNotice />}
       <PanelSummaryCards status={summary.status} summary={summary.data} onRetry={summary.reload} />
+      <PanelWalletSummary organizationId={activeOrganization.id} />
+      <PanelMembersTable status={members.status} members={members.data} isAdmin={isAdmin} onRetry={members.reload} />
     </PageShell>
   );
 };
