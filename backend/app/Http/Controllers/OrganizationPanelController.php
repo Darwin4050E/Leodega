@@ -5,6 +5,7 @@ namespace App\Http\Controllers;
 use App\Enums\OrganizationRole;
 use App\Http\Middleware\ResolveActiveOrganization;
 use App\Http\Resources\PanelMemberResource;
+use App\Http\Resources\PanelReservationResource;
 use App\Models\Organization;
 use App\Services\OrganizationPanelService;
 use Illuminate\Http\Exceptions\HttpResponseException;
@@ -37,6 +38,20 @@ class OrganizationPanelController extends Controller
 
         return response()->json(
             PanelMemberResource::collection($panel->members($organization, $request->user(), $this->isAdmin($organization)))->resolve()
+        );
+    }
+
+    /**
+     * Flat paginator, 20 per page, like the invitations list.
+     */
+    public function reservations(Request $request, OrganizationPanelService $panel, string $organization): JsonResponse
+    {
+        $organization = $this->memberOrFail($request, $organization);
+
+        return response()->json(
+            $panel->reservations($organization, $request->user(), $this->isAdmin($organization))
+                ->through(fn (array $row) => (new PanelReservationResource($row))->resolve())
+                ->toArray()
         );
     }
 

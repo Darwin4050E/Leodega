@@ -3,10 +3,13 @@
 namespace App\Services;
 
 use App\Enums\OrganizationRole;
+use App\Enums\WalletMovementType;
 use App\Models\Organization;
+use App\Models\OrganizationWalletMovement;
 use App\Models\Reservations;
 use App\Models\User;
 use Illuminate\Database\Eloquent\Builder;
+use Illuminate\Pagination\LengthAwarePaginator;
 use Illuminate\Support\Facades\DB;
 
 /**
@@ -16,6 +19,8 @@ use Illuminate\Support\Facades\DB;
  */
 class OrganizationPanelService
 {
+    private const RESERVATIONS_PER_PAGE = 20;
+
     public function __construct(private readonly SpendingLimitService $spendLedger) {}
 
     public function summary(Organization $organization, User $caller, bool $isAdmin): array
@@ -74,6 +79,38 @@ class OrganizationPanelService
                 return $member;
             })
             ->all();
+    }
+
+    /**
+     * One page of the active reservations, oldest start first, ties by id so
+     * pages never repeat or skip a row. Names are null when the warehouse or
+     * the creator is gone. Whether a row was paid from the wallet costs one
+     * extra query for the whole page, not one per row.
+     */
+    public function reservations(Organization $organization, User $caller, bool $isAdmin): LengthAwarePaginator
+    {
+        $page = $this->activeReservations($organization, $caller, $isAdmin)
+            ->with(['tenants.user:id,name', 'storeRooms:id,title'])
+            ->orderBy('start_date')
+            ->orderBy('id')
+            ->paginate(self::RESERVATIONS_PER_PAGE);
+
+        $paidWithWallet = OrganizationWalletMovement::query()
+            ->whereIn('reservation_id', $page->getCollection()->modelKeys())
+            ->where('type', WalletMovementType::Reserva)
+            ->pluck('reservation_id')
+            ->flip();
+
+        return $page->through(fn (Reservations $reservation) => [
+            'id' => $reservation->id,
+            'warehouse_name' => $reservation->storeRooms?->title,
+            'member_name' => $reservation->tenants?->user?->name,
+            'start_date' => $reservation->start_date,
+            'end_date' => $reservation->end_date,
+            'status' => $reservation->status,
+            'total_mount' => $reservation->total_mount,
+            'paid_with_wallet' => $paidWithWallet->has($reservation->id),
+        ]);
     }
 
     /**

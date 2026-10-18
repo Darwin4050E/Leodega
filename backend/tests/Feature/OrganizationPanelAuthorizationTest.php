@@ -9,6 +9,7 @@ use App\Models\User;
 use App\Services\OrganizationPanelService;
 use App\Services\SpendingLimitService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Pagination\LengthAwarePaginator;
 use Illuminate\Testing\TestResponse;
 use PHPUnit\Framework\Attributes\DataProvider;
 use RuntimeException;
@@ -50,7 +51,7 @@ class OrganizationPanelAuthorizationTest extends TestCase
 
     public static function endpoints(): array
     {
-        return ['summary' => ['summary'], 'members' => ['members']];
+        return ['summary' => ['summary'], 'members' => ['members'], 'reservations' => ['reservations']];
     }
 
     private function hit(?User $caller, string $endpoint, Organization|int|string|null $organization = null, array $headers = [], string $method = 'GET'): TestResponse
@@ -141,7 +142,7 @@ class OrganizationPanelAuthorizationTest extends TestCase
     public static function malformedIds(): array
     {
         $cases = [];
-        foreach (['summary', 'members'] as $endpoint) {
+        foreach (['summary', 'members', 'reservations'] as $endpoint) {
             foreach (['abc', '0', '007', '1234567890123456789'] as $id) {
                 $cases["{$endpoint} {$id}"] = [$endpoint, $id];
             }
@@ -167,7 +168,7 @@ class OrganizationPanelAuthorizationTest extends TestCase
     public static function writeMethods(): array
     {
         $cases = [];
-        foreach (['summary', 'members'] as $endpoint) {
+        foreach (['summary', 'members', 'reservations'] as $endpoint) {
             foreach (['POST', 'PUT', 'PATCH', 'DELETE'] as $method) {
                 $cases["{$method} {$endpoint}"] = [$endpoint, $method];
             }
@@ -194,6 +195,11 @@ class OrganizationPanelAuthorizationTest extends TestCase
             }
 
             public function members(Organization $organization, User $caller, bool $isAdmin): array
+            {
+                throw new RuntimeException('SELECT secret FROM somewhere');
+            }
+
+            public function reservations(Organization $organization, User $caller, bool $isAdmin): LengthAwarePaginator
             {
                 throw new RuntimeException('SELECT secret FROM somewhere');
             }
