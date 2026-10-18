@@ -5,11 +5,15 @@ namespace Tests\Feature;
 use App\Enums\OrganizationRole;
 use App\Models\Organization;
 use App\Models\OrganizationInvitation;
+use App\Models\Reservations;
+use App\Models\Tenants;
 use App\Models\User;
+use App\Services\OrganizationHistoryService;
 use App\Services\OrganizationPanelService;
 use App\Services\SpendingLimitService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Pagination\LengthAwarePaginator;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Testing\TestResponse;
 use PHPUnit\Framework\Attributes\DataProvider;
 use RuntimeException;
@@ -25,6 +29,10 @@ class OrganizationPanelAuthorizationTest extends TestCase
     use RefreshDatabase;
 
     private const NOT_MEMBER = 'No perteneces a la organización seleccionada';
+
+    private const NOT_ADMIN = 'No autorizado';
+
+    private const ALL_ENDPOINTS = ['summary', 'members', 'reservations', 'history'];
 
     private Organization $organization;
 
@@ -51,7 +59,12 @@ class OrganizationPanelAuthorizationTest extends TestCase
 
     public static function endpoints(): array
     {
-        return ['summary' => ['summary'], 'members' => ['members'], 'reservations' => ['reservations']];
+        return array_combine(self::ALL_ENDPOINTS, array_map(fn (string $endpoint) => [$endpoint], self::ALL_ENDPOINTS));
+    }
+
+    public static function memberReadableEndpoints(): array
+    {
+        return array_diff_key(self::endpoints(), ['history' => true]);
     }
 
     private function hit(?User $caller, string $endpoint, Organization|int|string|null $organization = null, array $headers = [], string $method = 'GET'): TestResponse
@@ -63,10 +76,40 @@ class OrganizationPanelAuthorizationTest extends TestCase
     }
 
     #[DataProvider('endpoints')]
-    public function test_an_admin_and_a_member_both_get_200(string $endpoint)
+    public function test_an_admin_gets_200(string $endpoint)
     {
         $this->hit($this->admin, $endpoint)->assertOk();
+    }
+
+    #[DataProvider('memberReadableEndpoints')]
+    public function test_a_member_gets_200(string $endpoint)
+    {
         $this->hit($this->member, $endpoint)->assertOk();
+    }
+
+    // PAN-S12, PAN-3: the only endpoint that is admin-only
+    public function test_a_member_is_refused_the_history_with_no_history_data()
+    {
+        $this->hit($this->member, 'history')
+            ->assertStatus(403)
+            ->assertExactJson(['message' => self::NOT_ADMIN]);
+    }
+
+    // PAN-S13: membership is checked before the role
+    public function test_a_non_member_gets_not_member_on_the_history_not_not_admin()
+    {
+        $this->hit($this->tenant(), 'history')
+            ->assertStatus(403)
+            ->assertExactJson(['message' => self::NOT_MEMBER]);
+    }
+
+    // PAN-S15, PAN-S84: the role is per organization
+    public function test_admin_of_another_organization_is_still_refused_the_history_here()
+    {
+        $elsewhere = Organization::factory()->withMember($this->member, OrganizationRole::ADMIN)->create();
+
+        $this->hit($this->member, 'history')->assertStatus(403)->assertExactJson(['message' => self::NOT_ADMIN]);
+        $this->hit($this->member, 'history', $elsewhere)->assertOk();
     }
 
     #[DataProvider('endpoints')]
@@ -142,7 +185,7 @@ class OrganizationPanelAuthorizationTest extends TestCase
     public static function malformedIds(): array
     {
         $cases = [];
-        foreach (['summary', 'members', 'reservations'] as $endpoint) {
+        foreach (self::ALL_ENDPOINTS as $endpoint) {
             foreach (['abc', '0', '007', '1234567890123456789'] as $id) {
                 $cases["{$endpoint} {$id}"] = [$endpoint, $id];
             }
@@ -168,7 +211,7 @@ class OrganizationPanelAuthorizationTest extends TestCase
     public static function writeMethods(): array
     {
         $cases = [];
-        foreach (['summary', 'members', 'reservations'] as $endpoint) {
+        foreach (self::ALL_ENDPOINTS as $endpoint) {
             foreach (['POST', 'PUT', 'PATCH', 'DELETE'] as $method) {
                 $cases["{$method} {$endpoint}"] = [$endpoint, $method];
             }
@@ -204,11 +247,43 @@ class OrganizationPanelAuthorizationTest extends TestCase
                 throw new RuntimeException('SELECT secret FROM somewhere');
             }
         });
+        $this->app->bind(OrganizationHistoryService::class, fn () => new class extends OrganizationHistoryService
+        {
+            public function page(Organization $organization): LengthAwarePaginator
+            {
+                throw new RuntimeException('SELECT secret FROM somewhere');
+            }
+        });
 
         $response = $this->hit($this->admin, $endpoint)->assertStatus(500);
 
         $this->assertStringNotContainsString('SELECT', $response->getContent());
         $this->assertStringNotContainsString('RuntimeException', $response->getContent());
         $this->assertStringNotContainsString('trace', $response->getContent());
+    }
+
+    // PAN-S79: reads never write, not even the lazy hold-expiry sweep
+    public function test_repeated_reads_of_all_endpoints_leave_every_table_unchanged()
+    {
+        $tenant = Tenants::factory()->create(['user_id' => $this->member->id]);
+        $expiredHold = Reservations::factory()->forOrganization($this->organization)->create([
+            'tenant_id' => $tenant->id,
+            'status' => 'pending',
+            'created_at' => now()->subHours(3),
+        ]);
+        OrganizationInvitation::factory()->create(['organization_id' => $this->organization->id]);
+        $tables = ['reservations', 'organization_user', 'organizations', 'organization_invitations', 'organization_wallet_movements', 'organization_reservation_events', 'user'];
+        $snapshot = fn () => array_map(fn (string $table) => DB::table($table)->orderBy('id')->get()->toJson(), $tables);
+        $before = $snapshot();
+
+        foreach (range(1, 2) as $_) {
+            foreach (self::ALL_ENDPOINTS as $endpoint) {
+                $this->hit($this->admin, $endpoint)->assertOk();
+                $this->hit($this->member, $endpoint);
+            }
+        }
+
+        $this->assertSame($before, $snapshot());
+        $this->assertSame('pending', $expiredHold->fresh()->status);
     }
 }

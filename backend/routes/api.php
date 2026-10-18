@@ -274,6 +274,7 @@ Route::middleware(['auth.api:sanctum', 'role:tenant'])
         Route::get('/organizations/{organization}/panel/summary', [OrganizationPanelController::class, 'summary']);
         Route::get('/organizations/{organization}/panel/members', [OrganizationPanelController::class, 'members']);
         Route::get('/organizations/{organization}/panel/reservations', [OrganizationPanelController::class, 'reservations']);
+        Route::get('/organizations/{organization}/panel/history', [OrganizationPanelController::class, 'history']);
     });
 
 // huc-14 INV-15: the invitee side of an invitation is personal, not organization

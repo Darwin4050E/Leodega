@@ -4,9 +4,12 @@ namespace App\Http\Controllers;
 
 use App\Enums\OrganizationRole;
 use App\Http\Middleware\ResolveActiveOrganization;
+use App\Http\Requests\InviteMemberRequest;
+use App\Http\Resources\HistoryEntryResource;
 use App\Http\Resources\PanelMemberResource;
 use App\Http\Resources\PanelReservationResource;
 use App\Models\Organization;
+use App\Services\OrganizationHistoryService;
 use App\Services\OrganizationPanelService;
 use Illuminate\Http\Exceptions\HttpResponseException;
 use Illuminate\Http\JsonResponse;
@@ -53,6 +56,34 @@ class OrganizationPanelController extends Controller
                 ->through(fn (array $row) => (new PanelReservationResource($row))->resolve())
                 ->toArray()
         );
+    }
+
+    /**
+     * Admin only: membership is checked first, so a non-member gets the
+     * not-member refusal and a plain member gets the not-admin one.
+     */
+    public function history(Request $request, OrganizationHistoryService $history, string $organization): JsonResponse
+    {
+        $organization = $this->adminOrFail($request, $organization);
+
+        return response()->json(
+            $history->page($organization)
+                ->through(fn (array $row) => (new HistoryEntryResource($row))->resolve())
+                ->toArray()
+        );
+    }
+
+    private function adminOrFail(Request $request, string $organizationId): Organization
+    {
+        $organization = $this->memberOrFail($request, $organizationId);
+
+        if (! $this->isAdmin($organization)) {
+            throw new HttpResponseException(
+                response()->json(['message' => InviteMemberRequest::NOT_ADMIN_MESSAGE], 403)
+            );
+        }
+
+        return $organization;
     }
 
     private function memberOrFail(Request $request, string $organizationId): Organization
