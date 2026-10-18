@@ -25,6 +25,10 @@ vi.mock('./Dashboard/Tendant/MiembrosOrganizacion', () => ({
   default: () => <div>Miembros de la organización</div>,
 }));
 
+vi.mock('./Dashboard/Tendant/PanelOrganizacion', () => ({
+  default: () => <div>Panel de la organización</div>,
+}));
+
 vi.mock('./Dashboard/Tendant/CrearOrganizacion', () => ({
   default: () => <div>Crear organización</div>,
 }));
@@ -66,6 +70,7 @@ const TENANT_ROUTES: [string, string][] = [
   ['/mi-cuenta/invitaciones', 'Mis invitaciones'],
   ['/organizacion/billetera', 'Billetera de la organización'],
   ['/organizacion/miembros', 'Miembros de la organización'],
+  ['/organizacion/panel', 'Panel de la organización'],
 ];
 
 describe('tenant routes auth guard', () => {
