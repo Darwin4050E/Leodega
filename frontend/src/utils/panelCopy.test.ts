@@ -85,7 +85,7 @@ describe('PANEL_COPY (wallet and members chunk, PC-19..PC-40)', () => {
 describe('PANEL_COPY (reservations chunk, PC-41..PC-51 and PC-62)', () => {
   it.each([
     ['reservationsTitle', 'Reservas a nombre de la empresa'],
-    ['reservationsSubtitleAdmin', 'Visibles para todos los miembros · se pagan con el saldo de la billetera'],
+    ['reservationsSubtitleAdmin', 'Visibles para ti y los administradores · se pagan con el saldo de la billetera'],
     ['reservationsSubtitleMember', 'Solo ves las reservas que hiciste · se pagan con el saldo de la billetera'],
     ['warehouseColumn', 'Bodega'],
     ['periodColumn', 'Período'],

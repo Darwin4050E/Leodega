@@ -73,7 +73,7 @@ describe('PanelReservationsTable', () => {
       ]);
       headers.forEach((header) => expect(header).toHaveAttribute('scope', 'col'));
       expect(cellsOfRow(1)).toEqual(['Bodega Norte', 'Ana Pérez', '01 nov — 30 nov', '$120.00', '$120.00', 'Activa']);
-      expect(screen.getByText(/Visibles para todos los miembros/)).toBeInTheDocument();
+      expect(screen.getByText(/Visibles para ti y los administradores/)).toBeInTheDocument();
     });
 
     it('WS37: a pending reservation reads Pendiente', () => {

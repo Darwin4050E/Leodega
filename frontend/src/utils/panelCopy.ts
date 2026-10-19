@@ -51,7 +51,7 @@ export const PANEL_COPY = {
   manageLimitsLink: "Gestionar límites",
   membersError: "No pudimos cargar los miembros",
   reservationsTitle: "Reservas a nombre de la empresa",
-  reservationsSubtitleAdmin: "Visibles para todos los miembros · se pagan con el saldo de la billetera",
+  reservationsSubtitleAdmin: "Visibles para ti y los administradores · se pagan con el saldo de la billetera",
   reservationsSubtitleMember: "Solo ves las reservas que hiciste · se pagan con el saldo de la billetera",
   warehouseColumn: "Bodega",
   periodColumn: "Período",
