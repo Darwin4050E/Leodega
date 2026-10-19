@@ -5,8 +5,10 @@ import { Link } from "react-router-dom";
 import { getProfile } from "../services/profile";
 import { getUnreadNotificationsCount } from "../services/notifications";
 import { useAuth } from "../context/useAuth";
+import { useActiveContext } from "../context/useActiveContext";
 import { useInvitationsInbox } from "../context/useInvitationsInbox";
 import { INVITATION_COPY } from "../utils/invitationCopy";
+import { PANEL_COPY } from "../utils/panelCopy";
 import NotificationsDropdown from "../Dashboard/NotificatiosnDropdown";
 import ContextSwitcher from "./ContextSwitcher";
 import ActiveContextRibbon from "./ActiveContextRibbon";
@@ -14,6 +16,7 @@ import ActiveContextRibbon from "./ActiveContextRibbon";
 const HeaderTendant = () => {
     const { logout } = useAuth();
     const { pendingCount } = useInvitationsInbox();
+    const { activeOrganization } = useActiveContext();
     const [mobileDrawerOpen, setMobileDrawerOpen] = useState(false);
     const [userName, setUserName] = useState(null);
     const [userLastName, setUserLastName] = useState("");
@@ -51,7 +54,11 @@ const HeaderTendant = () => {
     const navItems = [
         { label: "Bodegas populares", href: "/storage", path: "/storage" },
         { label: "Mensajes", href: "/arrendatario/mensajes", path: "/arrendatario/mensajes" },
-        { label: "Calendario", href: "/arrendatario/calendario", path: "/arrendatario/calendario" }
+        { label: "Calendario", href: "/arrendatario/calendario", path: "/arrendatario/calendario" },
+        // The panel describes an organization, so it only exists while one is the active context.
+        ...(activeOrganization !== null
+            ? [{ label: PANEL_COPY.title, href: "/organizacion/panel", path: "/organizacion/panel" }]
+            : []),
     ];
 
     return (

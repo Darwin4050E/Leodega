@@ -1,18 +1,27 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
-import { MemoryRouter, Routes, Route, useLocation } from 'react-router-dom'
+import { MemoryRouter, Routes, Route, useLocation, useNavigationType } from 'react-router-dom'
 import { AxiosError } from 'axios'
 import { AuthProvider } from '../auth/AuthContext'
 import LoginScreen from './LoginScreen'
+import { ActiveContextProvider } from '../context/ActiveContextProvider'
+import { activeContextKey } from '../context/activeContextStorage'
+import SelectCompanyScreen from './SelectCompany/SelectCompanyScreen'
 import { login } from '../services/auth'
+import { listOrganizations, type Organization } from '../services/organizations'
 
 vi.mock('../services/auth', () => ({
   login: vi.fn(),
   logout: vi.fn(),
 }))
 
+vi.mock('../services/organizations', () => ({
+  listOrganizations: vi.fn(),
+}))
+
 const loginMock = vi.mocked(login)
+const listMock = vi.mocked(listOrganizations)
 
 const LOGIN_RESPONSE = {
   status: 'success',
@@ -254,5 +263,153 @@ describe('LoginScreen suspended account (403)', () => {
     )
     expect(localStorage.getItem('leodeguita_token')).toBeNull()
     expect(screen.queryByText('Pantalla principal')).not.toBeInTheDocument()
+  })
+})
+
+describe('LoginScreen post-login routing (HUL-02)', () => {
+  const TENANT_RESPONSE = {
+    ...LOGIN_RESPONSE,
+    user: { ...LOGIN_RESPONSE.user, id: 7, role: 'tenant' as const },
+  }
+
+  function organization(id: number): Organization {
+    return {
+      id,
+      name: `Org ${id}`,
+      ruc: '0999999999001',
+      email: `org${id}@example.com`,
+      logo: null,
+      status: 'active',
+      role: 'member',
+    }
+  }
+
+  function GateProbe() {
+    const { state } = useLocation()
+    return <div>{`Gate: ${JSON.stringify(state)} ${useNavigationType()}`}</div>
+  }
+
+  function renderRouting(options: { state?: unknown; picker?: boolean } = {}) {
+    return render(
+      <AuthProvider>
+        <ActiveContextProvider>
+          <MemoryRouter initialEntries={[{ pathname: '/login', state: options.state }]}>
+            <Routes>
+              <Route path="/login" element={<LoginScreen />} />
+              <Route path="/" element={<div>Pantalla principal</div>} />
+              <Route path="/mis-bodegas" element={<MisBodegasProbe />} />
+              <Route
+                path="/empresa"
+                element={options.picker === false ? <GateProbe /> : <SelectCompanyScreen />}
+              />
+            </Routes>
+          </MemoryRouter>
+        </ActiveContextProvider>
+      </AuthProvider>,
+    )
+  }
+
+  beforeEach(() => {
+    loginMock.mockReset()
+    listMock.mockReset()
+  })
+
+  it.each(['landlord', 'admin'] as const)(
+    'sends a %s to the existing destination without loading organizations',
+    async (role) => {
+      loginMock.mockResolvedValueOnce({
+        ...LOGIN_RESPONSE,
+        user: { ...LOGIN_RESPONSE.user, role },
+      })
+      renderRouting()
+
+      await submitCredentials()
+
+      expect(await screen.findByText('Pantalla principal')).toBeInTheDocument()
+      expect(listMock).not.toHaveBeenCalled()
+    },
+  )
+
+  it.each([
+    ['two organizations', [organization(12), organization(15)]],
+    ['one organization', [organization(12)]],
+  ])('sends a tenant with %s to the picker', async (_label, organizations) => {
+    loginMock.mockResolvedValueOnce(TENANT_RESPONSE)
+    listMock.mockResolvedValue(organizations)
+    renderRouting()
+
+    await submitCredentials()
+
+    expect(
+      await screen.findByRole('heading', { level: 1, name: '¿Cómo quieres operar?' }),
+    ).toBeInTheDocument()
+    expect(screen.queryByText('Pantalla principal')).not.toBeInTheDocument()
+  })
+
+  it('sends a tenant without organizations to Home and never shows the picker', async () => {
+    loginMock.mockResolvedValueOnce(TENANT_RESPONSE)
+    listMock.mockResolvedValue([])
+    renderRouting()
+
+    await submitCredentials()
+
+    expect(await screen.findByText('Pantalla principal')).toBeInTheDocument()
+    expect(screen.queryByRole('heading', { name: '¿Cómo quieres operar?' })).not.toBeInTheDocument()
+  })
+
+  it('sends a tenant to Home and keeps the stored organization when the list fails', async () => {
+    localStorage.setItem(activeContextKey(7), '12')
+    loginMock.mockResolvedValueOnce(TENANT_RESPONSE)
+    listMock.mockRejectedValue(new Error('down'))
+    renderRouting()
+
+    await submitCredentials()
+
+    expect(await screen.findByText('Pantalla principal')).toBeInTheDocument()
+    expect(localStorage.getItem(activeContextKey(7))).toBe('12')
+  })
+
+  it('lets a safe return path win over the picker', async () => {
+    loginMock.mockResolvedValueOnce(TENANT_RESPONSE)
+    listMock.mockResolvedValue([organization(12)])
+    renderRouting({ state: { from: '/mis-bodegas', reason: 'session-expired' } })
+
+    await submitCredentials()
+
+    expect(await screen.findByText('Destino: /mis-bodegas')).toBeInTheDocument()
+    expect(screen.queryByRole('heading', { name: '¿Cómo quieres operar?' })).not.toBeInTheDocument()
+  })
+
+  it('lands on the picker when the return path is the picker itself', async () => {
+    loginMock.mockResolvedValueOnce(TENANT_RESPONSE)
+    listMock.mockResolvedValue([organization(12)])
+    renderRouting({ state: { from: '/empresa', reason: 'session-expired' } })
+
+    await submitCredentials()
+
+    expect(
+      await screen.findByRole('heading', { level: 1, name: '¿Cómo quieres operar?' }),
+    ).toBeInTheDocument()
+  })
+
+  it('shows the loading line and no Home content while the list loads', async () => {
+    loginMock.mockResolvedValueOnce(TENANT_RESPONSE)
+    listMock.mockReturnValue(new Promise(() => {}))
+    renderRouting()
+
+    await submitCredentials()
+
+    expect(await screen.findByRole('status')).toHaveTextContent('Cargando organizaciones…')
+    expect(screen.queryByText('Pantalla principal')).not.toBeInTheDocument()
+  })
+
+  it('replaces the login entry and carries the one-shot gate to the picker route', async () => {
+    loginMock.mockResolvedValueOnce(TENANT_RESPONSE)
+    listMock.mockResolvedValue([organization(12)])
+    renderRouting({ picker: false })
+
+    await submitCredentials()
+
+    expect(await screen.findByText('Gate: {"postLoginGate":true} REPLACE')).toBeInTheDocument()
   })
 })

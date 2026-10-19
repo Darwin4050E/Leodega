@@ -11,6 +11,7 @@ use App\Http\Controllers\MessageController;
 use App\Http\Controllers\NotificationsController;
 use App\Http\Controllers\OrganizationController;
 use App\Http\Controllers\OrganizationInvitationController;
+use App\Http\Controllers\OrganizationPanelController;
 use App\Http\Controllers\OrganizationWalletController;
 use App\Http\Controllers\PasswordResetController;
 use App\Http\Controllers\PaymentsController;
@@ -263,6 +264,17 @@ Route::middleware(['auth.api:sanctum', 'role:tenant'])
             ->middleware('throttle:org-invitations');
         Route::get('/organizations/{organization}/invitations', [OrganizationInvitationController::class, 'index']);
         Route::delete('/organizations/{organization}/invitations/{invitation}', [OrganizationInvitationController::class, 'destroy']);
+    });
+
+// hue-03 PAN-1: read-only organization control panel, path-addressed like the
+// routes above (no `org.context`). The membership gate lives in the controller.
+Route::middleware(['auth.api:sanctum', 'role:tenant'])
+    ->where(['organization' => '[1-9][0-9]{0,17}'])
+    ->group(function () {
+        Route::get('/organizations/{organization}/panel/summary', [OrganizationPanelController::class, 'summary']);
+        Route::get('/organizations/{organization}/panel/members', [OrganizationPanelController::class, 'members']);
+        Route::get('/organizations/{organization}/panel/reservations', [OrganizationPanelController::class, 'reservations']);
+        Route::get('/organizations/{organization}/panel/history', [OrganizationPanelController::class, 'history']);
     });
 
 // huc-14 INV-15: the invitee side of an invitation is personal, not organization

@@ -8,7 +8,10 @@ const mockUseActiveContext = vi.hoisted(() => vi.fn());
 vi.mock('../context/useActiveContext', () => ({ useActiveContext: mockUseActiveContext }));
 
 const mockGetOrganizationWallet = vi.hoisted(() => vi.fn());
-vi.mock('../services/organizations', () => ({ getOrganizationWallet: mockGetOrganizationWallet }));
+vi.mock('../services/organizations', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../services/organizations')>()),
+  getOrganizationWallet: mockGetOrganizationWallet,
+}));
 
 import ActiveContextRibbon from './ActiveContextRibbon';
 
@@ -184,5 +187,35 @@ describe('ActiveContextRibbon', () => {
 
     await waitFor(() => expect(screen.queryByRole('link')).not.toBeInTheDocument());
     expect(mockGetOrganizationWallet).not.toHaveBeenCalled();
+  });
+
+  it('WS71: offers the Ver panel link next to the wallet chip', async () => {
+    setContext({
+      context: { kind: 'organization', organizationId: 7 },
+      activeOrganization: andina,
+      organizations: [andina],
+    });
+
+    render(withRouter());
+
+    const panelLink = screen.getByRole('link', { name: 'Ver panel' });
+    expect(panelLink).toHaveAttribute('href', '/organizacion/panel');
+    const chip = await screen.findByRole('link', { name: /Saldo/ });
+    expect(chip).toHaveAttribute('href', '/organizacion/billetera');
+    expect(chip.parentElement).toBe(panelLink.parentElement);
+  });
+
+  it('shows the panel link before the balance is known and to a plain member', () => {
+    mockGetOrganizationWallet.mockReturnValue(new Promise(() => {}));
+    setContext({
+      context: { kind: 'organization', organizationId: 8 },
+      activeOrganization: norte,
+      organizations: [norte],
+    });
+
+    render(withRouter());
+
+    expect(screen.getByRole('link', { name: 'Ver panel' })).toHaveAttribute('href', '/organizacion/panel');
+    expect(screen.queryByRole('link', { name: /Saldo/ })).not.toBeInTheDocument();
   });
 });

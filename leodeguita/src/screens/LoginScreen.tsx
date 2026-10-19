@@ -6,6 +6,7 @@ import { login } from '../services/auth'
 import { safeReturnPath } from '../auth/returnPath'
 import { SESSION_EXPIRED_MESSAGE, SESSION_EXPIRED_REASON } from '../auth/sessionExpiry'
 import PhoneFrame from '../components/PhoneFrame'
+import { POST_LOGIN_GATE } from './SelectCompany/model'
 
 interface FieldErrors {
   email?: string
@@ -48,7 +49,14 @@ export default function LoginScreen() {
       const { user, token } = await login(email.trim(), password)
       setSession(token, user)
       // AC-1: authenticated -> back to where the session ended, else the role's home.
-      navigate(safeReturnPath(state?.from) ?? '/', { replace: true })
+      const returnPath = safeReturnPath(state?.from)
+      if (returnPath) {
+        navigate(returnPath, { replace: true })
+      } else if (user.role === 'tenant') {
+        navigate('/empresa', { replace: true, state: { [POST_LOGIN_GATE]: true } })
+      } else {
+        navigate('/', { replace: true })
+      }
     } catch (error) {
       // AC-2: wrong credentials -> error message, no access.
       if (axios.isAxiosError(error) && error.response?.status === 401) {

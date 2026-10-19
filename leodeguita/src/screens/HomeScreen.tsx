@@ -2,6 +2,7 @@ import { useNavigate } from 'react-router-dom'
 import { useAuth } from '../auth/useAuth'
 import { logout as logoutRequest } from '../services/auth'
 import PhoneFrame from '../components/PhoneFrame'
+import ActiveContextEntry from '../components/ActiveContextEntry'
 
 const ROLE_LABEL: Record<string, string> = {
   admin: 'Administrador',
@@ -37,6 +38,8 @@ export default function HomeScreen() {
         <p className="mt-1 text-sm text-gray-500">
           Rol: {user ? (ROLE_LABEL[user.role] ?? user.role) : ''}
         </p>
+
+        <ActiveContextEntry />
 
         {user?.role === 'landlord' && (
           <button
