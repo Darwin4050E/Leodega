@@ -10,4 +10,8 @@ export const ACTIVE_CONTEXT_COPY = {
   error: 'No pudimos cargar tus organizaciones',
   retry: 'Reintentar',
   back: 'Volver',
+  operatingAs: (name: string) => `Operando como ${name}`,
+  operatingAsUnknown: 'Operando como tu organización',
+  change: 'Cambiar',
+  changeLabel: 'Cambiar de organización',
 } as const
