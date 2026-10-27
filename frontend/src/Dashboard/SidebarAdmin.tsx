@@ -136,7 +136,7 @@ export default function SidebarAdmin(
                     )}
 
                     <SidebarItem
-                        label="Bodegas"
+                        label={role === "landlord" ? "Mis bodegas" : "Bodegas"}
                         active={activeItem === 'bodegas'}
                         onClick={() => handleItemClick(() => {
                             setActiveItem('bodegas');
@@ -144,15 +144,26 @@ export default function SidebarAdmin(
                         })}
                     />
 
+                    {role === "landlord" && (
+                        <SidebarItem
+                            label="Publicar bodega"
+                            active={activeItem === 'publicar'}
+                            onClick={() => handleItemClick(() => {
+                                setActiveItem('publicar');
+                                navigate('/preguntainicio1');
+                            })}
+                        />
+                    )}
+
                     {/*
                       Same route segment, two different screens: for an admin
                       `/admin/solicitudes` lists user reports, while for a
-                      landlord `/arrendador/solicitudes` lists reservation
-                      requests. The label follows the role so neither side is
+                      landlord `/arrendador/solicitudes` lists reservations
+                      ("Reservas"). The label follows the role so neither side is
                       mislabelled.
                     */}
                     <SidebarItem
-                        label={role === "admin" ? "Reportes" : "Solicitudes"}
+                        label={role === "admin" ? "Reportes" : "Reservas"}
                         active={activeItem === 'solicitudes'}
                         onClick={() => handleItemClick(() => {
                             setActiveItem('solicitudes');

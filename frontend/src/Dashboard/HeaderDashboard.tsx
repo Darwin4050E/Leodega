@@ -17,7 +17,7 @@ export const HeaderDashboard: React.FC<HeaderDashboardProps> = ({ role }) => {
         role === "admin"
             ? "Administrador"
             : role === "landlord"
-                ? "Arrendador"
+                ? "Gestor de bodega"
                 : role === "tenant"
                     ? "Arrendatario"
                     : "Usuario";
