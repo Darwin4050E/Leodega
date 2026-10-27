@@ -45,7 +45,7 @@ const Login: React.FC = () => {
                 // off-site (open-redirect guard).
                 const returnTo = safeReturnPath(routerState?.from);
                 if (returnTo) navigate(returnTo, { replace: true });
-                else navigate("/arrendatario/dashboard");
+                else navigate("/storage");
             } else {
                 navigate("/");
             }

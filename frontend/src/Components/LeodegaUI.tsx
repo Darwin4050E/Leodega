@@ -300,8 +300,8 @@ export default function LeodegaUI() {
               gestorName: data.landlord?.name,
             }}
             reservation={reservation}
-            onViewReservations={() => navigate("/arrendatario/calendario")}
-            onBackToCatalog={handleExitBooking}
+            onViewReservations={() => navigate("/arrendatario/mis-reservas")}
+            onBackToCatalog={goCatalog}
           />
         )}
       </div>
