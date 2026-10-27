@@ -791,6 +791,16 @@ describe('LeodegaUI "Tu gestor" card', () => {
     expect(screen.getByRole('button', { name: 'Contactar' })).toBeInTheDocument();
   });
 
+  it('"Contactar" opens the tenant chat with the manager preselected', async () => {
+    mockGetStoreRoomDetail.mockResolvedValue({ data: storeRoomDetail });
+
+    render(<LeodegaUI />);
+    await waitFor(() => screen.getByText('Bodega Norte'));
+    fireEvent.click(screen.getByRole('button', { name: 'Contactar' }));
+
+    expect(mockNavigate).toHaveBeenCalledWith('/arrendatario/mensajes?userId=2');
+  });
+
   it('never renders "Verificado" or "Responde en", with or without start_date (no real source for either)', async () => {
     mockGetStoreRoomDetail.mockResolvedValue({
       data: { ...storeRoomDetail, landlord: { ...storeRoomDetail.landlord, start_date: '2026-09-15' } },
