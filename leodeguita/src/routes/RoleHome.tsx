@@ -1,0 +1,15 @@
+import { Navigate } from 'react-router-dom'
+import { useAuth } from '../auth/useAuth'
+import HomeScreen from '../screens/HomeScreen'
+
+/**
+ * The `/` landing. A tenant has no dashboard of its own: Explorar (the
+ * catalog) is its home. Every other role keeps the placeholder Home.
+ */
+export default function RoleHome() {
+  const { user } = useAuth()
+
+  if (user?.role === 'tenant') return <Navigate to="/bodegas" replace />
+
+  return <HomeScreen />
+}

@@ -4,7 +4,7 @@ import { ActiveContextProvider } from './context/ActiveContextProvider'
 import Protected from './routes/Protected'
 import TenantOnly from './routes/TenantOnly'
 import LoginScreen from './screens/LoginScreen'
-import HomeScreen from './screens/HomeScreen'
+import RoleHome from './routes/RoleHome'
 import PublishStoreRoomScreen from './screens/PublishStoreRoom/PublishStoreRoomScreen'
 import MyStoreRoomsScreen from './screens/MyStoreRooms/MyStoreRoomsScreen'
 import StoreRoomCatalogScreen from './screens/StoreRoomCatalog/StoreRoomCatalogScreen'
@@ -19,7 +19,7 @@ export default function App() {
           <Routes>
             <Route path="/login" element={<LoginScreen />} />
             <Route element={<Protected />}>
-              <Route path="/" element={<HomeScreen />} />
+              <Route path="/" element={<RoleHome />} />
               <Route path="/publicar" element={<PublishStoreRoomScreen />} />
               <Route path="/mis-bodegas" element={<MyStoreRoomsScreen />} />
               <Route path="/bodegas" element={<StoreRoomCatalogScreen />} />

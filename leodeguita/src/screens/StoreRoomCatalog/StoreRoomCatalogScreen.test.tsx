@@ -4,13 +4,20 @@ import userEvent from '@testing-library/user-event'
 import { MemoryRouter, Routes, Route } from 'react-router-dom'
 import { AuthProvider } from '../../auth/AuthContext'
 import StoreRoomCatalogScreen from './StoreRoomCatalogScreen'
+import { ActiveContextProvider } from '../../context/ActiveContextProvider'
 import { listStoreRooms, type CatalogStoreRoom } from '../../services/storeRooms'
+import { listOrganizations } from '../../services/organizations'
+import { writeStoredOrganizationId } from '../../context/activeContextStorage'
 
 vi.mock('../../services/storeRooms', () => ({
   listStoreRooms: vi.fn(),
 }))
+vi.mock('../../services/organizations', () => ({
+  listOrganizations: vi.fn(),
+}))
 
 const listMock = vi.mocked(listStoreRooms)
+const organizationsMock = vi.mocked(listOrganizations)
 
 function seedSession() {
   localStorage.setItem('leodeguita_token', 'tok-123')
@@ -48,12 +55,14 @@ function renderScreen(
 ) {
   return render(
     <AuthProvider>
-      <MemoryRouter initialEntries={initialEntries}>
-        <Routes>
-          <Route path="/bodegas" element={<StoreRoomCatalogScreen />} />
-          <Route path="/bodegas/:id" element={<div>Detalle</div>} />
-        </Routes>
-      </MemoryRouter>
+      <ActiveContextProvider>
+        <MemoryRouter initialEntries={initialEntries}>
+          <Routes>
+            <Route path="/bodegas" element={<StoreRoomCatalogScreen />} />
+            <Route path="/bodegas/:id" element={<div>Detalle</div>} />
+          </Routes>
+        </MemoryRouter>
+      </ActiveContextProvider>
     </AuthProvider>,
   )
 }
@@ -61,7 +70,36 @@ function renderScreen(
 describe('StoreRoomCatalogScreen', () => {
   beforeEach(() => {
     listMock.mockReset()
+    organizationsMock.mockReset()
+    organizationsMock.mockResolvedValue([])
     seedSession()
+  })
+
+  it('keeps the plain subtitle in personal mode', async () => {
+    listMock.mockResolvedValueOnce([room()])
+    renderScreen()
+
+    expect(await screen.findByText('Espacios disponibles')).toBeInTheDocument()
+    expect(screen.queryByText(/Reservando como/)).not.toBeInTheDocument()
+  })
+
+  it('subtitles the header with the active organization initials', async () => {
+    writeStoredOrganizationId(1, 12)
+    organizationsMock.mockResolvedValue([
+      {
+        id: 12,
+        name: 'Importadora Andina',
+        ruc: '0999999999001',
+        email: 'org@example.com',
+        logo: null,
+        status: 'active',
+        role: 'admin',
+      },
+    ])
+    listMock.mockResolvedValueOnce([room()])
+    renderScreen()
+
+    expect(await screen.findByText('Reservando como IA')).toBeInTheDocument()
   })
 
   it('renders one card per approved room', async () => {

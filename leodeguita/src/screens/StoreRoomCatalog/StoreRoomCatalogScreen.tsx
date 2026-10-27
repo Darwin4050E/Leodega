@@ -2,6 +2,8 @@ import { useCallback, useEffect, useState } from 'react'
 import { useLocation } from 'react-router-dom'
 import PhoneFrame from '../../components/PhoneFrame'
 import Button from '../../components/Button'
+import { useActiveContext } from '../../context/useActiveContext'
+import { organizationInitials } from '../SelectCompany/model'
 import { listStoreRooms, type CatalogStoreRoom } from '../../services/storeRooms'
 import CatalogCard from './CatalogCard'
 import { excludeUnavailable, toCardViewModel } from './model'
@@ -25,12 +27,17 @@ interface NavigationState {
 }
 
 function Header() {
+  const { activeOrganization } = useActiveContext()
+  const subtitle = activeOrganization
+    ? `Reservando como ${organizationInitials(activeOrganization.name)}`
+    : 'Espacios disponibles'
+
   return (
     <div className="shrink-0 px-5 pb-3 pt-12">
       <h1 className="m-0 text-xl font-bold tracking-tight text-lg-ink">
         Explorar
       </h1>
-      <p className="m-0 mt-1 text-sm text-lg-t3">Espacios disponibles</p>
+      <p className="m-0 mt-1 text-sm text-lg-t3">{subtitle}</p>
     </div>
   )
 }

@@ -1,6 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { render, screen } from '@testing-library/react'
-import userEvent from '@testing-library/user-event'
 import { MemoryRouter, Routes, Route } from 'react-router-dom'
 import { AuthProvider } from '../auth/AuthContext'
 import { writeSession } from '../auth/session'
@@ -50,7 +49,7 @@ function renderHome() {
   )
 }
 
-describe('HomeScreen active context entry', () => {
+describe('HomeScreen', () => {
   beforeEach(() => {
     listMock.mockReset()
     listMock.mockResolvedValue([ORGANIZATION])
@@ -59,7 +58,7 @@ describe('HomeScreen active context entry', () => {
   it.each([
     ['landlord', 'Gestor de Almacenamiento'],
     ['admin', 'Administrador'],
-  ] as const)('keeps the %s Home unchanged without the entry', (role, label) => {
+  ] as const)('shows the %s Home without the organization context', (role, label) => {
     writeSession('tok', { ...USER, role })
     renderHome()
 
@@ -75,17 +74,5 @@ describe('HomeScreen active context entry', () => {
 
     expect(screen.getByRole('button', { name: 'Publicar un espacio' })).toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'Mis bodegas' })).toBeInTheDocument()
-  })
-
-  it('shows the entry to a tenant and opens the picker from it', async () => {
-    writeSession('tok', { ...USER, role: 'tenant' })
-    renderHome()
-
-    expect(await screen.findByText('Operando como Modo personal')).toBeInTheDocument()
-    expect(screen.getByText('Rol: Cliente')).toBeInTheDocument()
-
-    await userEvent.setup().click(screen.getByRole('button', { name: 'Cambiar de organización' }))
-
-    expect(screen.getByText('Selector abierto')).toBeInTheDocument()
   })
 })

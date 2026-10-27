@@ -3,9 +3,13 @@ import { render, screen } from '@testing-library/react'
 import App from './App'
 import { writeSession } from './auth/session'
 import { listOrganizations } from './services/organizations'
+import { listStoreRooms } from './services/storeRooms'
 
 vi.mock('./services/organizations', () => ({
   listOrganizations: vi.fn(),
+}))
+vi.mock('./services/storeRooms', () => ({
+  listStoreRooms: vi.fn(),
 }))
 vi.mock('./services/auth', () => ({
   login: vi.fn(),
@@ -13,6 +17,7 @@ vi.mock('./services/auth', () => ({
 }))
 
 const listMock = vi.mocked(listOrganizations)
+const roomsMock = vi.mocked(listStoreRooms)
 
 const TENANT = {
   id: 7,
@@ -41,6 +46,8 @@ describe('App routes (HUL-02)', () => {
   beforeEach(() => {
     listMock.mockReset()
     listMock.mockResolvedValue([ORGANIZATION])
+    roomsMock.mockReset()
+    roomsMock.mockResolvedValue([])
   })
 
   it('sends a visitor without a session from /empresa to /login', () => {
@@ -69,20 +76,37 @@ describe('App routes (HUL-02)', () => {
     expect(listMock).not.toHaveBeenCalled()
   })
 
-  it('shows Home, not the picker, for a tenant who reloads on /', async () => {
+  it('lands a tenant who reloads on / on Explorar, not the picker or Home', async () => {
     writeSession('tok', TENANT)
     renderAt('/')
 
-    expect(screen.getByText('Hola, Ana')).toBeInTheDocument()
+    expect(await screen.findByRole('heading', { name: 'Explorar' })).toBeInTheDocument()
+    expect(window.location.pathname).toBe('/bodegas')
+    expect(screen.queryByText('Hola, Ana')).not.toBeInTheDocument()
     expect(
       screen.queryByRole('heading', { name: '¿Cómo quieres operar?' }),
     ).not.toBeInTheDocument()
-    await vi.waitFor(() => expect(listMock).toHaveBeenCalledTimes(1))
   })
 
-  it.each(['/perfil', '/no-existe'])('redirects the unknown path %s to /', (path) => {
+  it('keeps the landlord Home at /', () => {
+    writeSession('tok', { ...TENANT, role: 'landlord' })
+    renderAt('/')
+
+    expect(screen.getByText('Hola, Ana')).toBeInTheDocument()
+    expect(window.location.pathname).toBe('/')
+  })
+
+  it('redirects an unknown path to Explorar for a tenant', async () => {
     writeSession('tok', TENANT)
-    renderAt(path)
+    renderAt('/no-existe')
+
+    expect(await screen.findByRole('heading', { name: 'Explorar' })).toBeInTheDocument()
+    expect(window.location.pathname).toBe('/bodegas')
+  })
+
+  it('redirects an unknown path to Home for a landlord', () => {
+    writeSession('tok', { ...TENANT, role: 'landlord' })
+    renderAt('/no-existe')
 
     expect(screen.getByText('Hola, Ana')).toBeInTheDocument()
     expect(window.location.pathname).toBe('/')
