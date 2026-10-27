@@ -176,6 +176,16 @@ describe('MyStoreRoomsScreen (HUL-04)', () => {
     expect(screen.queryByRole('button', { name: '+ Publicar' })).not.toBeInTheDocument()
   })
 
+  it('mounts the gestor bottom navigation', async () => {
+    listMock.mockResolvedValueOnce([room()])
+    renderScreen()
+
+    await screen.findByText('Bodega Norte')
+    expect(screen.getByRole('link', { name: 'Mis bodegas' })).toHaveAttribute('aria-current', 'page')
+    expect(screen.getByRole('link', { name: 'Reservas' })).toBeInTheDocument()
+    expect(screen.getByRole('link', { name: 'Perfil' })).toBeInTheDocument()
+  })
+
   it('does not make the cards clickable', async () => {
     listMock.mockResolvedValueOnce([room()])
     renderScreen()

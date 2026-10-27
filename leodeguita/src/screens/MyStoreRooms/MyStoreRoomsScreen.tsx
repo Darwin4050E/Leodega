@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom'
 import { useAuth } from '../../auth/useAuth'
 import PhoneFrame from '../../components/PhoneFrame'
 import Button from '../../components/Button'
+import RoleTabBar from '../../components/RoleTabBar'
 import { listMyStoreRooms, type MyStoreRoom } from '../../services/storeRooms'
 import StoreRoomCard from './StoreRoomCard'
 import {
@@ -90,7 +91,7 @@ export default function MyStoreRoomsScreen() {
 
   if (phase === 'loading') {
     return (
-      <PhoneFrame>
+      <PhoneFrame footer={<RoleTabBar />}>
         <Header />
         <div className="flex flex-1 items-center justify-center px-6 text-sm text-lg-t3">
           Cargando tus bodegas…
@@ -101,7 +102,7 @@ export default function MyStoreRoomsScreen() {
 
   if (phase === 'error') {
     return (
-      <PhoneFrame>
+      <PhoneFrame footer={<RoleTabBar />}>
         <Header />
         <div className="flex flex-1 flex-col items-center justify-center gap-4 px-6 text-center">
           <p className="text-sm text-lg-t3">
@@ -117,7 +118,7 @@ export default function MyStoreRoomsScreen() {
 
   if (rooms.length === 0) {
     return (
-      <PhoneFrame>
+      <PhoneFrame footer={<RoleTabBar />}>
         <Header count={0} />
         <div className="flex flex-1 flex-col items-center justify-center gap-4 px-6 text-center">
           <p className="text-sm text-lg-t3">
@@ -138,7 +139,7 @@ export default function MyStoreRoomsScreen() {
   const visible = filterRooms(rooms, filter)
 
   return (
-    <PhoneFrame>
+    <PhoneFrame footer={<RoleTabBar />}>
       <Header count={rooms.length} />
 
       <div className="flex shrink-0 gap-2 overflow-x-auto px-5 pb-3">

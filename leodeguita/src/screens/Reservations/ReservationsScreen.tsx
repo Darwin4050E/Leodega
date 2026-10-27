@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import PhoneFrame from '../../components/PhoneFrame'
-import TenantTabBar from '../../components/TenantTabBar'
+import RoleTabBar from '../../components/RoleTabBar'
 import Button from '../../components/Button'
 import { useActiveContext } from '../../context/useActiveContext'
 import { listTenantReservations, type TenantReservation } from '../../services/reservations'
@@ -105,7 +105,7 @@ export default function ReservationsScreen() {
   }
 
   return (
-    <PhoneFrame footer={<TenantTabBar />}>
+    <PhoneFrame footer={<RoleTabBar />}>
       <Header />
       <ReservationTabs
         tabs={RESERVATION_TABS.map((t) => ({ ...t, count: grouped[t.key].length }))}

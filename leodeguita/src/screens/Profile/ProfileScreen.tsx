@@ -1,5 +1,5 @@
 import PhoneFrame from '../../components/PhoneFrame'
-import TenantTabBar from '../../components/TenantTabBar'
+import RoleTabBar from '../../components/RoleTabBar'
 import ActiveContextEntry from '../../components/ActiveContextEntry'
 import { useAuth } from '../../auth/useAuth'
 import { useLogout } from '../../auth/useLogout'
@@ -31,7 +31,7 @@ export default function ProfileScreen() {
     !(status === ORGANIZATIONS_STATUS.READY && organizations.length === 0)
 
   return (
-    <PhoneFrame footer={<TenantTabBar />}>
+    <PhoneFrame footer={<RoleTabBar />}>
       <div className="shrink-0 border-b border-lg-line px-5 pb-3 pt-12">
         <h1 className="m-0 text-xl font-bold tracking-tight text-lg-ink">Perfil</h1>
       </div>

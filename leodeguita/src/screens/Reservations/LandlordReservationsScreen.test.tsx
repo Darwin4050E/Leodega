@@ -93,6 +93,15 @@ describe('LandlordReservationsScreen', () => {
     expect(screen.queryByText('Bodega Norte')).not.toBeInTheDocument()
   })
 
+  it('mounts the gestor bottom navigation with Reservas current', async () => {
+    listMock.mockResolvedValueOnce([])
+    renderScreen()
+    await screen.findByText('Aún no has recibido reservas')
+
+    expect(screen.getByRole('link', { name: 'Mis bodegas' })).toBeInTheDocument()
+    expect(screen.getByRole('link', { name: 'Reservas' })).toHaveAttribute('aria-current', 'page')
+  })
+
   it('offers no cancel or receipt actions', async () => {
     listMock.mockResolvedValueOnce([ACTIVE])
     renderScreen()

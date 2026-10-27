@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import PhoneFrame from '../../components/PhoneFrame'
 import Button from '../../components/Button'
+import RoleTabBar from '../../components/RoleTabBar'
 import StatusChip from '../../components/StatusChip'
 import { listLandlordReservations, type LandlordReservation } from '../../services/reservations'
 import ReservationTabs from './ReservationTabs'
@@ -100,7 +101,7 @@ export default function LandlordReservationsScreen() {
   }
 
   return (
-    <PhoneFrame>
+    <PhoneFrame footer={<RoleTabBar />}>
       <Header />
       <ReservationTabs
         tabs={LANDLORD_TABS.map((t) => ({ ...t, count: grouped[t.key].length }))}
