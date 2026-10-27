@@ -25,9 +25,9 @@ export default function App() {
               <Route path="/" element={<RoleHome />} />
               <Route path="/publicar" element={<PublishStoreRoomScreen />} />
               <Route path="/mis-bodegas" element={<MyStoreRoomsScreen />} />
-              <Route path="/bodegas" element={<StoreRoomCatalogScreen />} />
-              <Route path="/bodegas/:id" element={<StoreRoomDetailScreen />} />
               <Route element={<TenantOnly />}>
+                <Route path="/bodegas" element={<StoreRoomCatalogScreen />} />
+                <Route path="/bodegas/:id" element={<StoreRoomDetailScreen />} />
                 <Route path="/empresa" element={<SelectCompanyScreen />} />
               </Route>
               <Route element={<RolesOnly roles={['tenant', 'landlord']} />}>

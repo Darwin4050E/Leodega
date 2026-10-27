@@ -172,6 +172,31 @@ describe('App routes (HUL-02)', () => {
     expect(window.location.pathname).toBe('/')
   })
 
+  it.each(['/bodegas', '/bodegas/5'])('keeps a landlord out of the tenant catalog at %s', async (path) => {
+    writeSession('tok', LANDLORD)
+    renderAt(path)
+
+    expect(await screen.findByRole('heading', { name: 'Mis bodegas' })).toBeInTheDocument()
+    expect(window.location.pathname).toBe('/mis-bodegas')
+    expect(roomsMock).not.toHaveBeenCalled()
+  })
+
+  it.each(['/bodegas', '/bodegas/5'])('sends an admin from %s to Home', (path) => {
+    writeSession('tok', { ...TENANT, role: 'admin' })
+    renderAt(path)
+
+    expect(screen.getByText('Hola, Ana')).toBeInTheDocument()
+    expect(window.location.pathname).toBe('/')
+  })
+
+  it('still opens the catalog for a tenant', async () => {
+    writeSession('tok', TENANT)
+    renderAt('/bodegas')
+
+    expect(await screen.findByRole('heading', { name: 'Explorar' })).toBeInTheDocument()
+    expect(window.location.pathname).toBe('/bodegas')
+  })
+
   it('redirects an unknown path to Explorar for a tenant', async () => {
     writeSession('tok', TENANT)
     renderAt('/no-existe')
