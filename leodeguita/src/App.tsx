@@ -11,7 +11,7 @@ import MyStoreRoomsScreen from './screens/MyStoreRooms/MyStoreRoomsScreen'
 import StoreRoomCatalogScreen from './screens/StoreRoomCatalog/StoreRoomCatalogScreen'
 import StoreRoomDetailScreen from './screens/StoreRoomDetail/StoreRoomDetailScreen'
 import ProfileScreen from './screens/Profile/ProfileScreen'
-import ReservationsScreen from './screens/Reservations/ReservationsScreen'
+import ReservationsRoute from './screens/Reservations/ReservationsRoute'
 import SelectCompanyScreen from './screens/SelectCompany/SelectCompanyScreen'
 
 export default function App() {
@@ -29,9 +29,9 @@ export default function App() {
               <Route path="/bodegas/:id" element={<StoreRoomDetailScreen />} />
               <Route element={<TenantOnly />}>
                 <Route path="/empresa" element={<SelectCompanyScreen />} />
-                <Route path="/reservas" element={<ReservationsScreen />} />
               </Route>
               <Route element={<RolesOnly roles={['tenant', 'landlord']} />}>
+                <Route path="/reservas" element={<ReservationsRoute />} />
                 <Route path="/perfil" element={<ProfileScreen />} />
               </Route>
             </Route>

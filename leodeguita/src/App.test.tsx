@@ -4,13 +4,14 @@ import App from './App'
 import { writeSession } from './auth/session'
 import { listOrganizations } from './services/organizations'
 import { listMyStoreRooms, listStoreRooms } from './services/storeRooms'
-import { listTenantReservations } from './services/reservations'
+import { listLandlordReservations, listTenantReservations } from './services/reservations'
 
 vi.mock('./services/organizations', () => ({
   listOrganizations: vi.fn(),
 }))
 vi.mock('./services/reservations', () => ({
   listTenantReservations: vi.fn(),
+  listLandlordReservations: vi.fn(),
 }))
 vi.mock('./services/storeRooms', () => ({
   listStoreRooms: vi.fn(),
@@ -119,12 +120,22 @@ describe('App routes (HUL-02)', () => {
     expect(await screen.findByText('Aún no tienes reservas')).toBeInTheDocument()
   })
 
-  it('keeps a landlord out of /reservas', async () => {
+  it('renders the received reservations for a landlord at /reservas', async () => {
+    vi.mocked(listLandlordReservations).mockResolvedValue([])
     writeSession('tok', LANDLORD)
     renderAt('/reservas')
 
-    expect(await screen.findByRole('heading', { name: 'Mis bodegas' })).toBeInTheDocument()
-    expect(window.location.pathname).toBe('/mis-bodegas')
+    expect(screen.getByText('Reservas de tus bodegas')).toBeInTheDocument()
+    expect(await screen.findByText('Aún no has recibido reservas')).toBeInTheDocument()
+    expect(window.location.pathname).toBe('/reservas')
+  })
+
+  it('keeps an admin out of /reservas', () => {
+    writeSession('tok', { ...TENANT, role: 'admin' })
+    renderAt('/reservas')
+
+    expect(screen.getByText('Hola, Ana')).toBeInTheDocument()
+    expect(window.location.pathname).toBe('/')
   })
 
   it('renders the profile for a landlord at /perfil', () => {

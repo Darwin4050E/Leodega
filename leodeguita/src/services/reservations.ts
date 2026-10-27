@@ -42,3 +42,32 @@ export async function listTenantReservations(): Promise<TenantReservation[]> {
   const { data } = await client.get<TenantReservation[]>('/tenant/reservations')
   return data
 }
+
+/**
+ * A reservation received on one of the gestor's store rooms, from
+ * `GET /landlord/reservations` (`landlordIndex()`, the endpoint the web
+ * "Reservas" page reads). Only the fields the mobile list shows.
+ */
+export interface LandlordReservation {
+  id: number
+  status: string
+  start_date: string
+  end_date: string
+  store_room_id: number
+  total_mount: string | number | null
+  store_rooms?: {
+    id?: number
+    title?: string
+  }
+  tenants?: {
+    user?: {
+      name?: string
+      lastname?: string
+    }
+  }
+}
+
+export async function listLandlordReservations(): Promise<LandlordReservation[]> {
+  const { data } = await client.get<LandlordReservation[]>('/landlord/reservations')
+  return data
+}
