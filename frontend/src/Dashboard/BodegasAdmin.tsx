@@ -72,13 +72,13 @@ const BodegasAdmin = () => {
     const getSortLabel = () => {
         switch (sortBy) {
             case 'newest':
-                return 'Newest';
+                return 'Más recientes';
             case 'oldest':
-                return 'Oldest';
+                return 'Más antiguos';
             case 'name':
-                return 'Name A-Z';
+                return 'Nombre A-Z';
             default:
-                return 'Newest';
+                return 'Más recientes';
         }
     };
 
@@ -110,7 +110,7 @@ const BodegasAdmin = () => {
                         <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-5 h-5" />
                         <input
                             type="text"
-                            placeholder="Search"
+                            placeholder="Buscar"
                             value={searchTerm}
                             onChange={(e) => setSearchTerm(e.target.value)}
                             className="pl-10 pr-4 py-2.5 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-purple-500 bg-white w-80 text-sm"
@@ -122,7 +122,7 @@ const BodegasAdmin = () => {
                             onClick={() => setMostrarMenuOrden(!mostrarMenuOrden)}
                             className="flex items-center gap-2 px-4 py-2.5 border border-gray-300 rounded-lg hover:bg-gray-50 bg-white transition-colors"
                         >
-                            <span className="text-sm text-gray-600">Short by:</span>
+                            <span className="text-sm text-gray-600">Ordenar por:</span>
                             <span className="text-sm font-medium text-gray-900">{getSortLabel()}</span>
                             <ChevronDown className="w-4 h-4 text-gray-400" />
                         </button>
@@ -145,7 +145,7 @@ const BodegasAdmin = () => {
                                         className={`w-full text-left px-4 py-2.5 text-sm hover:bg-gray-50 rounded-t-lg transition-colors ${sortBy === 'newest' ? 'text-purple-600 font-medium bg-purple-50' : 'text-gray-700'
                                             }`}
                                     >
-                                        Newest
+                                        Más recientes
                                     </button>
                                     <button
                                         onClick={() => {
@@ -155,7 +155,7 @@ const BodegasAdmin = () => {
                                         className={`w-full text-left px-4 py-2.5 text-sm hover:bg-gray-50 transition-colors ${sortBy === 'oldest' ? 'text-purple-600 font-medium bg-purple-50' : 'text-gray-700'
                                             }`}
                                     >
-                                        Oldest
+                                        Más antiguos
                                     </button>
                                     <button
                                         onClick={() => {
@@ -165,7 +165,7 @@ const BodegasAdmin = () => {
                                         className={`w-full text-left px-4 py-2.5 text-sm hover:bg-gray-50 rounded-b-lg transition-colors ${sortBy === 'name' ? 'text-purple-600 font-medium bg-purple-50' : 'text-gray-700'
                                             }`}
                                     >
-                                        Name A-Z
+                                        Nombre A-Z
                                     </button>
                                 </div>
                             </>
