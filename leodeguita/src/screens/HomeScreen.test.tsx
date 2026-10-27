@@ -55,10 +55,8 @@ describe('HomeScreen', () => {
     listMock.mockResolvedValue([ORGANIZATION])
   })
 
-  it.each([
-    ['landlord', 'Gestor de Almacenamiento'],
-    ['admin', 'Administrador'],
-  ] as const)('shows the %s Home without the organization context', (role, label) => {
+  it('shows the admin Home without the organization context', () => {
+    const [role, label] = ['admin', 'Administrador'] as const
     writeSession('tok', { ...USER, role })
     renderHome()
 
@@ -68,11 +66,11 @@ describe('HomeScreen', () => {
     expect(listMock).not.toHaveBeenCalled()
   })
 
-  it('keeps the landlord actions', () => {
-    writeSession('tok', { ...USER, role: 'landlord' })
+  it('offers no landlord actions', () => {
+    writeSession('tok', { ...USER, role: 'admin' })
     renderHome()
 
-    expect(screen.getByRole('button', { name: 'Publicar un espacio' })).toBeInTheDocument()
-    expect(screen.getByRole('button', { name: 'Mis bodegas' })).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Publicar un espacio' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Mis bodegas' })).not.toBeInTheDocument()
   })
 })

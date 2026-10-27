@@ -3,7 +3,7 @@ import { render, screen } from '@testing-library/react'
 import App from './App'
 import { writeSession } from './auth/session'
 import { listOrganizations } from './services/organizations'
-import { listStoreRooms } from './services/storeRooms'
+import { listMyStoreRooms, listStoreRooms } from './services/storeRooms'
 import { listTenantReservations } from './services/reservations'
 
 vi.mock('./services/organizations', () => ({
@@ -14,6 +14,7 @@ vi.mock('./services/reservations', () => ({
 }))
 vi.mock('./services/storeRooms', () => ({
   listStoreRooms: vi.fn(),
+  listMyStoreRooms: vi.fn(),
 }))
 vi.mock('./services/auth', () => ({
   login: vi.fn(),
@@ -22,6 +23,14 @@ vi.mock('./services/auth', () => ({
 
 const listMock = vi.mocked(listOrganizations)
 const roomsMock = vi.mocked(listStoreRooms)
+const myRoomsMock = vi.mocked(listMyStoreRooms)
+
+const LANDLORD = { ...{
+  id: 7,
+  name: 'Ana',
+  lastname: 'Perez',
+  email: 'ana@example.com',
+}, role: 'landlord' as const, landlord: { id: 3 } }
 
 const TENANT = {
   id: 7,
@@ -52,6 +61,8 @@ describe('App routes (HUL-02)', () => {
     listMock.mockResolvedValue([ORGANIZATION])
     roomsMock.mockReset()
     roomsMock.mockResolvedValue([])
+    myRoomsMock.mockReset()
+    myRoomsMock.mockResolvedValue([])
   })
 
   it('sends a visitor without a session from /empresa to /login', () => {
@@ -71,12 +82,12 @@ describe('App routes (HUL-02)', () => {
     expect(await screen.findByText('Importadora Andina')).toBeInTheDocument()
   })
 
-  it('keeps a landlord out of /empresa', () => {
-    writeSession('tok', { ...TENANT, role: 'landlord' })
+  it('keeps a landlord out of /empresa', async () => {
+    writeSession('tok', LANDLORD)
     renderAt('/empresa')
 
-    expect(screen.getByText('Hola, Ana')).toBeInTheDocument()
-    expect(window.location.pathname).toBe('/')
+    expect(await screen.findByRole('heading', { name: 'Mis bodegas' })).toBeInTheDocument()
+    expect(window.location.pathname).toBe('/mis-bodegas')
     expect(listMock).not.toHaveBeenCalled()
   })
 
@@ -108,24 +119,33 @@ describe('App routes (HUL-02)', () => {
     expect(await screen.findByText('Aún no tienes reservas')).toBeInTheDocument()
   })
 
-  it('keeps a landlord out of /reservas', () => {
-    writeSession('tok', { ...TENANT, role: 'landlord' })
+  it('keeps a landlord out of /reservas', async () => {
+    writeSession('tok', LANDLORD)
     renderAt('/reservas')
 
-    expect(screen.getByText('Hola, Ana')).toBeInTheDocument()
-    expect(window.location.pathname).toBe('/')
+    expect(await screen.findByRole('heading', { name: 'Mis bodegas' })).toBeInTheDocument()
+    expect(window.location.pathname).toBe('/mis-bodegas')
   })
 
-  it('keeps a landlord out of /perfil', () => {
-    writeSession('tok', { ...TENANT, role: 'landlord' })
+  it('keeps a landlord out of /perfil', async () => {
+    writeSession('tok', LANDLORD)
     renderAt('/perfil')
 
-    expect(screen.getByText('Hola, Ana')).toBeInTheDocument()
-    expect(window.location.pathname).toBe('/')
+    expect(await screen.findByRole('heading', { name: 'Mis bodegas' })).toBeInTheDocument()
+    expect(window.location.pathname).toBe('/mis-bodegas')
   })
 
-  it('keeps the landlord Home at /', () => {
-    writeSession('tok', { ...TENANT, role: 'landlord' })
+  it('lands a landlord on Mis bodegas from /, not the placeholder Home', async () => {
+    writeSession('tok', LANDLORD)
+    renderAt('/')
+
+    expect(await screen.findByRole('heading', { name: 'Mis bodegas' })).toBeInTheDocument()
+    expect(window.location.pathname).toBe('/mis-bodegas')
+    expect(screen.queryByText('Hola, Ana')).not.toBeInTheDocument()
+  })
+
+  it('keeps the placeholder Home at / for an admin', () => {
+    writeSession('tok', { ...TENANT, role: 'admin' })
     renderAt('/')
 
     expect(screen.getByText('Hola, Ana')).toBeInTheDocument()
@@ -140,11 +160,11 @@ describe('App routes (HUL-02)', () => {
     expect(window.location.pathname).toBe('/bodegas')
   })
 
-  it('redirects an unknown path to Home for a landlord', () => {
-    writeSession('tok', { ...TENANT, role: 'landlord' })
+  it('redirects an unknown path to Mis bodegas for a landlord', async () => {
+    writeSession('tok', LANDLORD)
     renderAt('/no-existe')
 
-    expect(screen.getByText('Hola, Ana')).toBeInTheDocument()
-    expect(window.location.pathname).toBe('/')
+    expect(await screen.findByRole('heading', { name: 'Mis bodegas' })).toBeInTheDocument()
+    expect(window.location.pathname).toBe('/mis-bodegas')
   })
 })
