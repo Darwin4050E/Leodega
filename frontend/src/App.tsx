@@ -143,7 +143,7 @@ function App() {
             "tenant" case). */}
         <Route element={<Protected />}>
           <Route path="/arrendatario/dashboard" element={<PagePrincipal />} />
-          <Route path="/arrendatario/mensajes" element={<Mensajes />} />
+          <Route path="/arrendatario/mensajes" element={<Mensajes tenantLayout />} />
           <Route path="/arrendatario/calendario" element={<CalendarioTendant />} />
           <Route path="/arrendatario/mis-reservas" element={<MisReservas />} />
           <Route path="/mi-cuenta/crear-organizacion" element={<CrearOrganizacion />} />

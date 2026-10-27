@@ -23,6 +23,10 @@ vi.mock('../services/users', () => ({
   getUsers: mockGetUsers,
 }));
 
+vi.mock('../Components/HeaderTendant', () => ({
+  default: () => <div data-testid="header-tendant" />,
+}));
+
 import Mensajes from './Mensajes';
 
 // jsdom does not implement scrollIntoView; the component calls it whenever
@@ -49,6 +53,38 @@ function renderWithRoute(path: string) {
     </MemoryRouter>
   );
 }
+
+describe('Mensajes header', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mockGetMe.mockResolvedValue({ data: { user: authUser } });
+    mockGetConversations.mockResolvedValue({ data: [] });
+  });
+
+  it('shows the tenant header above a chat that fills the remaining height', async () => {
+    const { container } = render(
+      <MemoryRouter initialEntries={['/arrendatario/mensajes']}>
+        <Mensajes tenantLayout />
+      </MemoryRouter>
+    );
+    await waitFor(() => expect(mockGetConversations).toHaveBeenCalled());
+
+    expect(screen.getByTestId('header-tendant')).toBeInTheDocument();
+    const wrapper = container.firstElementChild as HTMLElement;
+    expect(wrapper.className).toContain('h-screen');
+    expect(wrapper.className).toContain('flex-col');
+    expect(wrapper.children[1].className).toContain('min-h-0');
+    expect(wrapper.children[1].className).not.toContain('h-screen');
+  });
+
+  it('keeps the landlord layout without the tenant header', async () => {
+    const { container } = renderWithRoute('/arrendador/mensajes');
+    await waitFor(() => expect(mockGetConversations).toHaveBeenCalled());
+
+    expect(screen.queryByTestId('header-tendant')).not.toBeInTheDocument();
+    expect((container.firstElementChild as HTMLElement).className).toContain('h-screen');
+  });
+});
 
 describe('Mensajes', () => {
   beforeEach(() => {
