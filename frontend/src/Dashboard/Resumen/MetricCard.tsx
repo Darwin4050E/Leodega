@@ -7,6 +7,7 @@ interface MetricCardProps {
   readonly sub?: string;
   readonly secondaryLabel?: string;
   readonly secondaryValue?: number;
+  readonly action?: { readonly label: string; readonly onClick: () => void };
 }
 
 /**
@@ -22,12 +23,24 @@ const MetricCard: React.FC<MetricCardProps> = ({
   sub,
   secondaryLabel,
   secondaryValue,
+  action,
 }) => {
   const hasSecondary = secondaryLabel !== undefined && secondaryValue !== undefined;
 
   return (
     <div className="bg-white rounded-2xl border border-gray-200 p-5">
-      <p className="text-[11px] font-semibold text-gray-400 uppercase tracking-wider">{label}</p>
+      <div className="flex items-center justify-between gap-2">
+        <p className="text-[11px] font-semibold text-gray-400 uppercase tracking-wider">{label}</p>
+        {action && (
+          <button
+            type="button"
+            onClick={action.onClick}
+            className="text-xs font-semibold text-violet-600 hover:text-violet-700"
+          >
+            {action.label}
+          </button>
+        )}
+      </div>
 
       {hasSecondary ? (
         <div className="flex gap-6 mt-3">
