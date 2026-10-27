@@ -1,11 +1,13 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import type { ReactNode } from 'react'
-import { render, screen } from '@testing-library/react'
+import { render, screen, within } from '@testing-library/react'
+import { AxiosError } from 'axios'
 import userEvent from '@testing-library/user-event'
 import { MemoryRouter, Routes, Route } from 'react-router-dom'
 import { AuthProvider } from '../../auth/AuthContext'
 import MyStoreRoomDetailScreen from './MyStoreRoomDetailScreen'
 import {
+  deleteStoreRoom,
   getStoreRoomDetail,
   listMyStoreRooms,
   StoreRoomNotFoundError,
@@ -17,7 +19,12 @@ vi.mock('../../services/storeRooms', async () => {
   const actual = await vi.importActual<typeof import('../../services/storeRooms')>(
     '../../services/storeRooms',
   )
-  return { ...actual, getStoreRoomDetail: vi.fn(), listMyStoreRooms: vi.fn() }
+  return {
+    ...actual,
+    getStoreRoomDetail: vi.fn(),
+    listMyStoreRooms: vi.fn(),
+    deleteStoreRoom: vi.fn(),
+  }
 })
 
 // react-leaflet cannot lay out in jsdom; stub it like the other map tests.
@@ -32,6 +39,7 @@ vi.mock('leaflet', () => ({ default: { icon: () => ({}) } }))
 
 const detailMock = vi.mocked(getStoreRoomDetail)
 const listMock = vi.mocked(listMyStoreRooms)
+const deleteMock = vi.mocked(deleteStoreRoom)
 
 function seedSession(role: 'landlord' | 'tenant' = 'landlord') {
   localStorage.setItem('leodeguita_token', 'tok-123')
@@ -107,6 +115,7 @@ describe('MyStoreRoomDetailScreen', () => {
   beforeEach(() => {
     detailMock.mockReset()
     listMock.mockReset()
+    deleteMock.mockReset()
     seedSession('landlord')
     detailMock.mockResolvedValue(detail())
     listMock.mockResolvedValue([mine()])
@@ -221,5 +230,83 @@ describe('MyStoreRoomDetailScreen', () => {
     renderScreen('/mis-bodegas/abc')
     expect(await screen.findByText('Esta bodega ya no existe.')).toBeInTheDocument()
     expect(detailMock).not.toHaveBeenCalled()
+  })
+
+  describe('delete', () => {
+    it('opens a confirmation, then deletes and returns to the list', async () => {
+      deleteMock.mockResolvedValueOnce(undefined)
+      const user = userEvent.setup()
+      renderScreen()
+      await screen.findByRole('heading', { name: 'Bodega Norte' })
+
+      await user.click(screen.getByRole('button', { name: 'Eliminar bodega' }))
+      const dialog = screen.getByRole('dialog', { name: 'Eliminar bodega' })
+      expect(dialog).toHaveTextContent(
+        '¿Seguro que deseas eliminar Bodega Norte? Esta acción no se puede deshacer.',
+      )
+      expect(deleteMock).not.toHaveBeenCalled()
+
+      await user.click(within(dialog).getByRole('button', { name: 'Eliminar' }))
+      expect(deleteMock).toHaveBeenCalledWith(1)
+      expect(await screen.findByText('Lista de bodegas')).toBeInTheDocument()
+    })
+
+    it('cancels without deleting', async () => {
+      const user = userEvent.setup()
+      renderScreen()
+      await screen.findByRole('heading', { name: 'Bodega Norte' })
+
+      await user.click(screen.getByRole('button', { name: 'Eliminar bodega' }))
+      await user.click(screen.getByRole('button', { name: 'Cancelar' }))
+      expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
+      expect(deleteMock).not.toHaveBeenCalled()
+    })
+
+    it('locks the action when the room has active reservations', async () => {
+      listMock.mockResolvedValue([mine({ active_reservations_count: 2 })])
+      const user = userEvent.setup()
+      renderScreen()
+      await screen.findByRole('heading', { name: 'Bodega Norte' })
+
+      const trash = screen.getByRole('button', { name: 'Eliminar bodega' })
+      expect(trash).toBeDisabled()
+      expect(trash).toHaveAttribute('title', 'Tiene reservas vigentes')
+      expect(screen.getByText('Tiene reservas vigentes')).toBeInTheDocument()
+      await user.click(trash)
+      expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
+    })
+
+    it('shows the backend error message and stays on the screen', async () => {
+      deleteMock.mockRejectedValueOnce(
+        new AxiosError('c', '409', undefined, undefined, {
+          status: 409,
+          data: { message: 'No se puede eliminar la bodega: tiene reservas confirmadas activas o futuras.' },
+        } as never),
+      )
+      const user = userEvent.setup()
+      renderScreen()
+      await screen.findByRole('heading', { name: 'Bodega Norte' })
+
+      await user.click(screen.getByRole('button', { name: 'Eliminar bodega' }))
+      await user.click(screen.getByRole('button', { name: 'Eliminar' }))
+
+      expect(await screen.findByRole('alert')).toHaveTextContent(
+        'No se puede eliminar la bodega: tiene reservas confirmadas activas o futuras.',
+      )
+      expect(screen.queryByText('Lista de bodegas')).not.toBeInTheDocument()
+    })
+
+    it('falls back to a generic message when the error has none', async () => {
+      deleteMock.mockRejectedValueOnce(new Error('network'))
+      const user = userEvent.setup()
+      renderScreen()
+      await screen.findByRole('heading', { name: 'Bodega Norte' })
+
+      await user.click(screen.getByRole('button', { name: 'Eliminar bodega' }))
+      await user.click(screen.getByRole('button', { name: 'Eliminar' }))
+      expect(await screen.findByRole('alert')).toHaveTextContent(
+        'No se pudo eliminar la bodega. Intenta de nuevo.',
+      )
+    })
   })
 })

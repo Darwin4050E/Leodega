@@ -4,6 +4,8 @@ import { useAuth } from '../../auth/useAuth'
 import PhoneFrame from '../../components/PhoneFrame'
 import Button from '../../components/Button'
 import {
+  deleteStoreRoom,
+  extractApiMessage,
   getStoreRoomDetail,
   listMyStoreRooms,
   StoreRoomNotFoundError,
@@ -38,6 +40,82 @@ function Header({ onBack }: { onBack: () => void }) {
   )
 }
 
+/** Bottom bar of the detail: the trash action, locked while reservations are active. */
+function ActionBar({ locked, onDelete }: { locked: boolean; onDelete: () => void }) {
+  return (
+    <div className="flex shrink-0 items-center gap-2.5 border-t border-lg-line bg-white px-5 pb-8 pt-3">
+      <div className="flex-1">
+        {locked && (
+          <p className="m-0 text-xs text-lg-t4">Tiene reservas vigentes</p>
+        )}
+      </div>
+      <button
+        type="button"
+        aria-label="Eliminar bodega"
+        disabled={locked}
+        title={locked ? 'Tiene reservas vigentes' : 'Eliminar'}
+        onClick={onDelete}
+        className={`flex h-[54px] w-[54px] shrink-0 items-center justify-center rounded-xl text-lg ${
+          locked
+            ? 'cursor-not-allowed bg-lg-hair text-lg-t4'
+            : 'bg-lg-err-bg text-lg-err'
+        }`}
+      >
+        <span aria-hidden="true">{locked ? '🔒' : '🗑'}</span>
+      </button>
+    </div>
+  )
+}
+
+/** Destructive confirmation; copy follows the web `EliminarBodegaModal`. */
+function DeleteDialog({
+  title,
+  deleting,
+  error,
+  onCancel,
+  onConfirm,
+}: {
+  title: string
+  deleting: boolean
+  error: string | null
+  onCancel: () => void
+  onConfirm: () => void
+}) {
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 px-5">
+      <div
+        role="dialog"
+        aria-label="Eliminar bodega"
+        className="w-full max-w-[380px] overflow-hidden rounded-2xl bg-white shadow-xl"
+      >
+        <div className="px-5 pb-1 pt-5">
+          <h2 className="m-0 text-base font-bold text-lg-ink">Eliminar bodega</h2>
+          <p className="mt-2 text-sm leading-relaxed text-lg-t2">
+            ¿Seguro que deseas eliminar {title}? Esta acción no se puede deshacer.
+          </p>
+          {error && (
+            <p role="alert" className="mt-2 text-xs text-lg-err">
+              {error}
+            </p>
+          )}
+        </div>
+        <div className="flex gap-2.5 px-5 pb-5 pt-4">
+          <Button variant="sec" disabled={deleting} onClick={onCancel}>
+            Cancelar
+          </Button>
+          <Button
+            disabled={deleting}
+            onClick={onConfirm}
+            className="!bg-lg-err"
+          >
+            {deleting ? 'Eliminando…' : 'Eliminar'}
+          </Button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
 export default function MyStoreRoomDetailScreen() {
   const { id } = useParams<{ id: string }>()
   const navigate = useNavigate()
@@ -49,6 +127,9 @@ export default function MyStoreRoomDetailScreen() {
   const [phase, setPhase] = useState<Phase>('loading')
   const [room, setRoom] = useState<MyStoreRoom | null>(null)
   const [detail, setDetail] = useState<StoreRoomDetail | null>(null)
+  const [confirmingDelete, setConfirmingDelete] = useState(false)
+  const [deleting, setDeleting] = useState(false)
+  const [deleteError, setDeleteError] = useState<string | null>(null)
 
   const load = useCallback(() => {
     if (!Number.isInteger(roomId) || roomId <= 0) {
@@ -81,6 +162,21 @@ export default function MyStoreRoomDetailScreen() {
   }, [load])
 
   const goToList = () => navigate('/mis-bodegas')
+
+  async function handleDelete() {
+    setDeleting(true)
+    setDeleteError(null)
+    try {
+      await deleteStoreRoom(roomId)
+      navigate('/mis-bodegas', { replace: true })
+    } catch (error) {
+      setDeleteError(
+        extractApiMessage(error) ??
+          'No se pudo eliminar la bodega. Intenta de nuevo.',
+      )
+      setDeleting(false)
+    }
+  }
 
   if (phase === 'loading') {
     return (
@@ -125,7 +221,29 @@ export default function MyStoreRoomDetailScreen() {
 
   return (
     <PhoneFrame>
-      <MyStoreRoomDetailView room={room} detail={detail} onBack={goToList} />
+      <MyStoreRoomDetailView
+        room={room}
+        detail={detail}
+        onBack={goToList}
+        footer={
+          <ActionBar
+            locked={room.active_reservations_count > 0}
+            onDelete={() => {
+              setDeleteError(null)
+              setConfirmingDelete(true)
+            }}
+          />
+        }
+      />
+      {confirmingDelete && (
+        <DeleteDialog
+          title={room.title}
+          deleting={deleting}
+          error={deleteError}
+          onCancel={() => setConfirmingDelete(false)}
+          onConfirm={handleDelete}
+        />
+      )}
     </PhoneFrame>
   )
 }

@@ -2,6 +2,8 @@ import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { AxiosError } from 'axios'
 import client from '../api/client'
 import {
+  deleteStoreRoom,
+  extractApiMessage,
   getStoreRoomDetail,
   listStoreRooms,
   StoreRoomNotFoundError,
@@ -16,10 +18,11 @@ import {
  */
 
 vi.mock('../api/client', () => ({
-  default: { get: vi.fn() },
+  default: { get: vi.fn(), delete: vi.fn() },
 }))
 
 const getMock = vi.mocked(client.get)
+const deleteMock = vi.mocked(client.delete)
 
 function catalogRoom(overrides: Partial<CatalogStoreRoom> = {}): CatalogStoreRoom {
   return {
@@ -108,5 +111,49 @@ describe('getStoreRoomDetail', () => {
     getMock.mockRejectedValueOnce(error)
 
     await expect(getStoreRoomDetail(1)).rejects.toBe(error)
+  })
+})
+
+describe('deleteStoreRoom', () => {
+  beforeEach(() => deleteMock.mockReset())
+
+  it('calls DELETE /storeRooms/{id}', async () => {
+    deleteMock.mockResolvedValueOnce({ data: { status: 200 } })
+    await deleteStoreRoom(4)
+    expect(deleteMock).toHaveBeenCalledWith('/storeRooms/4')
+  })
+
+  it('treats a 404 as already deleted', async () => {
+    deleteMock.mockRejectedValueOnce(
+      new AxiosError('nf', '404', undefined, undefined, { status: 404 } as never),
+    )
+    await expect(deleteStoreRoom(4)).resolves.toBeUndefined()
+  })
+
+  it('rethrows every other error', async () => {
+    const conflict = new AxiosError('c', '409', undefined, undefined, {
+      status: 409,
+    } as never)
+    deleteMock.mockRejectedValueOnce(conflict)
+    await expect(deleteStoreRoom(4)).rejects.toBe(conflict)
+  })
+})
+
+describe('extractApiMessage', () => {
+  it('returns the backend message of an axios error', () => {
+    const error = new AxiosError('c', '409', undefined, undefined, {
+      status: 409,
+      data: { message: 'Tiene reservas' },
+    } as never)
+    expect(extractApiMessage(error)).toBe('Tiene reservas')
+  })
+
+  it('returns null when there is no message', () => {
+    expect(extractApiMessage(new Error('x'))).toBeNull()
+    expect(
+      extractApiMessage(
+        new AxiosError('c', '500', undefined, undefined, { status: 500, data: {} } as never),
+      ),
+    ).toBeNull()
   })
 })

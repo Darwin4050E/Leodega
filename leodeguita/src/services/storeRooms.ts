@@ -256,3 +256,30 @@ export async function getStoreRoomDetail(id: number): Promise<StoreRoomDetail> {
     throw error
   }
 }
+
+/**
+ * Backend `{ message }` of a failed request, or `null` when the error is not
+ * an HTTP error or carries none — lets screens surface the server's wording
+ * (e.g. the active-reservations conflict) without knowing axios.
+ */
+export function extractApiMessage(error: unknown): string | null {
+  if (!axios.isAxiosError(error)) return null
+  const message = (error.response?.data as { message?: unknown } | undefined)
+    ?.message
+  return typeof message === 'string' && message.length > 0 ? message : null
+}
+
+/**
+ * Soft-delete an owned room (`DELETE /storeRooms/{id}`). The backend refuses
+ * with a 409 `{ message }` while the room has active or future confirmed
+ * reservations; that and every other error rethrow for the screen to show.
+ * A 404 means it is already gone, which is the outcome the caller wanted.
+ */
+export async function deleteStoreRoom(id: number): Promise<void> {
+  try {
+    await client.delete(`/storeRooms/${id}`)
+  } catch (error) {
+    if (axios.isAxiosError(error) && error.response?.status === 404) return
+    throw error
+  }
+}
