@@ -88,6 +88,21 @@ describe('App routes (HUL-02)', () => {
     ).not.toBeInTheDocument()
   })
 
+  it('renders the profile for a tenant at /perfil', () => {
+    writeSession('tok', TENANT)
+    renderAt('/perfil')
+
+    expect(screen.getByRole('heading', { level: 1, name: 'Perfil' })).toBeInTheDocument()
+  })
+
+  it('keeps a landlord out of /perfil', () => {
+    writeSession('tok', { ...TENANT, role: 'landlord' })
+    renderAt('/perfil')
+
+    expect(screen.getByText('Hola, Ana')).toBeInTheDocument()
+    expect(window.location.pathname).toBe('/')
+  })
+
   it('keeps the landlord Home at /', () => {
     writeSession('tok', { ...TENANT, role: 'landlord' })
     renderAt('/')

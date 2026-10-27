@@ -1,6 +1,6 @@
 import { useNavigate } from 'react-router-dom'
 import { useAuth } from '../auth/useAuth'
-import { logout as logoutRequest } from '../services/auth'
+import { useLogout } from '../auth/useLogout'
 import PhoneFrame from '../components/PhoneFrame'
 
 const ROLE_LABEL: Record<string, string> = {
@@ -16,17 +16,8 @@ const ROLE_LABEL: Record<string, string> = {
  */
 export default function HomeScreen() {
   const navigate = useNavigate()
-  const { user, clear } = useAuth()
-
-  async function handleLogout() {
-    try {
-      await logoutRequest()
-    } catch {
-      // Even if the network call fails, drop the local session.
-    }
-    clear()
-    navigate('/login', { replace: true })
-  }
+  const { user } = useAuth()
+  const handleLogout = useLogout()
 
   return (
     <PhoneFrame>

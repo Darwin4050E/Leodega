@@ -9,6 +9,7 @@ import PublishStoreRoomScreen from './screens/PublishStoreRoom/PublishStoreRoomS
 import MyStoreRoomsScreen from './screens/MyStoreRooms/MyStoreRoomsScreen'
 import StoreRoomCatalogScreen from './screens/StoreRoomCatalog/StoreRoomCatalogScreen'
 import StoreRoomDetailScreen from './screens/StoreRoomDetail/StoreRoomDetailScreen'
+import ProfileScreen from './screens/Profile/ProfileScreen'
 import SelectCompanyScreen from './screens/SelectCompany/SelectCompanyScreen'
 
 export default function App() {
@@ -26,6 +27,7 @@ export default function App() {
               <Route path="/bodegas/:id" element={<StoreRoomDetailScreen />} />
               <Route element={<TenantOnly />}>
                 <Route path="/empresa" element={<SelectCompanyScreen />} />
+                <Route path="/perfil" element={<ProfileScreen />} />
               </Route>
             </Route>
             <Route path="*" element={<Navigate to="/" replace />} />
