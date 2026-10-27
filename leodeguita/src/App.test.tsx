@@ -4,9 +4,13 @@ import App from './App'
 import { writeSession } from './auth/session'
 import { listOrganizations } from './services/organizations'
 import { listStoreRooms } from './services/storeRooms'
+import { listTenantReservations } from './services/reservations'
 
 vi.mock('./services/organizations', () => ({
   listOrganizations: vi.fn(),
+}))
+vi.mock('./services/reservations', () => ({
+  listTenantReservations: vi.fn(),
 }))
 vi.mock('./services/storeRooms', () => ({
   listStoreRooms: vi.fn(),
@@ -93,6 +97,23 @@ describe('App routes (HUL-02)', () => {
     renderAt('/perfil')
 
     expect(screen.getByRole('heading', { level: 1, name: 'Perfil' })).toBeInTheDocument()
+  })
+
+  it('renders the reservations for a tenant at /reservas', async () => {
+    vi.mocked(listTenantReservations).mockResolvedValue([])
+    writeSession('tok', TENANT)
+    renderAt('/reservas')
+
+    expect(screen.getByRole('heading', { level: 1, name: 'Reservas' })).toBeInTheDocument()
+    expect(await screen.findByText('Aún no tienes reservas')).toBeInTheDocument()
+  })
+
+  it('keeps a landlord out of /reservas', () => {
+    writeSession('tok', { ...TENANT, role: 'landlord' })
+    renderAt('/reservas')
+
+    expect(screen.getByText('Hola, Ana')).toBeInTheDocument()
+    expect(window.location.pathname).toBe('/')
   })
 
   it('keeps a landlord out of /perfil', () => {
