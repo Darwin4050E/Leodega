@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { FileText, ImageOff, Lock, MapPin, X } from "lucide-react";
+import { FileText, ImageOff, Lock, MapPin, MessageCircle, Star, X } from "lucide-react";
 
 import { formatReservationCode } from "../../utils/reservationCode";
 import { formatUSD } from "../../utils/money";
@@ -16,6 +16,10 @@ interface ReservationCardProps {
   reservation: TenantReservation;
   onCancelClick: (reservation: TenantReservation) => void;
   onReceiptClick: (reservation: TenantReservation) => void;
+  /** "Dejar reseña" shows on finished reservations when provided. */
+  onReviewClick?: (reservation: TenantReservation) => void;
+  /** "Reportar un problema" shows on non-canceled reservations when provided. */
+  onReportClick?: (reservation: TenantReservation) => void;
 }
 
 const ADMIN_ONLY_TOOLTIP = "Solo el administrador puede cancelar reservas de la organización";
@@ -24,14 +28,21 @@ const ADMIN_ONLY_TOOLTIP = "Solo el administrador puede cancelar reservas de la 
  * Presentational card for the tenant reservations list. Mirrors ResCard
  * (PrototipoLeodega-main/js/TenantReservasPage.jsx:166-195) -- thumbnail,
  * title, badge, direction/city/size line, Período/Monto/Reserva stat row --
- * minus review/report actions (out of scope, spec #351). Cancel is gated
+ * with the review/report actions (ResActions, same file :137-162): review on
+ * finished reservations, report on every non-canceled one. Cancel is gated
  * exclusively on the server flags (`can_be_cancelled`, and on org rows
  * `cancel_requires_admin` for the disabled state), never on client-side date
  * math, `is_creator` or the cached organization role. "Ver comprobante"
  * shows iff the server sent a non-null `reservation.receipt` and the caller
  * is the creator.
  */
-const ReservationCard = ({ reservation, onCancelClick, onReceiptClick }: ReservationCardProps) => {
+const ReservationCard = ({
+  reservation,
+  onCancelClick,
+  onReceiptClick,
+  onReviewClick,
+  onReportClick,
+}: ReservationCardProps) => {
   const [tooltipOpen, setTooltipOpen] = useState(false);
   const tab = deriveTenantTab(reservation);
   const badge = RES_BADGE[tab];
@@ -48,6 +59,8 @@ const ReservationCard = ({ reservation, onCancelClick, onReceiptClick }: Reserva
   const showCancelButton = reservation.can_be_cancelled && (isOrgRow || isCreatorOrPersonal);
   const showDisabledCancel = isOrgRow && reservation.cancel_requires_admin === true;
   const showReceiptButton = Boolean(reservation.receipt) && isCreatorOrPersonal;
+  const showReviewButton = Boolean(onReviewClick) && tab === "finalizada";
+  const showReportButton = Boolean(onReportClick) && tab !== "cancelada";
   const tooltipId = `cancel-tooltip-${reservation.id}`;
 
   return (
@@ -123,7 +136,7 @@ const ReservationCard = ({ reservation, onCancelClick, onReceiptClick }: Reserva
           </div>
         </div>
       </div>
-      {(showReceiptButton || showCancelButton || showDisabledCancel) && (
+      {(showReceiptButton || showCancelButton || showDisabledCancel || showReviewButton || showReportButton) && (
         <div className="px-4 pb-4">
           <div className="border-t border-gray-100 pt-3.5 flex gap-2.5 flex-wrap">
             {showReceiptButton && (
@@ -171,6 +184,24 @@ const ReservationCard = ({ reservation, onCancelClick, onReceiptClick }: Reserva
                   {ADMIN_ONLY_TOOLTIP}
                 </span>
               </div>
+            )}
+            {showReviewButton && (
+              <button
+                onClick={() => onReviewClick?.(reservation)}
+                className="inline-flex items-center gap-1.5 px-4 py-2 bg-white text-[#7551E9] border border-[#7551E9] rounded-lg text-sm font-semibold"
+              >
+                <Star size={14} color="#7551E9" />
+                Dejar reseña
+              </button>
+            )}
+            {showReportButton && (
+              <button
+                onClick={() => onReportClick?.(reservation)}
+                className="inline-flex items-center gap-1.5 px-4 py-2 bg-white text-gray-700 border border-gray-300 rounded-lg text-sm font-semibold"
+              >
+                <MessageCircle size={14} color="#374151" />
+                Reportar un problema
+              </button>
             )}
           </div>
         </div>

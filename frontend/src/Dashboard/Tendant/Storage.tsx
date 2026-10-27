@@ -4,9 +4,6 @@ import StorageMap from "../../Components/StorageMap";
 import { Heart, ArrowRight, Star, List, Map as MapIcon } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import { getStoreRooms, type StoreRoomFilters, type StoreRoomSummary } from "../../services/storeRooms";
-import { rateStoreRoom } from "../../services/ratings";
-import { useAuth } from "../../context/useAuth";
-import { asApiError } from "../../api/errors";
 import HeaderTendant from "../../Components/HeaderTendant";
 import { findCity } from "../../utils/cities";
 
@@ -17,8 +14,6 @@ const NO_RESULTS_MESSAGE =
 
 const Storage = () => {
   const [warehouses, setWarehouses] = useState<Warehouse[]>([]);
-  const [ratings, setRatings] = useState<Record<number, number>>({});
-  const [ratedStores, setRatedStores] = useState<Set<number>>(new Set());
   const [loading, setLoading] = useState(true);
   const [filters, setFilters] = useState<StoreRoomFilters>({});
   const [view, setView] = useState<"list" | "map">("list");
@@ -27,8 +22,6 @@ const Storage = () => {
   const latestRequest = useRef(0);
 
   const navigate = useNavigate();
-  const { token } = useAuth();
-  const isLogged = !!token;
 
   const DEFAULT_IMAGE =
     "https://images.unsplash.com/photo-1586528116311-ad8dd3c8310d?w=600&h=400&fit=crop";
@@ -79,56 +72,6 @@ const Storage = () => {
     setFilters({});
     setSearchBarKey((key) => key + 1);
     fetchWarehouses();
-  };
-
-  const submitRating = async (warehouse: Warehouse) => {
-    const stars = ratings[warehouse.id];
-    if (!stars) return;
-
-    try {
-      await rateStoreRoom({
-        store_id: warehouse.id,
-        stars,
-        comment: "Calificación desde Storage",
-      });
-
-      updateWarehouseRating(warehouse.id, stars);
-    } catch (error: unknown) {
-      const err = asApiError(error);
-      if (err.response?.status === 409) {
-        setRatedStores((prev) => new Set(prev).add(warehouse.id));
-      } else if (err.response?.status === 401) {
-        alert("Debes iniciar sesión");
-      } else {
-        console.error("Error rating:", err.response?.data);
-      }
-    }
-  };
-
-  const updateWarehouseRating = (storeId: number, stars: number) => {
-    setWarehouses((prev) =>
-      prev.map((w) => {
-        if (w.id !== storeId) return w;
-
-        const newCount = (w.rating_count ?? 0) + 1;
-        const newAvg =
-          ((w.rating_avg ?? 0) * (newCount - 1) + stars) / newCount;
-
-        return {
-          ...w,
-          rating_avg: Number(newAvg.toFixed(1)),
-          rating_count: newCount,
-        };
-      })
-    );
-
-    setRatedStores((prev) => new Set(prev).add(storeId));
-
-    setRatings((prev) => {
-      const copy = { ...prev };
-      delete copy[storeId];
-      return copy;
-    });
   };
 
   const hasActiveFilters = Object.keys(filters).length > 0;
@@ -190,9 +133,7 @@ const Storage = () => {
         ) : (
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-10">
             {warehouses.map((warehouse) => {
-              const alreadyRated = ratedStores.has(warehouse.id);
-              const currentRating =
-                ratings[warehouse.id] ?? warehouse.rating_avg ?? 0;
+              const currentRating = warehouse.rating_avg ?? 0;
 
               return (
                 <div
@@ -235,18 +176,7 @@ const Storage = () => {
                           className={`w-6 h-6 ${currentRating >= star
                               ? "text-[#FFA500] fill-[#FFA500]"
                               : "text-gray-300"
-                            } ${alreadyRated
-                              ? "cursor-not-allowed opacity-50"
-                              : "cursor-pointer"
                             }`}
-                          onClick={() => {
-                            if (!isLogged || alreadyRated) return;
-
-                            setRatings((prev) => ({
-                              ...prev,
-                              [warehouse.id]: star,
-                            }));
-                          }}
                         />
                       ))}
 
@@ -254,14 +184,6 @@ const Storage = () => {
                         ({warehouse.rating_count ?? 0})
                       </span>
                     </div>
-
-                    <button
-                      disabled={!ratings[warehouse.id] || alreadyRated}
-                      onClick={() => submitRating(warehouse)}
-                      className="mt-3 w-full bg-[#FFA500] text-white py-2 rounded-lg disabled:opacity-50"
-                    >
-                      {alreadyRated ? "Ya calificado" : "Calificar"}
-                    </button>
 
                     <button
                       onClick={() => navigate(`/detalles/${warehouse.id}`)}

@@ -4,6 +4,7 @@ import { useNavigate } from 'react-router-dom';
 import logoh1 from '../img/LOGO_H_1.png';
 import { Menu, X } from 'lucide-react';
 import { useAuth } from '../context/useAuth';
+import { usePendingModerationCount } from '../hooks/usePendingModerationCount';
 
 interface SidebarAdminProps {
     readonly activeItem: string;
@@ -18,6 +19,7 @@ export default function SidebarAdmin(
     const [isSidebarOpen, setIsSidebarOpen] = useState(false);
     const navigate = useNavigate();
     const { logout } = useAuth();
+    const pendingModeration = usePendingModerationCount(role === "admin");
     const basePath =
         role === "admin"
             ? "/admin"
@@ -126,7 +128,8 @@ export default function SidebarAdmin(
 
                     {role === "admin" && (
                         <SidebarItem
-                            label="Moderación"
+                            label="Bodegas por aprobar"
+                            badge={pendingModeration}
                             active={activeItem === 'moderacion'}
                             onClick={() => handleItemClick(() => {
                                 setActiveItem('moderacion');
@@ -135,34 +138,9 @@ export default function SidebarAdmin(
                         />
                     )}
 
-                    <SidebarItem
-                        label="Bodegas"
-                        active={activeItem === 'bodegas'}
-                        onClick={() => handleItemClick(() => {
-                            setActiveItem('bodegas');
-                            navigate(`${basePath}/bodegas`);
-                        })}
-                    />
-
-                    {/*
-                      Same route segment, two different screens: for an admin
-                      `/admin/solicitudes` lists user reports, while for a
-                      landlord `/arrendador/solicitudes` lists reservation
-                      requests. The label follows the role so neither side is
-                      mislabelled.
-                    */}
-                    <SidebarItem
-                        label={role === "admin" ? "Reportes" : "Solicitudes"}
-                        active={activeItem === 'solicitudes'}
-                        onClick={() => handleItemClick(() => {
-                            setActiveItem('solicitudes');
-                            navigate(`${basePath}/solicitudes`);
-                        })}
-                    />
-
                     {role === "admin" && (
                         <SidebarItem
-                            label="Usuarios"
+                            label="Gestión de cuentas"
                             active={activeItem === 'usuarios'}
                             onClick={() => handleItemClick(() => {
                                 setActiveItem('usuarios');
@@ -170,6 +148,44 @@ export default function SidebarAdmin(
                             })}
                         />
                     )}
+
+                    {role !== "admin" && (
+                        <SidebarItem
+                            label={role === "landlord" ? "Mis bodegas" : "Bodegas"}
+                            active={activeItem === 'bodegas'}
+                            onClick={() => handleItemClick(() => {
+                                setActiveItem('bodegas');
+                                navigate(`${basePath}/bodegas`);
+                            })}
+                        />
+                    )}
+
+                    {role === "landlord" && (
+                        <SidebarItem
+                            label="Publicar bodega"
+                            active={activeItem === 'publicar'}
+                            onClick={() => handleItemClick(() => {
+                                setActiveItem('publicar');
+                                navigate('/preguntainicio1');
+                            })}
+                        />
+                    )}
+
+                    {/*
+                      Same route segment, two different screens: for an admin
+                      `/admin/solicitudes` lists user reports, while for a
+                      landlord `/arrendador/solicitudes` lists reservations
+                      ("Reservas"). The label follows the role so neither side is
+                      mislabelled.
+                    */}
+                    <SidebarItem
+                        label={role === "admin" ? "Reportes" : "Reservas"}
+                        active={activeItem === 'solicitudes'}
+                        onClick={() => handleItemClick(() => {
+                            setActiveItem('solicitudes');
+                            navigate(`${basePath}/solicitudes`);
+                        })}
+                    />
 
                     <SidebarItem
                         label="Mensajes"

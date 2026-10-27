@@ -5,6 +5,7 @@ import { MemoryRouter } from 'react-router-dom';
 import type { Organization } from '../services/organizations';
 import type { ActiveContextValue } from '../context/activeContextBase';
 
+const mockLogout = vi.hoisted(() => vi.fn());
 const mockGetProfile = vi.hoisted(() => vi.fn());
 const mockGetUnreadNotificationsCount = vi.hoisted(() => vi.fn());
 
@@ -17,7 +18,7 @@ vi.mock('../services/notifications', () => ({
 }));
 
 vi.mock('../context/useAuth', () => ({
-  useAuth: () => ({ logout: vi.fn() }),
+  useAuth: () => ({ logout: mockLogout }),
 }));
 
 vi.mock('../Dashboard/NotificatiosnDropdown', () => ({
@@ -113,16 +114,18 @@ describe('HeaderTendant', () => {
     expect(screen.queryByRole('link', { name: 'Crear organización' })).not.toBeInTheDocument();
   });
 
-  it('keeps the existing navigation entries', async () => {
+  it('lists the prototype menu: Catálogo, Mensajes and Mis reservas, without Calendario', async () => {
     renderHeader();
     await screen.findAllByText('Ana');
 
-    expect(screen.getByRole('link', { name: 'Bodegas populares' })).toHaveAttribute('href', '/storage');
+    expect(screen.getByRole('link', { name: 'Catálogo' })).toHaveAttribute('href', '/storage');
     expect(screen.getByRole('link', { name: 'Mensajes' })).toHaveAttribute('href', '/arrendatario/mensajes');
-    expect(screen.getByRole('link', { name: 'Calendario' })).toHaveAttribute(
+    expect(screen.getByRole('link', { name: 'Mis reservas' })).toHaveAttribute(
       'href',
-      '/arrendatario/calendario',
+      '/arrendatario/mis-reservas',
     );
+    expect(screen.queryByRole('link', { name: 'Calendario' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('link', { name: 'Bodegas populares' })).not.toBeInTheDocument();
   });
 
   it('mounts the context switcher once in the desktop action row', async () => {
@@ -143,7 +146,18 @@ describe('HeaderTendant', () => {
 
     const placements = screen.getAllByTestId('context-switcher').map((node) => node.dataset.placement);
     expect(placements).toEqual(['header', 'drawer']);
-    expect(screen.queryByRole('link', { name: 'Crear organización' })).not.toBeInTheDocument();
+    expect(screen.getByRole('link', { name: 'Crear organización' })).toHaveAttribute(
+      'href',
+      '/mi-cuenta/crear-organizacion',
+    );
+  });
+
+  it('the drawer logout entry calls logout and points to /login', async () => {
+    const user = await openDrawer();
+    await user.click(screen.getByRole('link', { name: 'Cerrar sesión' }));
+
+    expect(mockLogout).toHaveBeenCalledTimes(1);
+    expect(screen.getByRole('link', { name: 'Cerrar sesión' })).toHaveAttribute('href', '/login');
   });
 
   it('renders the active context ribbon right after the navigation bar', async () => {
@@ -189,12 +203,12 @@ describe('HeaderTendant drawer invitations entry', () => {
     expect(screen.queryByRole('link', { name: /Mis invitaciones/ })).not.toBeInTheDocument();
   });
 
-  it('lists the item after the existing navigation entries', async () => {
+  it('lists the item after the navigation entries and before the account actions', async () => {
     setPendingCount(1);
     await openDrawer();
 
     const labels = screen.getAllByRole('listitem').map((item) => item.textContent);
-    expect(labels.at(-1)).toBe('Mis invitaciones (1)');
+    expect(labels.at(-3)).toBe('Mis invitaciones (1)');
   });
 });
 
@@ -239,7 +253,7 @@ describe('HeaderTendant panel entry', () => {
     setPendingCount(2);
     await openDrawer();
 
-    expect(screen.getAllByRole('link', { name: 'Bodegas populares' })).toHaveLength(2);
+    expect(screen.getAllByRole('link', { name: 'Catálogo' })).toHaveLength(2);
     expect(screen.getByRole('link', { name: 'Mis invitaciones (2)' })).toHaveAttribute(
       'href',
       '/mi-cuenta/invitaciones',

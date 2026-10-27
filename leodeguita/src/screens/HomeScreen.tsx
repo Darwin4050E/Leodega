@@ -1,8 +1,6 @@
-import { useNavigate } from 'react-router-dom'
 import { useAuth } from '../auth/useAuth'
-import { logout as logoutRequest } from '../services/auth'
+import { useLogout } from '../auth/useLogout'
 import PhoneFrame from '../components/PhoneFrame'
-import ActiveContextEntry from '../components/ActiveContextEntry'
 
 const ROLE_LABEL: Record<string, string> = {
   admin: 'Administrador',
@@ -11,23 +9,12 @@ const ROLE_LABEL: Record<string, string> = {
 }
 
 /**
- * Placeholder landing after login (HUL-01 AC-1: "redirects to the home screen
- * for the user's role"). The real role dashboards are HUL-03 / HUL-04 and
- * later stories.
+ * Placeholder landing after login for the admin (HUL-01 AC-1). Tenant and
+ * landlord land on their own screens via `RoleHome`.
  */
 export default function HomeScreen() {
-  const navigate = useNavigate()
-  const { user, clear } = useAuth()
-
-  async function handleLogout() {
-    try {
-      await logoutRequest()
-    } catch {
-      // Even if the network call fails, drop the local session.
-    }
-    clear()
-    navigate('/login', { replace: true })
-  }
+  const { user } = useAuth()
+  const handleLogout = useLogout()
 
   return (
     <PhoneFrame>
@@ -38,26 +25,6 @@ export default function HomeScreen() {
         <p className="mt-1 text-sm text-gray-500">
           Rol: {user ? (ROLE_LABEL[user.role] ?? user.role) : ''}
         </p>
-
-        <ActiveContextEntry />
-
-        {user?.role === 'landlord' && (
-          <button
-            onClick={() => navigate('/publicar')}
-            className="mt-8 w-full rounded-lg bg-leodega_p py-2.5 text-sm font-semibold text-white"
-          >
-            Publicar un espacio
-          </button>
-        )}
-
-        {user?.role === 'landlord' && (
-          <button
-            onClick={() => navigate('/mis-bodegas')}
-            className="mt-3 w-full rounded-lg bg-leodega_p py-2.5 text-sm font-semibold text-white"
-          >
-            Mis bodegas
-          </button>
-        )}
 
         <p className="mt-8 text-sm text-gray-400">
           Pantalla principal en construcción.

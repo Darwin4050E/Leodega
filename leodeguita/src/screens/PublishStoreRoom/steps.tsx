@@ -3,6 +3,7 @@ import { MapContainer, Marker, TileLayer, useMap, useMapEvents } from 'react-lea
 import L from 'leaflet'
 import 'leaflet/dist/leaflet.css'
 import TextField, { TextAreaField } from '../../components/TextField'
+import ReadOnlyMap from '../../components/ReadOnlyMap'
 import type { NewStoreRoom } from '../../services/storeRooms'
 import {
   DESCRIPTION_MAX,
@@ -19,6 +20,12 @@ interface StepProps {
   values: NewStoreRoom
   set: <K extends keyof NewStoreRoom>(key: K, value: NewStoreRoom[K]) => void
   errors: FormErrors
+  /**
+   * Edit mode: the backend only edits title, description, size and price, so
+   * type, storage, photos and address render read-only and the permit is an
+   * optional replacement. `photoUrls` are the room's current photos.
+   */
+  edit?: { photoUrls: string[] }
 }
 
 const cardBase =
@@ -44,7 +51,7 @@ const markerIcon = L.icon({
   iconAnchor: [12, 41],
 })
 
-export default function StepBody({ step, values, set, errors }: StepProps) {
+export default function StepBody({ step, values, set, errors, edit }: StepProps) {
   switch (step) {
     case 0:
       return (
@@ -56,9 +63,10 @@ export default function StepBody({ step, values, set, errors }: StepProps) {
                 key={o.value}
                 type="button"
                 onClick={() => set('room_type', o.value)}
+                disabled={Boolean(edit)}
                 className={`${cardBase} h-28 ${
                   on ? 'border-lg-primary text-lg-primary' : 'border-lg-line text-lg-t2'
-                }`}
+                } ${edit && !on ? 'opacity-50' : ''}`}
               >
                 <span className="text-sm font-semibold">{o.label}</span>
               </button>
@@ -77,9 +85,10 @@ export default function StepBody({ step, values, set, errors }: StepProps) {
                 key={o.value}
                 type="button"
                 onClick={() => set('storage_type', o.value)}
+                disabled={Boolean(edit)}
                 className={`flex cursor-pointer items-start gap-3 rounded-2xl border-2 bg-white p-4 text-left transition-colors ${
                   on ? 'border-lg-primary' : 'border-lg-line'
-                }`}
+                } ${edit && !on ? 'opacity-50' : ''}`}
               >
                 <div>
                   <h3 className="m-0 text-sm font-semibold text-lg-ink">{o.title}</h3>
@@ -92,127 +101,181 @@ export default function StepBody({ step, values, set, errors }: StepProps) {
       )
 
     case 2:
-      return <PhotoStep values={values} set={set} error={errors.photos} />
+      return edit ? (
+        <ExistingPhotos urls={edit.photoUrls} />
+      ) : (
+          <PhotoStep values={values} set={set} error={errors.photos} />
+        )
 
-    case 3:
-      return <LocationStep values={values} set={set} errors={errors} />
-
-
-    case 4:
-      return (
-        <div className="flex flex-col gap-4">
-          <TextField
-            label="Título"
-            placeholder="Bodega con acceso para tráiler"
-            value={values.title}
-            onChange={(e) => set('title', e.target.value)}
-            error={errors.title}
+      case 3:
+        return (
+          <LocationStep
+            values={values}
+            set={set}
+            errors={errors}
+            readOnly={Boolean(edit)}
           />
-          <div>
-            <TextAreaField
-              label="Descripción"
-              rows={6}
-              placeholder="Ideal para almacenar mercadería, archivo o equipos. Guardianía 24/7, piso industrial…"
-              value={values.description}
-              onChange={(e) =>
-                set('description', e.target.value.slice(0, DESCRIPTION_MAX))
-              }
-              error={errors.description}
+        )
+
+
+      case 4:
+        return (
+          <div className="flex flex-col gap-4">
+            <TextField
+              label="Título"
+              placeholder="Bodega con acceso para tráiler"
+              value={values.title}
+              onChange={(e) => set('title', e.target.value)}
+              error={errors.title}
             />
-            <p className="mt-1.5 text-right text-xs text-lg-t4">
-              {values.description.length}/{DESCRIPTION_MAX}
-            </p>
+            <div>
+              <TextAreaField
+                label="Descripción"
+                rows={6}
+                placeholder="Ideal para almacenar mercadería, archivo o equipos. Guardianía 24/7, piso industrial…"
+                value={values.description}
+                onChange={(e) =>
+                  set('description', e.target.value.slice(0, DESCRIPTION_MAX))
+                }
+                error={errors.description}
+              />
+              <p className="mt-1.5 text-right text-xs text-lg-t4">
+                {values.description.length}/{DESCRIPTION_MAX}
+              </p>
+            </div>
+          </div>
+        )
+
+      case 5:
+        return <PriceStep values={values} set={set} errors={errors} />
+
+      case 6:
+        return (
+          <SecurityStep
+            values={values}
+            set={set}
+            errors={errors}
+            editing={Boolean(edit)}
+          />
+        )
+
+      default:
+        return null
+    }
+  }
+
+  function LocationStep({
+    values,
+    set,
+    errors,
+    readOnly,
+  }: {
+    values: NewStoreRoom
+    set: StepProps['set']
+    errors: FormErrors
+    readOnly: boolean
+  }) {
+    const pin =
+      values.latitude !== null && values.longitude !== null
+        ? ([values.latitude, values.longitude] as [number, number])
+        : null
+
+    return (
+      <div className="flex flex-col gap-4">
+        <TextField
+          label="Dirección"
+          placeholder="Km 11.5 Vía a Daule"
+          value={values.direction}
+          onChange={(e) => set('direction', e.target.value)}
+          disabled={readOnly}
+          error={errors.direction}
+        />
+        <TextField
+          label="Ciudad"
+          placeholder="Guayaquil"
+          value={values.city}
+          onChange={(e) => set('city', e.target.value)}
+          disabled={readOnly}
+          error={errors.city}
+        />
+
+        {readOnly ? (
+          pin && (
+            <div className="h-56 overflow-hidden rounded-2xl border border-lg-line">
+              <ReadOnlyMap latitude={pin[0]} longitude={pin[1]} />
+            </div>
+          )
+        ) : (
+
+        <div>
+          <p className="mb-1.5 text-sm font-medium text-lg-t2">
+            Ubicación en el mapa{' '}
+            <span className="font-normal text-lg-t4">(opcional)</span>
+          </p>
+          <div className="h-56 overflow-hidden rounded-2xl border border-lg-line">
+            <MapContainer
+              center={pin ?? MAP_DEFAULT_CENTER}
+              zoom={pin ? 15 : MAP_DEFAULT_ZOOM}
+              className="h-full w-full"
+            >
+              <TileLayer
+                attribution="&copy; OpenStreetMap"
+                url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
+              />
+              <MapResizer />
+              <LocationPicker
+                pin={pin}
+                onPick={(lat, lng) => {
+                  set('latitude', lat)
+                  set('longitude', lng)
+                }}
+              />
+            </MapContainer>
+          </div>
+          <div className="mt-1.5 flex items-center justify-between text-xs text-lg-t4">
+            <span>
+              {pin
+                ? `Marcado: ${pin[0].toFixed(5)}, ${pin[1].toFixed(5)}`
+                : 'Toca el mapa para marcar la ubicación exacta.'}
+            </span>
+            {pin && (
+              <button
+                type="button"
+                onClick={() => {
+                  set('latitude', null)
+                  set('longitude', null)
+                }}
+                className="font-semibold text-lg-primary"
+              >
+                Quitar
+              </button>
+            )}
           </div>
         </div>
-      )
-
-    case 5:
-      return <PriceStep values={values} set={set} errors={errors} />
-
-    case 6:
-      return <SecurityStep values={values} set={set} errors={errors} />
-
-    default:
-      return null
-  }
+      )}
+    </div>
+  )
 }
 
-function LocationStep({
-  values,
-  set,
-  errors,
-}: {
-  values: NewStoreRoom
-  set: StepProps['set']
-  errors: FormErrors
-}) {
-  const pin =
-    values.latitude !== null && values.longitude !== null
-      ? ([values.latitude, values.longitude] as [number, number])
-      : null
-
+function ExistingPhotos({ urls }: { urls: string[] }) {
   return (
-    <div className="flex flex-col gap-4">
-      <TextField
-        label="Dirección"
-        placeholder="Km 11.5 Vía a Daule"
-        value={values.direction}
-        onChange={(e) => set('direction', e.target.value)}
-        error={errors.direction}
-      />
-      <TextField
-        label="Ciudad"
-        placeholder="Guayaquil"
-        value={values.city}
-        onChange={(e) => set('city', e.target.value)}
-        error={errors.city}
-      />
-
-      <div>
-        <p className="mb-1.5 text-sm font-medium text-lg-t2">
-          Ubicación en el mapa{' '}
-          <span className="font-normal text-lg-t4">(opcional)</span>
-        </p>
-        <div className="h-56 overflow-hidden rounded-2xl border border-lg-line">
-          <MapContainer
-            center={pin ?? MAP_DEFAULT_CENTER}
-            zoom={pin ? 15 : MAP_DEFAULT_ZOOM}
-            className="h-full w-full"
-          >
-            <TileLayer
-              attribution="&copy; OpenStreetMap"
-              url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
-            />
-            <MapResizer />
-            <LocationPicker
-              pin={pin}
-              onPick={(lat, lng) => {
-                set('latitude', lat)
-                set('longitude', lng)
-              }}
-            />
-          </MapContainer>
-        </div>
-        <div className="mt-1.5 flex items-center justify-between text-xs text-lg-t4">
-          <span>
-            {pin
-              ? `Marcado: ${pin[0].toFixed(5)}, ${pin[1].toFixed(5)}`
-              : 'Toca el mapa para marcar la ubicación exacta.'}
-          </span>
-          {pin && (
-            <button
-              type="button"
-              onClick={() => {
-                set('latitude', null)
-                set('longitude', null)
-              }}
-              className="font-semibold text-lg-primary"
-            >
-              Quitar
-            </button>
+    <div className="grid grid-cols-3 gap-2.5">
+      {urls.map((url, i) => (
+        <div
+          key={url}
+          className="relative h-24 overflow-hidden rounded-xl border border-lg-line"
+        >
+          <img src={url} alt={`Foto ${i + 1}`} className="h-full w-full object-cover" />
+          {i === 0 && (
+            <span className="absolute bottom-1 left-1 rounded bg-black/70 px-1.5 py-0.5 text-[10px] font-semibold text-white">
+              Portada
+            </span>
           )}
         </div>
-      </div>
+      ))}
+      {urls.length === 0 && (
+        <p className="col-span-3 text-center text-sm text-lg-t3">Sin fotos.</p>
+      )}
     </div>
   )
 }
@@ -406,10 +469,12 @@ function SecurityStep({
   values,
   set,
   errors,
+  editing,
 }: {
   values: NewStoreRoom
   set: StepProps['set']
   errors: FormErrors
+  editing: boolean
 }) {
   const permitRef = useRef<HTMLInputElement | null>(null)
   const [permitError, setPermitError] = useState<string | null>(null)
@@ -431,71 +496,76 @@ function SecurityStep({
 
   return (
     <div className="flex flex-col gap-5">
-      <div>
-        <p className="mb-1 text-sm font-semibold text-lg-t2">
-          ¿Tu espacio cuenta con alguno de estos?
-        </p>
-        {SECURITY_OPTIONS.map((opt) => (
-          <label
-            key={opt.key}
-            className="flex cursor-pointer items-center justify-between border-b border-lg-hair py-3 text-sm text-lg-t2"
-          >
-            {opt.label}
-            <input
-              type="checkbox"
-              checked={Boolean(values.security[opt.key])}
-              onChange={(e) =>
-                set('security', {
-                  ...values.security,
-                  [opt.key]: e.target.checked,
-                })
-              }
-              className="h-[18px] w-[18px] accent-lg-primary"
-            />
-          </label>
-        ))}
-      </div>
-
-      <div>
-        <label
-          htmlFor="policy-tier"
-          className="block text-sm font-medium text-lg-t2"
-        >
-          Política de cancelación
-        </label>
-        <select
-          id="policy-tier"
-          value={values.cancellation_policy_tier}
-          onChange={(e) =>
-            set(
-              'cancellation_policy_tier',
-              e.target.value as NewStoreRoom['cancellation_policy_tier'],
-            )
-          }
-          aria-invalid={Boolean(errors.cancellation_policy_tier)}
-          className={`mt-1.5 w-full rounded-xl border bg-white px-3.5 py-3 text-sm outline-none focus:ring-4 focus:ring-lg-soft ${
-            errors.cancellation_policy_tier
-              ? 'border-lg-err'
-              : 'border-lg-line2 focus:border-lg-primary'
-          }`}
-        >
-          <option value="">Selecciona una política</option>
-          {POLICY_TIERS.map((p) => (
-            <option key={p.value} value={p.value}>
-              {p.label}
-            </option>
-          ))}
-        </select>
-        {errors.cancellation_policy_tier && (
-          <p className="mt-1 text-xs text-lg-err">
-            {errors.cancellation_policy_tier}
+      {!editing && (
+        <div>
+          <p className="mb-1 text-sm font-semibold text-lg-t2">
+            ¿Tu espacio cuenta con alguno de estos?
           </p>
-        )}
-      </div>
+          {SECURITY_OPTIONS.map((opt) => (
+            <label
+              key={opt.key}
+              className="flex cursor-pointer items-center justify-between border-b border-lg-hair py-3 text-sm text-lg-t2"
+            >
+              {opt.label}
+              <input
+                type="checkbox"
+                checked={Boolean(values.security[opt.key])}
+                onChange={(e) =>
+                  set('security', {
+                    ...values.security,
+                    [opt.key]: e.target.checked,
+                  })
+                }
+                className="h-[18px] w-[18px] accent-lg-primary"
+              />
+            </label>
+          ))}
+        </div>
+      )}
+
+      {!editing && (
+        <div>
+          <label
+            htmlFor="policy-tier"
+            className="block text-sm font-medium text-lg-t2"
+          >
+            Política de cancelación
+          </label>
+          <select
+            id="policy-tier"
+            value={values.cancellation_policy_tier}
+            onChange={(e) =>
+              set(
+                'cancellation_policy_tier',
+                e.target.value as NewStoreRoom['cancellation_policy_tier'],
+              )
+            }
+            aria-invalid={Boolean(errors.cancellation_policy_tier)}
+            className={`mt-1.5 w-full rounded-xl border bg-white px-3.5 py-3 text-sm outline-none focus:ring-4 focus:ring-lg-soft ${
+              errors.cancellation_policy_tier
+                ? 'border-lg-err'
+                : 'border-lg-line2 focus:border-lg-primary'
+            }`}
+          >
+            <option value="">Selecciona una política</option>
+            {POLICY_TIERS.map((p) => (
+              <option key={p.value} value={p.value}>
+                {p.label}
+              </option>
+            ))}
+          </select>
+          {errors.cancellation_policy_tier && (
+            <p className="mt-1 text-xs text-lg-err">
+              {errors.cancellation_policy_tier}
+            </p>
+          )}
+        </div>
+      )}
 
       <div>
         <label htmlFor="permit" className="block text-sm font-medium text-lg-t2">
-          Permiso del cuerpo de bomberos <span className="text-lg-err">*</span>
+          Permiso del cuerpo de bomberos{' '}
+          {!editing && <span className="text-lg-err">*</span>}
         </label>
         <input
           ref={permitRef}
@@ -535,9 +605,11 @@ function SecurityStep({
                 : 'border-lg-line2'
             }`}
           >
-            Sube el PDF del permiso
+            {editing ? 'Reemplazar el PDF del permiso' : 'Sube el PDF del permiso'}
             <span className="text-xs font-normal text-lg-t4">
-              Obligatorio · PDF, máximo 5 MB
+              {editing
+                ? 'Opcional · si no subes uno nuevo se conserva el actual · PDF, máximo 5 MB'
+                : 'Obligatorio · PDF, máximo 5 MB'}
             </span>
           </button>
         )}
@@ -550,8 +622,18 @@ function SecurityStep({
 
       <div className="flex gap-2.5 rounded-xl border border-[#F4E3A0] bg-lg-warn-bg px-3.5 py-3">
         <p className="m-0 text-xs leading-relaxed text-lg-t2">
-          Al enviar, tu espacio queda <b>pendiente de verificación</b> del
-          administrador antes de aparecer en el catálogo.
+          {editing ? (
+            <>
+              Si cambias el título, la descripción, el tamaño, la tarifa o el
+              permiso, tu espacio vuelve a{' '}
+              <b>pendiente de verificación</b> del administrador.
+            </>
+          ) : (
+            <>
+              Al enviar, tu espacio queda <b>pendiente de verificación</b> del
+              administrador antes de aparecer en el catálogo.
+            </>
+          )}
         </p>
       </div>
     </div>

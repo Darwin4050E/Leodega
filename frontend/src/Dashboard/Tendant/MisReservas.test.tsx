@@ -3,12 +3,36 @@ import { render, screen, waitFor, fireEvent, act } from '@testing-library/react'
 
 const mockGetTenantReservations = vi.hoisted(() => vi.fn());
 const mockUseActiveContext = vi.hoisted(() => vi.fn());
+const mockNavigate = vi.hoisted(() => vi.fn());
 
 vi.mock('../../services/reservations', () => ({
   getTenantReservations: mockGetTenantReservations,
 }));
 
 const PERSONAL_CONTEXT = { context: { kind: 'personal' } };
+
+vi.mock('react-router-dom', () => ({
+  useNavigate: () => mockNavigate,
+}));
+
+// Own test file covers the review modal; here it only has to open and close.
+vi.mock('./DejarResenaModal', () => ({
+  default: ({
+    reservation,
+    onClose,
+    onReviewed,
+  }: {
+    reservation: { id: number };
+    onClose: () => void;
+    onReviewed: () => void;
+  }) => (
+    <div data-testid="review-modal">
+      <span>{`review-for-${reservation.id}`}</span>
+      <button onClick={onClose}>close-review</button>
+      <button onClick={onReviewed}>reviewed</button>
+    </div>
+  ),
+}));
 
 vi.mock('../../context/useActiveContext', () => ({
   useActiveContext: mockUseActiveContext,
@@ -362,5 +386,30 @@ describe('MisReservas refetch on active context change (OR-W4/OR-WS9/OR-WS10)', 
 
     await waitFor(() => expect(screen.getByText('LEO-000002')).toBeInTheDocument());
     expect(screen.queryByText('LEO-000001')).not.toBeInTheDocument();
+  });
+
+  it('"Reportar un problema" opens the incident report for the reservation storeroom', async () => {
+    mockGetTenantReservations.mockResolvedValue({ data: [reservation({ id: 8, store_room_id: 3 })] });
+
+    render(<MisReservas />);
+    fireEvent.click(await screen.findByRole('button', { name: /Reportar un problema/ }));
+
+    expect(mockNavigate).toHaveBeenCalledWith('/reportIncident/3');
+  });
+
+  it('"Dejar reseña" opens the review modal on a finished reservation and thanks the user after', async () => {
+    mockGetTenantReservations.mockResolvedValue({
+      data: [reservation({ id: 8, end_date: '2020-01-01' })],
+    });
+
+    render(<MisReservas />);
+    fireEvent.click(await screen.findByRole('button', { name: /Finalizadas/ }));
+    fireEvent.click(await screen.findByRole('button', { name: /Dejar reseña/ }));
+    expect(screen.getByText('review-for-8')).toBeInTheDocument();
+
+    fireEvent.click(screen.getByText('reviewed'));
+
+    expect(screen.queryByTestId('review-modal')).not.toBeInTheDocument();
+    expect(screen.getByRole('status')).toHaveTextContent('¡Gracias por tu reseña!');
   });
 });

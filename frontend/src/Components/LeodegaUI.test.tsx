@@ -229,6 +229,28 @@ describe('LeodegaUI checkout step flow (replaces the dead-end alert())', () => {
     expect(screen.getAllByText('✓')).toHaveLength(2);
   });
 
+  it('receipt actions go to the tenant reservations and the catalog', async () => {
+    mockCreateReservation.mockResolvedValue({ data: { message: 'ok', reservation: createdReservation } });
+    mockCreatePayment.mockResolvedValue({ data: { message: 'ok', payment: { id: 1 } } });
+
+    await openReserveAndSubmit();
+    await waitFor(() => expect(screen.getByRole('button', { name: /Confirmar y pagar/ })).toBeInTheDocument());
+    fireEvent.change(screen.getByLabelText('Número de tarjeta'), { target: { value: '4242 4242 4242 4242' } });
+    fireEvent.change(screen.getByLabelText('Titular de la tarjeta'), { target: { value: 'María López' } });
+    fireEvent.change(screen.getByLabelText('Vencimiento'), { target: { value: '1225' } });
+    fireEvent.change(screen.getByLabelText('CVV'), { target: { value: '123' } });
+    fireEvent.click(screen.getByRole('button', { name: /Confirmar y pagar/ }));
+    await waitFor(() => expect(screen.getByText('LEO-000042')).toBeInTheDocument());
+
+    mockNavigate.mockClear();
+    fireEvent.click(screen.getByRole('button', { name: 'Ver mis reservas' }));
+    expect(mockNavigate).toHaveBeenCalledWith('/arrendatario/mis-reservas');
+
+    mockNavigate.mockClear();
+    fireEvent.click(screen.getByRole('button', { name: 'Volver al catálogo' }));
+    expect(mockNavigate).toHaveBeenCalledWith('/storage');
+  });
+
   it('clicking "Salir" from BookingStepHeader while at pago returns to detail', async () => {
     mockCreateReservation.mockResolvedValue({ data: { message: 'ok', reservation: createdReservation } });
 
@@ -767,6 +789,16 @@ describe('LeodegaUI "Tu gestor" card', () => {
     expect(screen.queryByText(/Miembro desde/)).not.toBeInTheDocument();
     expect(screen.getByText('Laura')).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Contactar' })).toBeInTheDocument();
+  });
+
+  it('"Contactar" opens the tenant chat with the manager preselected', async () => {
+    mockGetStoreRoomDetail.mockResolvedValue({ data: storeRoomDetail });
+
+    render(<LeodegaUI />);
+    await waitFor(() => screen.getByText('Bodega Norte'));
+    fireEvent.click(screen.getByRole('button', { name: 'Contactar' }));
+
+    expect(mockNavigate).toHaveBeenCalledWith('/arrendatario/mensajes?userId=2');
   });
 
   it('never renders "Verificado" or "Responde en", with or without start_date (no real source for either)', async () => {

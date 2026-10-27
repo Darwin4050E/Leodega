@@ -53,6 +53,7 @@ function renderScreen() {
           <Route path="/mis-bodegas" element={<MyStoreRoomsScreen />} />
           <Route path="/" element={<div>Inicio</div>} />
           <Route path="/publicar" element={<div>Publicar</div>} />
+          <Route path="/mis-bodegas/:id" element={<div>Detalle 5</div>} />
         </Routes>
       </MemoryRouter>
     </AuthProvider>,
@@ -73,7 +74,7 @@ describe('MyStoreRoomsScreen (HUL-04)', () => {
     expect(
       screen.getByText('Km 11.5 Vía a Daule · Guayaquil'),
     ).toBeInTheDocument()
-    expect(screen.getByText('Disponible')).toBeInTheDocument()
+    expect(screen.getByText('Aprobada')).toBeInTheDocument()
     expect(listMock).toHaveBeenCalledWith(7)
   })
 
@@ -118,7 +119,7 @@ describe('MyStoreRoomsScreen (HUL-04)', () => {
       screen.getByRole('button', { name: 'Todas (4)' }),
     ).toBeInTheDocument()
     expect(
-      screen.getByRole('button', { name: 'Disponibles (2)' }),
+      screen.getByRole('button', { name: 'Aprobadas (2)' }),
     ).toBeInTheDocument()
 
     await user.click(screen.getByRole('button', { name: 'Ocupadas (1)' }))
@@ -138,6 +139,65 @@ describe('MyStoreRoomsScreen (HUL-04)', () => {
     expect(
       screen.queryByText('Aún no has publicado ninguna bodega.'),
     ).not.toBeInTheDocument()
+  })
+
+  it('shows the published count in the header, singular for one room', async () => {
+    listMock.mockResolvedValueOnce([room({ id: 1 }), room({ id: 2, title: 'Otra' })])
+    const { unmount } = renderScreen()
+    expect(await screen.findByText('2 espacios publicados')).toBeInTheDocument()
+    unmount()
+
+    listMock.mockResolvedValueOnce([room()])
+    renderScreen()
+    expect(await screen.findByText('1 espacio publicado')).toBeInTheDocument()
+  })
+
+  it('labels a pending room "Pendiente de verificación" and keeps the "Pendientes" chip', async () => {
+    listMock.mockResolvedValueOnce([room({ publication_status: 'pending' })])
+    renderScreen()
+
+    expect(await screen.findByText('Pendiente de verificación')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Pendientes (1)' })).toBeInTheDocument()
+  })
+
+  it('offers a floating "Publicar" button that opens the wizard when there are rooms', async () => {
+    listMock.mockResolvedValueOnce([room()])
+    const user = userEvent.setup()
+    renderScreen()
+
+    await user.click(await screen.findByRole('button', { name: '+ Publicar' }))
+    expect(screen.getByText('Publicar')).toBeInTheDocument()
+  })
+
+  it('does not float "Publicar" in the empty state, which keeps "Publicar una nueva"', async () => {
+    listMock.mockResolvedValueOnce([])
+    renderScreen()
+
+    expect(await screen.findByRole('button', { name: 'Publicar una nueva' })).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: '+ Publicar' })).not.toBeInTheDocument()
+  })
+
+  it('mounts the gestor bottom navigation', async () => {
+    listMock.mockResolvedValueOnce([room()])
+    renderScreen()
+
+    await screen.findByText('Bodega Norte')
+    expect(screen.getByRole('link', { name: 'Mis bodegas' })).toHaveAttribute('aria-current', 'page')
+    expect(screen.getByRole('link', { name: 'Reservas' })).toBeInTheDocument()
+    expect(screen.getByRole('link', { name: 'Perfil' })).toBeInTheDocument()
+  })
+
+  it('makes each card a "Ver detalle" link to its detail screen', async () => {
+    listMock.mockResolvedValueOnce([room({ id: 5 })])
+    const user = userEvent.setup()
+    renderScreen()
+
+    const link = await screen.findByRole('link', { name: /Bodega Norte/ })
+    expect(link).toHaveAttribute('href', '/mis-bodegas/5')
+    expect(screen.getByText(/Ver detalle/)).toBeInTheDocument()
+
+    await user.click(link)
+    expect(screen.getByText('Detalle 5')).toBeInTheDocument()
   })
 
   it('blocks a non-landlord and never calls the service', () => {

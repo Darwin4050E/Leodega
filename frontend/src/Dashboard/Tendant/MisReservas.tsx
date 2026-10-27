@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Calendar } from "lucide-react";
+import { useNavigate } from "react-router-dom";
 
 import HeaderTendant from "../../Components/HeaderTendant";
 import { getTenantReservations, type TenantReservation } from "../../services/reservations";
@@ -10,6 +11,7 @@ import { deriveTenantTab, type TenantTab } from "../../utils/reservationVigencia
 import ReservationCard from "./ReservationCard";
 import CancelarReservaTenantModal from "./CancelarReservaTenantModal";
 import ComprobanteReservaModal from "./ComprobanteReservaModal";
+import DejarResenaModal from "./DejarResenaModal";
 
 const TOAST_DURATION_MS = 5000;
 
@@ -22,11 +24,12 @@ const RES_TABS: { key: TenantTab; label: string }[] = [
 /**
  * Container for the tenant "Mis reservas" screen. Mirrors
  * TenantReservasPage (PrototipoLeodega-main/js/TenantReservasPage.jsx:223-311)
- * minus review/report actions (out of scope, spec #351). Fetches the list,
+ * with the review/report actions on each card. Fetches the list,
  * derives three tab buckets via `deriveTenantTab`, and renders
  * `ReservationCard[]` + empty states, plus the cancel modal on card click.
  */
 const MisReservas = () => {
+  const navigate = useNavigate();
   const { context: activeContext } = useActiveContext();
   // HUE-05 OR-W4: refetch whenever the active context changes (personal<->org,
   // org A->B). Keyed on a string, not the context object identity, since a
@@ -40,6 +43,7 @@ const MisReservas = () => {
   const [tab, setTab] = useState<TenantTab>("activa");
   const [cancelingReservation, setCancelingReservation] = useState<TenantReservation | null>(null);
   const [receiptReservation, setReceiptReservation] = useState<TenantReservation | null>(null);
+  const [reviewingReservation, setReviewingReservation] = useState<TenantReservation | null>(null);
   const [toast, setToast] = useState("");
 
   // OR-WS10: a response from a context the user has already switched away
@@ -126,6 +130,14 @@ const MisReservas = () => {
     load();
   };
 
+  const handleReviewed = () => {
+    setReviewingReservation(null);
+    setToast("¡Gracias por tu reseña!");
+  };
+
+  // /reportIncident/:id takes the storeroom id, same as the detail page's "Reportar".
+  const handleReport = (r: TenantReservation) => navigate(`/reportIncident/${r.store_room_id}`);
+
   return (
     <>
       <HeaderTendant />
@@ -197,6 +209,8 @@ const MisReservas = () => {
                 reservation={r}
                 onCancelClick={setCancelingReservation}
                 onReceiptClick={setReceiptReservation}
+                onReviewClick={setReviewingReservation}
+                onReportClick={handleReport}
               />
             ))}
           </div>
@@ -218,6 +232,14 @@ const MisReservas = () => {
           onClose={() => setCancelingReservation(null)}
           onCancelled={handleCancelled}
           onNeedsRefresh={handleNeedsRefresh}
+        />
+      )}
+
+      {reviewingReservation && (
+        <DejarResenaModal
+          reservation={reviewingReservation}
+          onClose={() => setReviewingReservation(null)}
+          onReviewed={handleReviewed}
         />
       )}
 

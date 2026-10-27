@@ -250,9 +250,13 @@ export default function LeodegaUI() {
   // are the primary audience and must always see it too.
   const isOwner = Boolean(user?.id && data.landlord?.user_id === user.id);
 
-  const handleContactar = async () => {
-    navigate("/arrendador/mensajes");
-
+  // Opens the chat with this manager: Mensajes starts the conversation from
+  // ?userId. A landlord browsing another landlord's room keeps the landlord
+  // chat route, since the tenant route is not available to that role.
+  const handleContactar = () => {
+    const base = role === "landlord" ? "/arrendador/mensajes" : "/arrendatario/mensajes";
+    const managerUserId = data.landlord?.user_id;
+    navigate(managerUserId ? `${base}?userId=${managerUserId}` : base);
   };
 
   const handleExitBooking = () => setStep("detail");
@@ -300,8 +304,8 @@ export default function LeodegaUI() {
               gestorName: data.landlord?.name,
             }}
             reservation={reservation}
-            onViewReservations={() => navigate("/arrendatario/calendario")}
-            onBackToCatalog={handleExitBooking}
+            onViewReservations={() => navigate("/arrendatario/mis-reservas")}
+            onBackToCatalog={goCatalog}
           />
         )}
       </div>
@@ -419,7 +423,7 @@ export default function LeodegaUI() {
                 has a real backing field (see StoreRoomDetailResource). The
                 prototype's separate "Enviar email" button is also dropped:
                 it called the exact same handler as "Contactar" (both just
-                navigate to /arrendador/mensajes), so it never actually sent
+                open the chat with the manager), so it never actually sent
                 an email despite its label — collapsing to the prototype's
                 single "Contactar" action removes that mismatch. */}
             <div className="bg-white border border-gray-200 rounded-2xl shadow-sm p-6">

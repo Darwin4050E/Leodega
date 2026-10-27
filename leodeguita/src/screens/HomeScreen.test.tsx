@@ -1,6 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { render, screen } from '@testing-library/react'
-import userEvent from '@testing-library/user-event'
 import { MemoryRouter, Routes, Route } from 'react-router-dom'
 import { AuthProvider } from '../auth/AuthContext'
 import { writeSession } from '../auth/session'
@@ -50,16 +49,14 @@ function renderHome() {
   )
 }
 
-describe('HomeScreen active context entry', () => {
+describe('HomeScreen', () => {
   beforeEach(() => {
     listMock.mockReset()
     listMock.mockResolvedValue([ORGANIZATION])
   })
 
-  it.each([
-    ['landlord', 'Gestor de Almacenamiento'],
-    ['admin', 'Administrador'],
-  ] as const)('keeps the %s Home unchanged without the entry', (role, label) => {
+  it('shows the admin Home without the organization context', () => {
+    const [role, label] = ['admin', 'Administrador'] as const
     writeSession('tok', { ...USER, role })
     renderHome()
 
@@ -69,23 +66,11 @@ describe('HomeScreen active context entry', () => {
     expect(listMock).not.toHaveBeenCalled()
   })
 
-  it('keeps the landlord actions', () => {
-    writeSession('tok', { ...USER, role: 'landlord' })
+  it('offers no landlord actions', () => {
+    writeSession('tok', { ...USER, role: 'admin' })
     renderHome()
 
-    expect(screen.getByRole('button', { name: 'Publicar un espacio' })).toBeInTheDocument()
-    expect(screen.getByRole('button', { name: 'Mis bodegas' })).toBeInTheDocument()
-  })
-
-  it('shows the entry to a tenant and opens the picker from it', async () => {
-    writeSession('tok', { ...USER, role: 'tenant' })
-    renderHome()
-
-    expect(await screen.findByText('Operando como Modo personal')).toBeInTheDocument()
-    expect(screen.getByText('Rol: Cliente')).toBeInTheDocument()
-
-    await userEvent.setup().click(screen.getByRole('button', { name: 'Cambiar de organización' }))
-
-    expect(screen.getByText('Selector abierto')).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Publicar un espacio' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Mis bodegas' })).not.toBeInTheDocument()
   })
 })

@@ -34,7 +34,7 @@ const SolicitudRevisarResponder: React.FC<SolicitudRevisarResponderProps> = ({
       onVolver();
     } catch (error) {
       console.error("Error resolviendo reporte", error);
-      alert("No se pudo marcar como resuelto.");
+      alert("No se pudo marcar como completada.");
     }
   };
 
@@ -134,7 +134,7 @@ const SolicitudRevisarResponder: React.FC<SolicitudRevisarResponderProps> = ({
             >
               <div className="flex items-center gap-2 mb-3">
                 <Check className={`w-5 h-5 ${opcionSeleccionada === "resolver" ? "text-green-600" : "text-gray-400"}`} />
-                <h3 className="text-xl font-semibold text-green-600">Marcar como Resuelto</h3>
+                <h3 className="text-xl font-semibold text-green-600">Marcar como completada</h3>
               </div>
 
               <p className="text-sm text-gray-600 mb-4">
@@ -273,9 +273,9 @@ const SolicitudRevisarResponder: React.FC<SolicitudRevisarResponderProps> = ({
         {mostrarConfirmarResolver && (
           <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
             <div className="bg-white rounded-lg p-6 max-w-md w-full">
-              <h3 className="text-lg font-semibold text-gray-900 mb-4">Confirmar Resolución</h3>
+              <h3 className="text-lg font-semibold text-gray-900 mb-4">Marcar como completada</h3>
               <p className="text-sm text-gray-600 mb-6">
-                ¿Estás seguro de marcar este reporte como <b>Completado</b>?
+                ¿Estás seguro de marcar este reporte como <b>completada</b>?
               </p>
 
               <div className="flex gap-3">

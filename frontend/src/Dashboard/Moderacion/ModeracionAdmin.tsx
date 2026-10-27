@@ -106,10 +106,14 @@ const ModeracionAdmin: React.FC = () => {
 
   return (
     <div className="px-4 lg:pl-8 lg:pr-8 pt-5 pb-10 bg-[#f5f6fa] min-h-screen">
-      <h1 className="text-2xl font-semibold text-gray-900 mb-1">Moderación de bodegas</h1>
+      <h1 className="text-2xl font-semibold text-gray-900 mb-1">Bodegas por aprobar</h1>
       <p className="text-sm text-gray-500 mb-4">
         Revisa cada expediente antes de aprobar o rechazar una publicación.
       </p>
+
+      <div className="mb-4 rounded-lg border border-violet-200 bg-violet-50 px-4 py-3 text-sm text-violet-800">
+        La verificación es por bodega y se hace una sola vez.
+      </div>
 
       {aviso && (
         <div

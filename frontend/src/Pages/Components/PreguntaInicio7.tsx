@@ -337,7 +337,7 @@ const PreguntaInicio7 = () => {
                   onClick={() => navigate("/arrendador/bodegas")}
                   className="rounded-lg border border-gray-300 px-4 py-2 text-sm text-gray-700 hover:bg-gray-50"
                 >
-                  Volver a mis bodegas
+                  Ir a Mis bodegas
                 </button>
               </div>
             </div>

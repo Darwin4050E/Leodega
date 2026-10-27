@@ -61,12 +61,12 @@ describe('Login return after reserve (RB-5)', () => {
     ['protocol-relative URL', '//evil.example'],
     ['javascript scheme', 'javascript:alert(1)'],
     ['backslash trick', '/\\evil.example'],
-  ])('ignores an unsafe state.from (%s) and uses the tenant dashboard', async (_label, from) => {
+  ])('ignores an unsafe state.from (%s) and sends the tenant to the catalog', async (_label, from) => {
     routerState.current = { from, reason: 'reserve' };
 
     await submitLoginAs('tenant');
 
-    expect(mockNavigate).toHaveBeenCalledWith('/arrendatario/dashboard');
+    expect(mockNavigate).toHaveBeenCalledWith('/storage');
     expect(mockNavigate).not.toHaveBeenCalledWith(from, expect.anything());
     expect(mockNavigate).not.toHaveBeenCalledWith(from);
   });
@@ -76,15 +76,15 @@ describe('Login return after reserve (RB-5)', () => {
 
     await submitLoginAs('tenant');
 
-    expect(mockNavigate).toHaveBeenCalledWith('/arrendatario/dashboard');
+    expect(mockNavigate).toHaveBeenCalledWith('/storage');
   });
 
-  it('uses the tenant dashboard when /login was opened directly (no router state)', async () => {
+  it('sends the tenant to the catalog when /login was opened directly (no router state)', async () => {
     routerState.current = null;
 
     await submitLoginAs('tenant');
 
-    expect(mockNavigate).toHaveBeenCalledWith('/arrendatario/dashboard');
+    expect(mockNavigate).toHaveBeenCalledWith('/storage');
   });
 
   it('keeps the role redirect for a landlord even with a safe state.from', async () => {

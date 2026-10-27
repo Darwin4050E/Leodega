@@ -1,7 +1,10 @@
 import { useCallback, useEffect, useState } from 'react'
 import { useLocation } from 'react-router-dom'
 import PhoneFrame from '../../components/PhoneFrame'
+import RoleTabBar from '../../components/RoleTabBar'
 import Button from '../../components/Button'
+import { useActiveContext } from '../../context/useActiveContext'
+import { organizationInitials } from '../SelectCompany/model'
 import { listStoreRooms, type CatalogStoreRoom } from '../../services/storeRooms'
 import CatalogCard from './CatalogCard'
 import { excludeUnavailable, toCardViewModel } from './model'
@@ -25,12 +28,17 @@ interface NavigationState {
 }
 
 function Header() {
+  const { activeOrganization } = useActiveContext()
+  const subtitle = activeOrganization
+    ? `Reservando como ${organizationInitials(activeOrganization.name)}`
+    : 'Espacios disponibles'
+
   return (
     <div className="shrink-0 px-5 pb-3 pt-12">
       <h1 className="m-0 text-xl font-bold tracking-tight text-lg-ink">
         Explorar
       </h1>
-      <p className="m-0 mt-1 text-sm text-lg-t3">Espacios disponibles</p>
+      <p className="m-0 mt-1 text-sm text-lg-t3">{subtitle}</p>
     </div>
   )
 }
@@ -59,7 +67,7 @@ export default function StoreRoomCatalogScreen() {
 
   if (phase === 'loading') {
     return (
-      <PhoneFrame>
+      <PhoneFrame footer={<RoleTabBar />}>
         <Header />
         <div className="flex flex-1 items-center justify-center px-6 text-sm text-lg-t3">
           Cargando espacios…
@@ -70,7 +78,7 @@ export default function StoreRoomCatalogScreen() {
 
   if (phase === 'error') {
     return (
-      <PhoneFrame>
+      <PhoneFrame footer={<RoleTabBar />}>
         <Header />
         <div className="flex flex-1 flex-col items-center justify-center gap-4 px-6 text-center">
           <p className="text-sm text-lg-t3">
@@ -88,7 +96,7 @@ export default function StoreRoomCatalogScreen() {
 
   if (visible.length === 0) {
     return (
-      <PhoneFrame>
+      <PhoneFrame footer={<RoleTabBar />}>
         <Header />
         <div className="flex flex-1 flex-col items-center justify-center gap-4 px-6 text-center">
           <p className="text-sm text-lg-t3">
@@ -100,7 +108,7 @@ export default function StoreRoomCatalogScreen() {
   }
 
   return (
-    <PhoneFrame>
+    <PhoneFrame footer={<RoleTabBar />}>
       <Header />
       <div className="flex flex-1 flex-col gap-3 overflow-y-auto px-5 pb-8">
         {visible.map((room) => (

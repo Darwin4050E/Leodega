@@ -447,4 +447,45 @@ describe('ReservationCard', () => {
       expect(screen.getByRole('button', { name: 'Ver comprobante' })).toBeInTheDocument();
     });
   });
+
+  describe('review and report actions', () => {
+    const PAST = '2020-01-01';
+
+    function renderCard(overrides: Partial<TenantReservation>, handlers = {}) {
+      const props = { onReviewClick: vi.fn(), onReportClick: vi.fn(), ...handlers };
+      render(
+        <ReservationCard
+          reservation={reservation(overrides)}
+          onCancelClick={vi.fn()}
+          onReceiptClick={vi.fn()}
+          {...props}
+        />
+      );
+      return props;
+    }
+
+    it('active: offers "Reportar un problema" but not "Dejar reseña"', () => {
+      const { onReportClick } = renderCard({});
+
+      expect(screen.queryByRole('button', { name: /Dejar reseña/ })).not.toBeInTheDocument();
+      fireEvent.click(screen.getByRole('button', { name: /Reportar un problema/ }));
+      expect(onReportClick).toHaveBeenCalledWith(expect.objectContaining({ id: 1 }));
+    });
+
+    it('finished: offers both actions', () => {
+      const { onReviewClick, onReportClick } = renderCard({ end_date: PAST });
+
+      fireEvent.click(screen.getByRole('button', { name: /Dejar reseña/ }));
+      expect(onReviewClick).toHaveBeenCalledWith(expect.objectContaining({ id: 1 }));
+      expect(screen.getByRole('button', { name: /Reportar un problema/ })).toBeInTheDocument();
+      expect(onReportClick).not.toHaveBeenCalled();
+    });
+
+    it('canceled: offers neither action', () => {
+      renderCard({ status: 'canceled' });
+
+      expect(screen.queryByRole('button', { name: /Dejar reseña/ })).not.toBeInTheDocument();
+      expect(screen.queryByRole('button', { name: /Reportar un problema/ })).not.toBeInTheDocument();
+    });
+  });
 });
