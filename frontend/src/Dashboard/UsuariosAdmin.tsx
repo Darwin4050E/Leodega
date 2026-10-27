@@ -128,7 +128,7 @@ const UsuariosAdmin: React.FC = () => {
 
   return (
     <div className="px-4 lg:pl-8 lg:pr-8 pt-5 bg-[#f5f6fa] min-h-screen">
-      <h1 className="text-2xl font-semibold text-gray-900 mb-6">Usuarios</h1>
+      <h1 className="text-2xl font-semibold text-gray-900 mb-6">Gestión de cuentas</h1>
 
       <div className="flex items-center gap-2 mb-6 bg-white border border-gray-200 rounded-xl shadow-sm px-4 py-2 max-w-md">
         <Search className="w-5 h-5 text-gray-500" />
@@ -136,8 +136,8 @@ const UsuariosAdmin: React.FC = () => {
           type="text"
           value={searchTerm}
           onChange={(e) => setSearchTerm(e.target.value)}
-          placeholder="Buscar usuario"
-          aria-label="Buscar usuario"
+          placeholder="Buscar por nombre o email"
+          aria-label="Buscar por nombre o email"
           className="flex-1 bg-white border-0 text-sm text-gray-700 focus:outline-none"
         />
       </div>
@@ -212,7 +212,7 @@ const UsuariosAdmin: React.FC = () => {
           </table>
 
           <div className="flex justify-between px-6 py-4 border-t text-sm text-gray-500">
-            Mostrando {usuariosFiltrados.length} usuarios
+            Mostrando {usuariosFiltrados.length} de {usuarios.length} cuentas
           </div>
         </div>
       )}

@@ -33,6 +33,14 @@ describe('UsuariosAdmin', () => {
     expect(screen.getByText('Bloqueado', { selector: 'span' })).toBeInTheDocument();
   });
 
+  it('uses the prototype title, search placeholder and footer', async () => {
+    render(<UsuariosAdmin />);
+    await waitFor(() => expect(screen.getByText('Juan Pérez')).toBeInTheDocument());
+    expect(screen.getByRole('heading', { name: 'Gestión de cuentas' })).toBeInTheDocument();
+    expect(screen.getByPlaceholderText('Buscar por nombre o email')).toBeInTheDocument();
+    expect(screen.getByText('Mostrando 2 de 2 cuentas')).toBeInTheDocument();
+  });
+
   it('keeps the block confirm disabled until a non-whitespace reason is typed', async () => {
     const user = userEvent.setup();
     render(<UsuariosAdmin />);
