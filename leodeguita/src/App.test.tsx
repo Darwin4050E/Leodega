@@ -220,4 +220,12 @@ describe('App routes (HUL-02)', () => {
     expect(await screen.findByRole('heading', { name: 'Explorar' })).toBeInTheDocument()
     expect(window.location.pathname).toBe('/bodegas')
   })
+
+  it('keeps a tenant out of the gestor editor at /mis-bodegas/5/editar', async () => {
+    writeSession('tok', TENANT)
+    renderAt('/mis-bodegas/5/editar')
+
+    expect(await screen.findByRole('heading', { name: 'Explorar' })).toBeInTheDocument()
+    expect(window.location.pathname).toBe('/bodegas')
+  })
 })

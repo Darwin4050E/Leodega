@@ -283,3 +283,55 @@ export async function deleteStoreRoom(id: number): Promise<void> {
     throw error
   }
 }
+
+/**
+ * Owner edit of the listing (`PUT /storeRooms/{id}`). The backend accepts only
+ * title, description, size and the monthly price. `requires_review` is true
+ * when an approved room went back to pending because of a material change.
+ */
+export interface UpdateStoreRoomPayload {
+  title?: string
+  description?: string
+  size?: number
+  price?: number
+}
+
+export interface UpdateStoreRoomResult {
+  message: string
+  status: number
+  requires_review?: boolean
+  review_notice?: string
+  notice?: string
+}
+
+export async function updateStoreRoom(
+  id: number,
+  payload: UpdateStoreRoomPayload,
+): Promise<UpdateStoreRoomResult> {
+  const { data } = await client.put<UpdateStoreRoomResult>(
+    `/storeRooms/${id}`,
+    payload,
+  )
+  return data
+}
+
+/**
+ * Replace the fire-department permit (`POST /store-rooms/{id}/permit`). An
+ * approved room goes back to pending; a rejected one stays rejected until
+ * `resubmitStoreRoom`.
+ */
+export async function replaceStoreRoomPermit(
+  id: number,
+  permit: File,
+): Promise<void> {
+  const form = new FormData()
+  form.append('firefighter_permit', permit)
+  await client.post(`/store-rooms/${id}/permit`, form, {
+    headers: { 'Content-Type': 'multipart/form-data' },
+  })
+}
+
+/** Send a rejected room back to the moderation queue (409 if it is not rejected). */
+export async function resubmitStoreRoom(id: number): Promise<void> {
+  await client.post(`/storeRooms/${id}/resubmit`)
+}

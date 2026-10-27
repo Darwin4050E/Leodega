@@ -28,6 +28,7 @@ export default function App() {
               <Route path="/mis-bodegas" element={<MyStoreRoomsScreen />} />
               <Route element={<RolesOnly roles={['landlord']} />}>
                 <Route path="/mis-bodegas/:id" element={<MyStoreRoomDetailScreen />} />
+                <Route path="/mis-bodegas/:id/editar" element={<PublishStoreRoomScreen />} />
               </Route>
               <Route element={<TenantOnly />}>
                 <Route path="/bodegas" element={<StoreRoomCatalogScreen />} />

@@ -40,13 +40,24 @@ function Header({ onBack }: { onBack: () => void }) {
   )
 }
 
-/** Bottom bar of the detail: the trash action, locked while reservations are active. */
-function ActionBar({ locked, onDelete }: { locked: boolean; onDelete: () => void }) {
+/** Bottom bar of the detail: edit, and the trash action locked while reservations are active. */
+function ActionBar({
+  locked,
+  onEdit,
+  onDelete,
+}: {
+  locked: boolean
+  onEdit: () => void
+  onDelete: () => void
+}) {
   return (
     <div className="flex shrink-0 items-center gap-2.5 border-t border-lg-line bg-white px-5 pb-8 pt-3">
-      <div className="flex-1">
+      <div className="flex min-w-0 flex-1 flex-col gap-1.5">
+        <Button onClick={onEdit}>Editar bodega</Button>
         {locked && (
-          <p className="m-0 text-xs text-lg-t4">Tiene reservas vigentes</p>
+          <p className="m-0 text-center text-xs text-lg-t4">
+            Tiene reservas vigentes
+          </p>
         )}
       </div>
       <button
@@ -228,6 +239,7 @@ export default function MyStoreRoomDetailScreen() {
         footer={
           <ActionBar
             locked={room.active_reservations_count > 0}
+            onEdit={() => navigate(`/mis-bodegas/${room.id}/editar`)}
             onDelete={() => {
               setDeleteError(null)
               setConfirmingDelete(true)

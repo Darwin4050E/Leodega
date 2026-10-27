@@ -105,6 +105,7 @@ function renderScreen(path = '/mis-bodegas/1') {
         <Routes>
           <Route path="/mis-bodegas" element={<div>Lista de bodegas</div>} />
           <Route path="/mis-bodegas/:id" element={<MyStoreRoomDetailScreen />} />
+          <Route path="/mis-bodegas/:id/editar" element={<div>Editor de bodega</div>} />
         </Routes>
       </MemoryRouter>
     </AuthProvider>,
@@ -202,6 +203,16 @@ describe('MyStoreRoomDetailScreen', () => {
 
     await user.click(screen.getByRole('button', { name: 'Volver' }))
     expect(screen.getByText('Lista de bodegas')).toBeInTheDocument()
+  })
+
+  it('opens the editor from "Editar bodega", even with active reservations', async () => {
+    listMock.mockResolvedValue([mine({ active_reservations_count: 2 })])
+    const user = userEvent.setup()
+    renderScreen()
+    await screen.findByRole('heading', { name: 'Bodega Norte' })
+
+    await user.click(screen.getByRole('button', { name: 'Editar bodega' }))
+    expect(screen.getByText('Editor de bodega')).toBeInTheDocument()
   })
 
   it('shows an error state whose "Reintentar" refetches', async () => {
