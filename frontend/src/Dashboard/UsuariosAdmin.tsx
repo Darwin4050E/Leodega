@@ -16,6 +16,18 @@ const ESTADO_LABEL: Record<UserState, string> = {
   pending: "Pendiente",
 };
 
+const ROL_LABEL: Record<UserListItem["role"], string> = {
+  admin: "Administrador",
+  landlord: "Gestor",
+  tenant: "Cliente",
+};
+
+/** `2026-03-05T10:00:00Z` -> `05/03/2026`; empty when the payload has no date. */
+function formatearRegistro(createdAt?: string): string {
+  const match = createdAt?.match(/^(\d{4})-(\d{2})-(\d{2})/);
+  return match ? `${match[3]}/${match[2]}/${match[1]}` : "—";
+}
+
 function claseEstado(state: UserState): string {
   switch (state) {
     case "active":
@@ -31,6 +43,8 @@ const UsuariosAdmin: React.FC = () => {
   const [usuarios, setUsuarios] = useState<UserListItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState("");
+  const [filtroRol, setFiltroRol] = useState("");
+  const [filtroEstado, setFiltroEstado] = useState("");
   const [aviso, setAviso] = useState<string | null>(null);
 
   const [usuarioABloquear, setUsuarioABloquear] = useState<UserListItem | null>(null);
@@ -57,15 +71,19 @@ const UsuariosAdmin: React.FC = () => {
 
   const usuariosFiltrados = useMemo(() => {
     const term = searchTerm.toLowerCase();
-    return usuarios.filter(
+    return usuarios
+      .filter((u) => !filtroRol || u.role === filtroRol)
+      .filter((u) => !filtroEstado || u.state === filtroEstado)
+      .filter(
       (u) =>
         u.name.toLowerCase().includes(term) ||
         u.lastname.toLowerCase().includes(term) ||
         u.email.toLowerCase().includes(term) ||
         u.role.toLowerCase().includes(term) ||
+        ROL_LABEL[u.role].toLowerCase().includes(term) ||
         ESTADO_LABEL[u.state].toLowerCase().includes(term),
     );
-  }, [usuarios, searchTerm]);
+  }, [usuarios, searchTerm, filtroRol, filtroEstado]);
 
   const MOTIVO_MIN = 5;
   const motivoLimpio = motivo.trim();
@@ -130,7 +148,8 @@ const UsuariosAdmin: React.FC = () => {
     <div className="px-4 lg:pl-8 lg:pr-8 pt-5 bg-[#f5f6fa] min-h-screen">
       <h1 className="text-2xl font-semibold text-gray-900 mb-6">Gestión de cuentas</h1>
 
-      <div className="flex items-center gap-2 mb-6 bg-white border border-gray-200 rounded-xl shadow-sm px-4 py-2 max-w-md">
+      <div className="flex flex-wrap items-center gap-3 mb-6">
+      <div className="flex items-center gap-2 bg-white border border-gray-200 rounded-xl shadow-sm px-4 py-2 w-full max-w-md">
         <Search className="w-5 h-5 text-gray-500" />
         <input
           type="text"
@@ -140,6 +159,27 @@ const UsuariosAdmin: React.FC = () => {
           aria-label="Buscar por nombre o email"
           className="flex-1 bg-white border-0 text-sm text-gray-700 focus:outline-none"
         />
+      </div>
+        <select
+          value={filtroRol}
+          onChange={(e) => setFiltroRol(e.target.value)}
+          aria-label="Filtrar por rol"
+          className="bg-white border border-gray-200 rounded-xl shadow-sm px-3 py-2 text-sm text-gray-700"
+        >
+          <option value="">Todos los roles</option>
+          <option value="landlord">Gestor</option>
+          <option value="tenant">Cliente</option>
+        </select>
+        <select
+          value={filtroEstado}
+          onChange={(e) => setFiltroEstado(e.target.value)}
+          aria-label="Filtrar por estado"
+          className="bg-white border border-gray-200 rounded-xl shadow-sm px-3 py-2 text-sm text-gray-700"
+        >
+          <option value="">Todos los estados</option>
+          <option value="active">Activa</option>
+          <option value="blocked">Bloqueada</option>
+        </select>
       </div>
 
       {aviso && (
@@ -158,7 +198,7 @@ const UsuariosAdmin: React.FC = () => {
           <table className="w-full">
             <thead className="bg-gray-50 border-b border-gray-200">
               <tr>
-                {["ID", "NOMBRE", "CORREO", "ROL", "ESTADO", "ACCIONES"].map((h) => (
+                {["ID", "NOMBRE", "CORREO", "ROL", "REGISTRO", "ESTADO", "ACCIONES"].map((h) => (
                   <th
                     key={h}
                     className="px-6 py-4 text-left text-xs font-semibold text-gray-500 uppercase"
@@ -176,7 +216,8 @@ const UsuariosAdmin: React.FC = () => {
                     {u.name} {u.lastname}
                   </td>
                   <td className="px-6 py-4">{u.email}</td>
-                  <td className="px-6 py-4">{u.role}</td>
+                  <td className="px-6 py-4">{ROL_LABEL[u.role]}</td>
+                  <td className="px-6 py-4">{formatearRegistro(u.created_at)}</td>
                   <td className="px-6 py-4">
                     <span
                       className={`px-3 py-1 text-xs font-medium rounded-md ${claseEstado(u.state)}`}

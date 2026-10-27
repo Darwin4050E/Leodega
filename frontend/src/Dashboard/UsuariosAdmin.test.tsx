@@ -15,7 +15,7 @@ vi.mock('../services/users', () => ({
 
 const sampleUsers = [
   { id: 1, name: 'Juan', lastname: 'Pérez', email: 'juan@test.com', role: 'tenant', state: 'active' },
-  { id: 2, name: 'Ada', lastname: 'López', email: 'ada@test.com', role: 'landlord', state: 'blocked' },
+  { id: 2, name: 'Ada', lastname: 'López', email: 'ada@test.com', role: 'landlord', state: 'blocked', created_at: '2026-03-05T10:00:00.000000Z' },
 ];
 
 describe('UsuariosAdmin', () => {
@@ -39,6 +39,42 @@ describe('UsuariosAdmin', () => {
     expect(screen.getByRole('heading', { name: 'Gestión de cuentas' })).toBeInTheDocument();
     expect(screen.getByPlaceholderText('Buscar por nombre o email')).toBeInTheDocument();
     expect(screen.getByText('Mostrando 2 de 2 cuentas')).toBeInTheDocument();
+  });
+
+  it('filters by role and by state, showing N de M', async () => {
+    const user = userEvent.setup();
+    render(<UsuariosAdmin />);
+    await waitFor(() => expect(screen.getByText('Juan Pérez')).toBeInTheDocument());
+
+    await user.selectOptions(screen.getByLabelText('Filtrar por rol'), 'landlord');
+    expect(screen.queryByText('Juan Pérez')).not.toBeInTheDocument();
+    expect(screen.getByText('Ada López')).toBeInTheDocument();
+    expect(screen.getByText('Mostrando 1 de 2 cuentas')).toBeInTheDocument();
+
+    await user.selectOptions(screen.getByLabelText('Filtrar por rol'), '');
+    await user.selectOptions(screen.getByLabelText('Filtrar por estado'), 'active');
+    expect(screen.getByText('Juan Pérez')).toBeInTheDocument();
+    expect(screen.queryByText('Ada López')).not.toBeInTheDocument();
+  });
+
+  it('offers the prototype filter labels', async () => {
+    render(<UsuariosAdmin />);
+    await waitFor(() => expect(screen.getByText('Juan Pérez')).toBeInTheDocument());
+    const role = screen.getByLabelText('Filtrar por rol');
+    expect(within(role).getByRole('option', { name: 'Todos los roles' })).toBeInTheDocument();
+    expect(within(role).getByRole('option', { name: 'Gestor' })).toBeInTheDocument();
+    expect(within(role).getByRole('option', { name: 'Cliente' })).toBeInTheDocument();
+    const state = screen.getByLabelText('Filtrar por estado');
+    expect(within(state).getByRole('option', { name: 'Todos los estados' })).toBeInTheDocument();
+    expect(within(state).getByRole('option', { name: 'Activa' })).toBeInTheDocument();
+    expect(within(state).getByRole('option', { name: 'Bloqueada' })).toBeInTheDocument();
+  });
+
+  it('shows the REGISTRO date when the payload carries it', async () => {
+    render(<UsuariosAdmin />);
+    await waitFor(() => expect(screen.getByText('Juan Pérez')).toBeInTheDocument());
+    expect(screen.getByText('REGISTRO')).toBeInTheDocument();
+    expect(screen.getByText('05/03/2026')).toBeInTheDocument();
   });
 
   it('keeps the block confirm disabled until a non-whitespace reason is typed', async () => {
