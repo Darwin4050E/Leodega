@@ -4,6 +4,7 @@ import { useNavigate } from 'react-router-dom';
 import logoh1 from '../img/LOGO_H_1.png';
 import { Menu, X } from 'lucide-react';
 import { useAuth } from '../context/useAuth';
+import { usePendingModerationCount } from '../hooks/usePendingModerationCount';
 
 interface SidebarAdminProps {
     readonly activeItem: string;
@@ -18,6 +19,7 @@ export default function SidebarAdmin(
     const [isSidebarOpen, setIsSidebarOpen] = useState(false);
     const navigate = useNavigate();
     const { logout } = useAuth();
+    const pendingModeration = usePendingModerationCount(role === "admin");
     const basePath =
         role === "admin"
             ? "/admin"
@@ -126,7 +128,8 @@ export default function SidebarAdmin(
 
                     {role === "admin" && (
                         <SidebarItem
-                            label="Moderación"
+                            label="Bodegas por aprobar"
+                            badge={pendingModeration}
                             active={activeItem === 'moderacion'}
                             onClick={() => handleItemClick(() => {
                                 setActiveItem('moderacion');
@@ -135,14 +138,27 @@ export default function SidebarAdmin(
                         />
                     )}
 
-                    <SidebarItem
-                        label={role === "landlord" ? "Mis bodegas" : "Bodegas"}
-                        active={activeItem === 'bodegas'}
-                        onClick={() => handleItemClick(() => {
-                            setActiveItem('bodegas');
-                            navigate(`${basePath}/bodegas`);
-                        })}
-                    />
+                    {role === "admin" && (
+                        <SidebarItem
+                            label="Gestión de cuentas"
+                            active={activeItem === 'usuarios'}
+                            onClick={() => handleItemClick(() => {
+                                setActiveItem('usuarios');
+                                navigate(`${basePath}/usuarios`);
+                            })}
+                        />
+                    )}
+
+                    {role !== "admin" && (
+                        <SidebarItem
+                            label={role === "landlord" ? "Mis bodegas" : "Bodegas"}
+                            active={activeItem === 'bodegas'}
+                            onClick={() => handleItemClick(() => {
+                                setActiveItem('bodegas');
+                                navigate(`${basePath}/bodegas`);
+                            })}
+                        />
+                    )}
 
                     {role === "landlord" && (
                         <SidebarItem
@@ -170,17 +186,6 @@ export default function SidebarAdmin(
                             navigate(`${basePath}/solicitudes`);
                         })}
                     />
-
-                    {role === "admin" && (
-                        <SidebarItem
-                            label="Usuarios"
-                            active={activeItem === 'usuarios'}
-                            onClick={() => handleItemClick(() => {
-                                setActiveItem('usuarios');
-                                navigate(`${basePath}/usuarios`);
-                            })}
-                        />
-                    )}
 
                     <SidebarItem
                         label="Mensajes"

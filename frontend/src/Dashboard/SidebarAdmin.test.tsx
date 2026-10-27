@@ -1,5 +1,5 @@
-import { describe, it, expect, vi } from 'vitest';
-import { render, screen, fireEvent } from '@testing-library/react';
+import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
 
 const mockNavigate = vi.hoisted(() => vi.fn());
@@ -10,6 +10,9 @@ vi.mock('react-router-dom', async () => ({
   useNavigate: () => mockNavigate,
 }));
 vi.mock('../context/useAuth', () => ({ useAuth: () => ({ logout: mockLogout }) }));
+
+const mockGetDashboardSummary = vi.hoisted(() => vi.fn());
+vi.mock('../services/dashboard', () => ({ getDashboardSummary: mockGetDashboardSummary }));
 
 import SidebarAdmin from './SidebarAdmin';
 
@@ -63,15 +66,28 @@ describe('SidebarAdmin for the gestor (landlord)', () => {
   });
 });
 
-describe('SidebarAdmin for the admin stays unchanged', () => {
-  it('keeps the admin items and labels', () => {
-    renderSidebar('admin');
+describe('SidebarAdmin for the gestor does not load admin data', () => {
+  it('never requests the dashboard summary', () => {
+    mockGetDashboardSummary.mockClear();
+    renderSidebar('landlord');
+    expect(mockGetDashboardSummary).not.toHaveBeenCalled();
+  });
+});
+
+describe('SidebarAdmin for the admin follows the prototype', () => {
+  beforeEach(() => {
+    mockGetDashboardSummary.mockReset();
+    mockGetDashboardSummary.mockResolvedValue({ data: { pending_moderation: 3 } });
+  });
+
+  it('lists the admin items in prototype order without Bodegas', async () => {
+    renderSidebar('admin', 'resumen');
+    await screen.findByText('3');
     expect(navLabels()).toEqual([
       'Resumen',
-      'Moderación',
-      'Bodegas',
+      'Bodegas por aprobar3',
+      'Gestión de cuentas',
       'Reportes',
-      'Usuarios',
       'Mensajes',
       'Páginas',
       'Configuración',
@@ -79,11 +95,32 @@ describe('SidebarAdmin for the admin stays unchanged', () => {
     ]);
   });
 
-  it('keeps the admin routes', () => {
+  it('navigates to the admin routes', () => {
     renderSidebar('admin');
-    fireEvent.click(screen.getByText('Bodegas'));
-    expect(mockNavigate).toHaveBeenLastCalledWith('/admin/bodegas');
+    fireEvent.click(screen.getByText('Bodegas por aprobar'));
+    expect(mockNavigate).toHaveBeenLastCalledWith('/admin/moderacion');
+    fireEvent.click(screen.getByText('Gestión de cuentas'));
+    expect(mockNavigate).toHaveBeenLastCalledWith('/admin/usuarios');
     fireEvent.click(screen.getByText('Reportes'));
     expect(mockNavigate).toHaveBeenLastCalledWith('/admin/solicitudes');
+  });
+
+  it('hides the badge when nothing is pending', async () => {
+    mockGetDashboardSummary.mockResolvedValue({ data: { pending_moderation: 0 } });
+    renderSidebar('admin');
+    await waitFor(() => expect(mockGetDashboardSummary).toHaveBeenCalled());
+    expect(navLabels()).toContain('Bodegas por aprobar');
+  });
+
+  it('degrades silently when the summary request fails', async () => {
+    mockGetDashboardSummary.mockRejectedValue(new Error('boom'));
+    renderSidebar('admin');
+    await waitFor(() => expect(mockGetDashboardSummary).toHaveBeenCalled());
+    expect(navLabels()).toContain('Bodegas por aprobar');
+  });
+
+  it('highlights nothing for the hidden Bodegas page', () => {
+    renderSidebar('admin', 'bodegas');
+    expect(document.querySelectorAll('nav button.bg-\\[\\#FFB84D\\]').length).toBe(0);
   });
 });
