@@ -8,6 +8,7 @@ import LoginScreen from './screens/LoginScreen'
 import RoleHome from './routes/RoleHome'
 import PublishStoreRoomScreen from './screens/PublishStoreRoom/PublishStoreRoomScreen'
 import MyStoreRoomsScreen from './screens/MyStoreRooms/MyStoreRoomsScreen'
+import MyStoreRoomDetailScreen from './screens/MyStoreRooms/MyStoreRoomDetailScreen'
 import StoreRoomCatalogScreen from './screens/StoreRoomCatalog/StoreRoomCatalogScreen'
 import StoreRoomDetailScreen from './screens/StoreRoomDetail/StoreRoomDetailScreen'
 import ProfileScreen from './screens/Profile/ProfileScreen'
@@ -25,6 +26,9 @@ export default function App() {
               <Route path="/" element={<RoleHome />} />
               <Route path="/publicar" element={<PublishStoreRoomScreen />} />
               <Route path="/mis-bodegas" element={<MyStoreRoomsScreen />} />
+              <Route element={<RolesOnly roles={['landlord']} />}>
+                <Route path="/mis-bodegas/:id" element={<MyStoreRoomDetailScreen />} />
+              </Route>
               <Route element={<TenantOnly />}>
                 <Route path="/bodegas" element={<StoreRoomCatalogScreen />} />
                 <Route path="/bodegas/:id" element={<StoreRoomDetailScreen />} />

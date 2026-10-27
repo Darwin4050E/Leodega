@@ -1,12 +1,13 @@
 import { useState } from 'react'
+import { Link } from 'react-router-dom'
 import StatusChip from '../../components/StatusChip'
 import { ROOM_TYPES } from '../../lib/storeRoomLabels'
 import type { MyStoreRoom } from '../../services/storeRooms'
 import { STATUS_META, deriveStatus, rejectionDetail } from './model'
 
 /**
- * HUL-04: presentational card for one owned store room. No fetching, no
- * routing — the screen owns those. `image` is an absolute `asset()` URL whose
+ * HUL-04: presentational card for one owned store room. No fetching; the
+ * whole card links to the gestor's detail screen. `image` is an absolute `asset()` URL whose
  * PWA-origin resolution is unverified, so a `null` image or a load error both
  * fall back to the same inline placeholder.
  */
@@ -31,7 +32,10 @@ export default function StoreRoomCard({ room }: { room: MyStoreRoom }) {
   const rejection = rejectionDetail(room)
 
   return (
-    <article className="overflow-hidden rounded-2xl border border-lg-line bg-white">
+    <Link
+      to={`/mis-bodegas/${room.id}`}
+      className="block overflow-hidden rounded-2xl border border-lg-line bg-white no-underline"
+    >
       <div className="h-36 w-full bg-lg-hair">
         {showImage ? (
           <img
@@ -64,9 +68,14 @@ export default function StoreRoomCard({ room }: { room: MyStoreRoom }) {
             {rejection.reason && <p className="m-0">{rejection.reason}</p>}
           </div>
         )}
-        {price && (
-          <p className="m-0 text-sm font-semibold text-lg-ink">{price} /mes</p>
-        )}
+        <div className="flex items-baseline justify-between">
+          {price ? (
+            <p className="m-0 text-sm font-semibold text-lg-ink">{price} /mes</p>
+          ) : (
+            <span />
+          )}
+          <span className="text-xs font-semibold text-lg-primary">Ver detalle ›</span>
+        </div>
         {room.active_reservations_count > 0 && (
           <p className="m-0 text-xs text-lg-t4">
             {room.active_reservations_count} reserva
@@ -75,6 +84,6 @@ export default function StoreRoomCard({ room }: { room: MyStoreRoom }) {
           </p>
         )}
       </div>
-    </article>
+    </Link>
   )
 }

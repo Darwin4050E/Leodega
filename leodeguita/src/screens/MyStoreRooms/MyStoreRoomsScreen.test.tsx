@@ -53,6 +53,7 @@ function renderScreen() {
           <Route path="/mis-bodegas" element={<MyStoreRoomsScreen />} />
           <Route path="/" element={<div>Inicio</div>} />
           <Route path="/publicar" element={<div>Publicar</div>} />
+          <Route path="/mis-bodegas/:id" element={<div>Detalle 5</div>} />
         </Routes>
       </MemoryRouter>
     </AuthProvider>,
@@ -186,13 +187,17 @@ describe('MyStoreRoomsScreen (HUL-04)', () => {
     expect(screen.getByRole('link', { name: 'Perfil' })).toBeInTheDocument()
   })
 
-  it('does not make the cards clickable', async () => {
-    listMock.mockResolvedValueOnce([room()])
+  it('makes each card a "Ver detalle" link to its detail screen', async () => {
+    listMock.mockResolvedValueOnce([room({ id: 5 })])
+    const user = userEvent.setup()
     renderScreen()
 
-    await screen.findByText('Bodega Norte')
-    expect(screen.queryByRole('link', { name: /Bodega Norte/ })).not.toBeInTheDocument()
-    expect(screen.queryByRole('button', { name: /Bodega Norte/ })).not.toBeInTheDocument()
+    const link = await screen.findByRole('link', { name: /Bodega Norte/ })
+    expect(link).toHaveAttribute('href', '/mis-bodegas/5')
+    expect(screen.getByText(/Ver detalle/)).toBeInTheDocument()
+
+    await user.click(link)
+    expect(screen.getByText('Detalle 5')).toBeInTheDocument()
   })
 
   it('blocks a non-landlord and never calls the service', () => {
