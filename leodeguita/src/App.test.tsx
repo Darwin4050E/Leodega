@@ -127,12 +127,21 @@ describe('App routes (HUL-02)', () => {
     expect(window.location.pathname).toBe('/mis-bodegas')
   })
 
-  it('keeps a landlord out of /perfil', async () => {
+  it('renders the profile for a landlord at /perfil', () => {
     writeSession('tok', LANDLORD)
     renderAt('/perfil')
 
-    expect(await screen.findByRole('heading', { name: 'Mis bodegas' })).toBeInTheDocument()
-    expect(window.location.pathname).toBe('/mis-bodegas')
+    expect(screen.getByRole('heading', { level: 1, name: 'Perfil' })).toBeInTheDocument()
+    expect(screen.getByText('Gestor de bodega')).toBeInTheDocument()
+    expect(window.location.pathname).toBe('/perfil')
+  })
+
+  it('keeps an admin out of /perfil', () => {
+    writeSession('tok', { ...TENANT, role: 'admin' })
+    renderAt('/perfil')
+
+    expect(screen.getByText('Hola, Ana')).toBeInTheDocument()
+    expect(window.location.pathname).toBe('/')
   })
 
   it('lands a landlord on Mis bodegas from /, not the placeholder Home', async () => {

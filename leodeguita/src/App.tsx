@@ -2,6 +2,7 @@ import { BrowserRouter, Navigate, Route, Routes } from 'react-router-dom'
 import { AuthProvider } from './auth/AuthContext'
 import { ActiveContextProvider } from './context/ActiveContextProvider'
 import Protected from './routes/Protected'
+import RolesOnly from './routes/RolesOnly'
 import TenantOnly from './routes/TenantOnly'
 import LoginScreen from './screens/LoginScreen'
 import RoleHome from './routes/RoleHome'
@@ -29,6 +30,8 @@ export default function App() {
               <Route element={<TenantOnly />}>
                 <Route path="/empresa" element={<SelectCompanyScreen />} />
                 <Route path="/reservas" element={<ReservationsScreen />} />
+              </Route>
+              <Route element={<RolesOnly roles={['tenant', 'landlord']} />}>
                 <Route path="/perfil" element={<ProfileScreen />} />
               </Route>
             </Route>

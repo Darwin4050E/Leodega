@@ -124,4 +124,36 @@ describe('ProfileScreen', () => {
 
     expect(screen.getByRole('link', { name: 'Perfil' })).toHaveAttribute('aria-current', 'page')
   })
+
+  describe('as a landlord', () => {
+    beforeEach(() => {
+      writeSession('tok', { ...TENANT, role: 'landlord' as const })
+    })
+
+    it('shows the identity with the Gestor de bodega badge', () => {
+      renderScreen()
+
+      expect(screen.getByText('Ana Perez')).toBeInTheDocument()
+      expect(screen.getByText('ana@example.com')).toBeInTheDocument()
+      expect(screen.getByText('Gestor de bodega')).toBeInTheDocument()
+      expect(screen.queryByText('Cliente')).not.toBeInTheDocument()
+    })
+
+    it('never shows the organization section or requests organizations', () => {
+      renderScreen()
+
+      expect(screen.queryByText('Organización')).not.toBeInTheDocument()
+      expect(screen.queryByRole('button', { name: /Operando como/ })).not.toBeInTheDocument()
+      expect(listMock).not.toHaveBeenCalled()
+    })
+
+    it('logs out from the account entry', async () => {
+      renderScreen()
+
+      await userEvent.setup().click(screen.getByRole('button', { name: 'Cerrar sesión' }))
+
+      expect(await screen.findByText('Pantalla de ingreso')).toBeInTheDocument()
+      expect(readToken()).toBeNull()
+    })
+  })
 })
