@@ -52,9 +52,9 @@ const HeaderTendant = () => {
     };
 
     const navItems = [
-        { label: "Bodegas populares", href: "/storage", path: "/storage" },
+        { label: "Catálogo", href: "/storage", path: "/storage" },
         { label: "Mensajes", href: "/arrendatario/mensajes", path: "/arrendatario/mensajes" },
-        { label: "Calendario", href: "/arrendatario/calendario", path: "/arrendatario/calendario" },
+        { label: "Mis reservas", href: "/arrendatario/mis-reservas", path: "/arrendatario/mis-reservas" },
         // The panel describes an organization, so it only exists while one is the active context.
         ...(activeOrganization !== null
             ? [{ label: PANEL_COPY.title, href: "/organizacion/panel", path: "/organizacion/panel" }]
@@ -145,6 +145,12 @@ const HeaderTendant = () => {
                             ))}
                             <li className='py-2 w-full text-center border-b'>
                                 <Link to="/mi-cuenta/invitaciones">{INVITATION_COPY.drawerEntry(pendingCount)}</Link>
+                            </li>
+                            <li className='py-2 w-full text-center border-b'>
+                                <Link to="/mi-cuenta/crear-organizacion">Crear organización</Link>
+                            </li>
+                            <li className='py-2 w-full text-center border-b'>
+                                <Link to="/login" onClick={handleLogout}>Cerrar sesión</Link>
                             </li>
                         </ul>
                     </div>
