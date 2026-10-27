@@ -396,7 +396,7 @@ describe('PreguntaInicio7 — photo upload failure and retry', () => {
 
     expect(screen.getByRole('alert')).toHaveTextContent(/No pudimos subir las fotos/);
     expect(screen.getByRole('button', { name: 'Reintentar subida de fotos' })).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: 'Volver a mis bodegas' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Ir a Mis bodegas' })).toBeInTheDocument();
     expect(resetMock).not.toHaveBeenCalled();
     expect(localStorage.getItem('optionData')).not.toBeNull();
     expect(screen.queryByTestId('success-modal')).not.toBeInTheDocument();
@@ -437,7 +437,7 @@ describe('PreguntaInicio7 — photo upload failure and retry', () => {
   it('sends the gestor back to their rooms from the failure notice', async () => {
     const { user } = await submitWithPhotoFailure();
 
-    await user.click(screen.getByRole('button', { name: 'Volver a mis bodegas' }));
+    await user.click(screen.getByRole('button', { name: 'Ir a Mis bodegas' }));
 
     expect(mockNavigate).toHaveBeenCalledWith('/arrendador/bodegas');
   });

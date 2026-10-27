@@ -100,6 +100,16 @@ describe('GestorReservas', () => {
     mockGetLandlordReservations.mockResolvedValue({ data: reservations });
   });
 
+  it('explains that reservations are confirmed by payment, under the title', async () => {
+    render(<GestorReservas />);
+    await waitFor(() => screen.getAllByText('Bodega Norte'));
+
+    expect(screen.getByRole('heading', { name: 'Reservas de mis bodegas' })).toBeInTheDocument();
+    expect(
+      screen.getByText('Reservas confirmadas al instante. El pago confirma la renta — sin aprobación manual.')
+    ).toBeInTheDocument();
+  });
+
   it('renders all four PAGO labels', async () => {
     render(<GestorReservas />);
     await waitFor(() => screen.getAllByText('Bodega Norte'));

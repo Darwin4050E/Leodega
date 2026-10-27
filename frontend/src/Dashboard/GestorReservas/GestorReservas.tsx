@@ -271,6 +271,9 @@ const GestorReservas = () => {
       <div className="flex justify-between items-end mb-4 flex-wrap gap-2.5">
         <div>
           <h1 className="text-xl font-semibold text-gray-900 m-0">Reservas de mis bodegas</h1>
+          <p className="text-sm text-gray-500 mt-1">
+            Reservas confirmadas al instante. El pago confirma la renta — sin aprobación manual.
+          </p>
         </div>
       </div>
 
