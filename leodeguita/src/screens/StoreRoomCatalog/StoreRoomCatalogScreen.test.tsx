@@ -75,6 +75,23 @@ describe('StoreRoomCatalogScreen', () => {
     seedSession()
   })
 
+  it('shows the tenant tab bar while loading, on error and when ready', async () => {
+    listMock.mockRejectedValueOnce(new Error('boom'))
+    renderScreen()
+    expect(screen.getByRole('navigation', { name: 'Navegación principal' })).toBeInTheDocument()
+
+    expect(await screen.findByText('Reintentar')).toBeInTheDocument()
+    expect(screen.getByRole('navigation', { name: 'Navegación principal' })).toBeInTheDocument()
+  })
+
+  it('shows the tab bar with the list', async () => {
+    listMock.mockResolvedValueOnce([room()])
+    renderScreen()
+
+    await screen.findByText('Bodega Norte')
+    expect(screen.getByRole('link', { name: 'Explorar' })).toHaveAttribute('aria-current', 'page')
+  })
+
   it('keeps the plain subtitle in personal mode', async () => {
     listMock.mockResolvedValueOnce([room()])
     renderScreen()

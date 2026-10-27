@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from 'react'
 import { useLocation } from 'react-router-dom'
 import PhoneFrame from '../../components/PhoneFrame'
+import TenantTabBar from '../../components/TenantTabBar'
 import Button from '../../components/Button'
 import { useActiveContext } from '../../context/useActiveContext'
 import { organizationInitials } from '../SelectCompany/model'
@@ -66,7 +67,7 @@ export default function StoreRoomCatalogScreen() {
 
   if (phase === 'loading') {
     return (
-      <PhoneFrame>
+      <PhoneFrame footer={<TenantTabBar />}>
         <Header />
         <div className="flex flex-1 items-center justify-center px-6 text-sm text-lg-t3">
           Cargando espacios…
@@ -77,7 +78,7 @@ export default function StoreRoomCatalogScreen() {
 
   if (phase === 'error') {
     return (
-      <PhoneFrame>
+      <PhoneFrame footer={<TenantTabBar />}>
         <Header />
         <div className="flex flex-1 flex-col items-center justify-center gap-4 px-6 text-center">
           <p className="text-sm text-lg-t3">
@@ -95,7 +96,7 @@ export default function StoreRoomCatalogScreen() {
 
   if (visible.length === 0) {
     return (
-      <PhoneFrame>
+      <PhoneFrame footer={<TenantTabBar />}>
         <Header />
         <div className="flex flex-1 flex-col items-center justify-center gap-4 px-6 text-center">
           <p className="text-sm text-lg-t3">
@@ -107,7 +108,7 @@ export default function StoreRoomCatalogScreen() {
   }
 
   return (
-    <PhoneFrame>
+    <PhoneFrame footer={<TenantTabBar />}>
       <Header />
       <div className="flex flex-1 flex-col gap-3 overflow-y-auto px-5 pb-8">
         {visible.map((room) => (
