@@ -125,7 +125,7 @@ export default function PublishStoreRoomScreen() {
 
   function goBack() {
     setFormError(null)
-    if (step === 0) navigate('/', { replace: true })
+    if (step === 0) navigate('/mis-bodegas', { replace: true })
     else setStep((s) => s - 1)
   }
 

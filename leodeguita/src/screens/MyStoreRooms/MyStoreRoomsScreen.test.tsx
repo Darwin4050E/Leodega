@@ -73,7 +73,7 @@ describe('MyStoreRoomsScreen (HUL-04)', () => {
     expect(
       screen.getByText('Km 11.5 Vía a Daule · Guayaquil'),
     ).toBeInTheDocument()
-    expect(screen.getByText('Disponible')).toBeInTheDocument()
+    expect(screen.getByText('Aprobada')).toBeInTheDocument()
     expect(listMock).toHaveBeenCalledWith(7)
   })
 
@@ -118,7 +118,7 @@ describe('MyStoreRoomsScreen (HUL-04)', () => {
       screen.getByRole('button', { name: 'Todas (4)' }),
     ).toBeInTheDocument()
     expect(
-      screen.getByRole('button', { name: 'Disponibles (2)' }),
+      screen.getByRole('button', { name: 'Aprobadas (2)' }),
     ).toBeInTheDocument()
 
     await user.click(screen.getByRole('button', { name: 'Ocupadas (1)' }))
@@ -138,6 +138,51 @@ describe('MyStoreRoomsScreen (HUL-04)', () => {
     expect(
       screen.queryByText('Aún no has publicado ninguna bodega.'),
     ).not.toBeInTheDocument()
+  })
+
+  it('shows the published count in the header, singular for one room', async () => {
+    listMock.mockResolvedValueOnce([room({ id: 1 }), room({ id: 2, title: 'Otra' })])
+    const { unmount } = renderScreen()
+    expect(await screen.findByText('2 espacios publicados')).toBeInTheDocument()
+    unmount()
+
+    listMock.mockResolvedValueOnce([room()])
+    renderScreen()
+    expect(await screen.findByText('1 espacio publicado')).toBeInTheDocument()
+  })
+
+  it('labels a pending room "Pendiente de verificación" and keeps the "Pendientes" chip', async () => {
+    listMock.mockResolvedValueOnce([room({ publication_status: 'pending' })])
+    renderScreen()
+
+    expect(await screen.findByText('Pendiente de verificación')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Pendientes (1)' })).toBeInTheDocument()
+  })
+
+  it('offers a floating "Publicar" button that opens the wizard when there are rooms', async () => {
+    listMock.mockResolvedValueOnce([room()])
+    const user = userEvent.setup()
+    renderScreen()
+
+    await user.click(await screen.findByRole('button', { name: '+ Publicar' }))
+    expect(screen.getByText('Publicar')).toBeInTheDocument()
+  })
+
+  it('does not float "Publicar" in the empty state, which keeps "Publicar una nueva"', async () => {
+    listMock.mockResolvedValueOnce([])
+    renderScreen()
+
+    expect(await screen.findByRole('button', { name: 'Publicar una nueva' })).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: '+ Publicar' })).not.toBeInTheDocument()
+  })
+
+  it('does not make the cards clickable', async () => {
+    listMock.mockResolvedValueOnce([room()])
+    renderScreen()
+
+    await screen.findByText('Bodega Norte')
+    expect(screen.queryByRole('link', { name: /Bodega Norte/ })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: /Bodega Norte/ })).not.toBeInTheDocument()
   })
 
   it('blocks a non-landlord and never calls the service', () => {
