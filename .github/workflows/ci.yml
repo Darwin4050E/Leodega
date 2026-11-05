@@ -75,7 +75,6 @@ jobs:
       - run: npm ci
 
       - name: ESLint
-        continue-on-error: true
         run: |
           npx eslint . --format json --output-file eslint-report.json || true
           npx eslint .
@@ -112,7 +111,6 @@ jobs:
       - run: npm ci
 
       - name: ESLint
-        continue-on-error: true
         run: |
           npx eslint . --format json --output-file eslint-report.json || true
           npx eslint .

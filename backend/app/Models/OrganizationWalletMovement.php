@@ -5,6 +5,7 @@ namespace App\Models;
 use App\Enums\WalletMovementType;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use LogicException;
 
 /**
@@ -48,17 +49,26 @@ class OrganizationWalletMovement extends Model
         });
     }
 
-    public function organization()
+    /**
+     * @return BelongsTo<Organization, $this>
+     */
+    public function organization(): BelongsTo
     {
         return $this->belongsTo(Organization::class);
     }
 
-    public function user()
+    /**
+     * @return BelongsTo<User, $this>
+     */
+    public function user(): BelongsTo
     {
         return $this->belongsTo(User::class);
     }
 
-    public function reservation()
+    /**
+     * @return BelongsTo<Reservations, $this>
+     */
+    public function reservation(): BelongsTo
     {
         return $this->belongsTo(Reservations::class, 'reservation_id');
     }

@@ -6,6 +6,9 @@ use Carbon\Carbon;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Database\Eloquent\Relations\HasMany;
+use Illuminate\Database\Eloquent\Relations\HasOne;
 
 class Reservations extends Model
 {
@@ -29,12 +32,18 @@ class Reservations extends Model
         'refund_amount',
     ];
 
-    public function storeRooms()
+    /**
+     * @return BelongsTo<StoreRooms, $this>
+     */
+    public function storeRooms(): BelongsTo
     {
         return $this->belongsTo(StoreRooms::class, 'store_room_id');
     }
 
-    public function tenants()
+    /**
+     * @return BelongsTo<Tenants, $this>
+     */
+    public function tenants(): BelongsTo
     {
         return $this->belongsTo(Tenants::class, 'tenant_id');
     }
@@ -42,17 +51,23 @@ class Reservations extends Model
     /**
      * HUE-05 D4: nullable, null for every personal reservation.
      */
-    public function organization()
+    public function organization(): BelongsTo
     {
         return $this->belongsTo(Organization::class, 'organization_id');
     }
 
-    public function payments()
+    /**
+     * @return HasMany<Payments, $this>
+     */
+    public function payments(): HasMany
     {
         return $this->hasMany(Payments::class, 'reservation_id');
     }
 
-    public function cancellationObligation()
+    /**
+     * @return HasOne<ReservationCancellationObligation, $this>
+     */
+    public function cancellationObligation(): HasOne
     {
         return $this->hasOne(ReservationCancellationObligation::class, 'reservation_id');
     }
