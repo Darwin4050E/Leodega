@@ -19,6 +19,11 @@ export default defineConfig([
       ecmaVersion: 2020,
       globals: globals.browser,
     },
+    rules: {
+      // Destructuring a property only to leave it out of the rest object
+      // (`const { a: _a, ...rest } = obj`) is an intentional idiom.
+      '@typescript-eslint/no-unused-vars': ['error', { ignoreRestSiblings: true }],
+    },
   },
   {
     // Los specs de Cypress usan aserciones Chai en forma de getter

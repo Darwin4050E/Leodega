@@ -1,3 +1,6 @@
+/* eslint-disable react-refresh/only-export-components --
+   The context, its provider and the consumer hook are intentionally colocated;
+   splitting them would touch every importer for no behavioural gain. */
 import { createContext, useContext, useState, type ReactNode } from "react";
 
 export interface WizardContextValue {
