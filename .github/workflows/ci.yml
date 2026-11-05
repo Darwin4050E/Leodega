@@ -41,11 +41,12 @@ jobs:
 
       - run: php artisan key:generate
 
-      - name: PHPStan
-        run: vendor/bin/phpstan analyse --memory-limit=1G --no-progress --error-format=github
-
       - name: PHPUnit
         run: php artisan test --coverage-clover=coverage.xml --log-junit=junit.xml
+
+      - name: PHPStan
+        if: ${{ !cancelled() }}
+        run: vendor/bin/phpstan analyse --memory-limit=1G --no-progress --error-format=github
 
       - name: Upload backend reports
         if: always()
