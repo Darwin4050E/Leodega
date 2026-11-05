@@ -5,6 +5,9 @@ namespace App\Models;
 use App\Enums\OrganizationRole;
 use App\Notifications\ResetPasswordNotification;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
+use Illuminate\Database\Eloquent\Relations\BelongsToMany;
+use Illuminate\Database\Eloquent\Relations\HasMany;
+use Illuminate\Database\Eloquent\Relations\HasOne;
 use Illuminate\Foundation\Auth\User as Authenticatable;
 use Illuminate\Notifications\Notifiable;
 use Illuminate\Support\Facades\DB;
@@ -51,52 +54,82 @@ class User extends Authenticatable
     }
 
     // Relation with Landlords
-    public function landlord()
+    /**
+     * @return HasOne<Landlords, $this>
+     */
+    public function landlord(): HasOne
     {
         return $this->hasOne(Landlords::class, 'user_id');
     }
 
-    public function tenant()
+    /**
+     * @return HasOne<Tenants, $this>
+     */
+    public function tenant(): HasOne
     {
         return $this->hasOne(Tenants::class, 'user_id');
     }
 
-    public function sendNotifications()
+    /**
+     * @return HasMany<Notifications, $this>
+     */
+    public function sendNotifications(): HasMany
     {
         return $this->hasMany(Notifications::class, 'emisor_id');
     }
 
-    public function receivedNotifications()
+    /**
+     * @return HasMany<Notifications, $this>
+     */
+    public function receivedNotifications(): HasMany
     {
         return $this->hasMany(Notifications::class, 'receptor_id');
     }
 
-    public function ratings()
+    /**
+     * @return HasMany<Ratings, $this>
+     */
+    public function ratings(): HasMany
     {
         return $this->hasMany(Ratings::class, 'user_id');
     }
 
-    public function reports()
+    /**
+     * @return HasMany<Reports, $this>
+     */
+    public function reports(): HasMany
     {
         return $this->hasMany(Reports::class, 'user_id');
     }
 
-    public function admin()
+    /**
+     * @return HasOne<Admin, $this>
+     */
+    public function admin(): HasOne
     {
         return $this->hasOne(Admin::class, 'user_id');
     }
 
-    public function conversations()
+    /**
+     * @return BelongsToMany<Conversation, $this>
+     */
+    public function conversations(): BelongsToMany
     {
         return $this->belongsToMany(Conversation::class, 'conversation_user');
     }
 
-    public function messages()
+    /**
+     * @return HasMany<Message, $this>
+     */
+    public function messages(): HasMany
     {
         return $this->hasMany(Message::class, 'sender_id');
     }
 
-    public function organizations()
+    /**
+     * @return BelongsToMany<Organization, $this>
+     */
+    public function organizations(): BelongsToMany
     {
         return $this->belongsToMany(Organization::class, 'organization_user')
             ->withPivot('role', 'monthly_limit', 'joined_at');

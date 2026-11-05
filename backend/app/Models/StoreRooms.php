@@ -5,6 +5,8 @@ namespace App\Models;
 use App\Casts\SecurityFeatures;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Database\Eloquent\SoftDeletes;
 
 class StoreRooms extends Model
@@ -40,17 +42,26 @@ class StoreRooms extends Model
         'security' => SecurityFeatures::class,
     ];
 
-    public function landlord()
+    /**
+     * @return BelongsTo<Landlords, $this>
+     */
+    public function landlord(): BelongsTo
     {
         return $this->belongsTo(Landlords::class, 'landlord_id');
     }
 
-    public function storePrices()
+    /**
+     * @return HasMany<StorePrices, $this>
+     */
+    public function storePrices(): HasMany
     {
         return $this->hasMany(StorePrices::class, 'store_room_id');
     }
 
-    public function storePhotos()
+    /**
+     * @return HasMany<StorePhoto, $this>
+     */
+    public function storePhotos(): HasMany
     {
         return $this->hasMany(StorePhoto::class, 'store_room_id');
     }
@@ -60,22 +71,34 @@ class StoreRooms extends Model
         return $this->storePhotos()->count() >= self::MIN_PHOTOS;
     }
 
-    public function storeDisponibility()
+    /**
+     * @return HasMany<StoreDisponibility, $this>
+     */
+    public function storeDisponibility(): HasMany
     {
         return $this->hasMany(StoreDisponibility::class, 'store_room_id');
     }
 
-    public function ratings()
+    /**
+     * @return HasMany<Ratings, $this>
+     */
+    public function ratings(): HasMany
     {
         return $this->hasMany(Ratings::class, 'store_id');
     }
 
-    public function moderations()
+    /**
+     * @return HasMany<StoreModeration, $this>
+     */
+    public function moderations(): HasMany
     {
         return $this->hasMany(StoreModeration::class, 'store_id');
     }
 
-    public function reservations()
+    /**
+     * @return HasMany<Reservations, $this>
+     */
+    public function reservations(): HasMany
     {
         return $this->hasMany(Reservations::class, 'store_room_id');
     }
@@ -87,7 +110,7 @@ class StoreRooms extends Model
      * StoreRoomDeletionService::delete() and every withCount('activeReservations')
      * call site — never duplicate this predicate elsewhere.
      */
-    public function activeReservations()
+    public function activeReservations(): HasMany
     {
         return $this->hasMany(Reservations::class, 'store_room_id')
             ->where('status', 'confirmed')
@@ -106,7 +129,7 @@ class StoreRooms extends Model
      * narrower, present-tense question and must never replace or be merged
      * into activeReservations() (Engram obs #217).
      */
-    public function currentlyOccupiedReservations()
+    public function currentlyOccupiedReservations(): HasMany
     {
         return $this->hasMany(Reservations::class, 'store_room_id')
             ->where('status', 'confirmed')

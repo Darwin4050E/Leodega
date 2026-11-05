@@ -4,6 +4,7 @@ namespace App\Models;
 
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Database\Eloquent\Relations\BelongsTo;
 
 class CancelationsPolices extends Model
 {
@@ -19,7 +20,10 @@ class CancelationsPolices extends Model
         'is_default',
     ];
 
-    public function landlord()
+    /**
+     * @return BelongsTo<Landlords, $this>
+     */
+    public function landlord(): BelongsTo
     {
         return $this->belongsTo(Landlords::class, 'landlord_id');
     }

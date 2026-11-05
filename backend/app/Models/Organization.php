@@ -4,6 +4,9 @@ namespace App\Models;
 
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Database\Eloquent\Relations\BelongsToMany;
+use Illuminate\Database\Eloquent\Relations\HasMany;
 
 class Organization extends Model
 {
@@ -32,23 +35,35 @@ class Organization extends Model
         ];
     }
 
-    public function users()
+    /**
+     * @return BelongsToMany<User, $this>
+     */
+    public function users(): BelongsToMany
     {
         return $this->belongsToMany(User::class, 'organization_user')
             ->withPivot('role', 'monthly_limit', 'joined_at');
     }
 
-    public function walletMovements()
+    /**
+     * @return HasMany<OrganizationWalletMovement, $this>
+     */
+    public function walletMovements(): HasMany
     {
         return $this->hasMany(OrganizationWalletMovement::class);
     }
 
-    public function invitations()
+    /**
+     * @return HasMany<OrganizationInvitation, $this>
+     */
+    public function invitations(): HasMany
     {
         return $this->hasMany(OrganizationInvitation::class);
     }
 
-    public function creator()
+    /**
+     * @return BelongsTo<User, $this>
+     */
+    public function creator(): BelongsTo
     {
         return $this->belongsTo(User::class, 'created_by');
     }

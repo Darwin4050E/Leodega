@@ -7,6 +7,7 @@ use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Casts\Attribute;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Database\Eloquent\Relations\BelongsTo;
 
 /**
  * An invitation for a registered tenant to join an organization. The row is
@@ -57,17 +58,26 @@ class OrganizationInvitation extends Model
             ->where('expires_at', '>', now());
     }
 
-    public function organization()
+    /**
+     * @return BelongsTo<Organization, $this>
+     */
+    public function organization(): BelongsTo
     {
         return $this->belongsTo(Organization::class);
     }
 
-    public function invitee()
+    /**
+     * @return BelongsTo<User, $this>
+     */
+    public function invitee(): BelongsTo
     {
         return $this->belongsTo(User::class, 'invited_user_id');
     }
 
-    public function inviter()
+    /**
+     * @return BelongsTo<User, $this>
+     */
+    public function inviter(): BelongsTo
     {
         return $this->belongsTo(User::class, 'invited_by_user_id');
     }

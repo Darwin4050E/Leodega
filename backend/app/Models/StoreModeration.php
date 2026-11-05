@@ -4,6 +4,7 @@ namespace App\Models;
 
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Database\Eloquent\Relations\BelongsTo;
 
 class StoreModeration extends Model
 {
@@ -22,7 +23,10 @@ class StoreModeration extends Model
         'moderation_date',
     ];
 
-    public function storeRoom()
+    /**
+     * @return BelongsTo<StoreRooms, $this>
+     */
+    public function storeRoom(): BelongsTo
     {
         return $this->belongsTo(StoreRooms::class, 'store_id');
     }
@@ -31,7 +35,10 @@ class StoreModeration extends Model
     // resolves the deciding admin for the activity feed. Nullable — both
     // `admin_id` columns are nullable with `nullOnDelete`, and rows
     // predating SDD 2 have none.
-    public function admin()
+    /**
+     * @return BelongsTo<User, $this>
+     */
+    public function admin(): BelongsTo
     {
         return $this->belongsTo(User::class, 'admin_id');
     }

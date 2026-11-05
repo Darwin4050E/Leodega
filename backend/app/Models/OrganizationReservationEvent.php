@@ -5,6 +5,7 @@ namespace App\Models;
 use App\Enums\ReservationEventKind;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use LogicException;
 
 /**
@@ -50,17 +51,26 @@ class OrganizationReservationEvent extends Model
         });
     }
 
-    public function organization()
+    /**
+     * @return BelongsTo<Organization, $this>
+     */
+    public function organization(): BelongsTo
     {
         return $this->belongsTo(Organization::class);
     }
 
-    public function reservation()
+    /**
+     * @return BelongsTo<Reservations, $this>
+     */
+    public function reservation(): BelongsTo
     {
         return $this->belongsTo(Reservations::class, 'reservation_id');
     }
 
-    public function actor()
+    /**
+     * @return BelongsTo<User, $this>
+     */
+    public function actor(): BelongsTo
     {
         return $this->belongsTo(User::class, 'actor_user_id');
     }
