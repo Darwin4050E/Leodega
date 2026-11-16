@@ -5,10 +5,18 @@ import { Link } from "react-router-dom";
 import { getProfile } from "../services/profile";
 import { getUnreadNotificationsCount } from "../services/notifications";
 import { useAuth } from "../context/useAuth";
+import { useActiveContext } from "../context/useActiveContext";
+import { useInvitationsInbox } from "../context/useInvitationsInbox";
+import { INVITATION_COPY } from "../utils/invitationCopy";
+import { PANEL_COPY } from "../utils/panelCopy";
 import NotificationsDropdown from "../Dashboard/NotificatiosnDropdown";
+import ContextSwitcher from "./ContextSwitcher";
+import ActiveContextRibbon from "./ActiveContextRibbon";
 
 const HeaderTendant = () => {
     const { logout } = useAuth();
+    const { pendingCount } = useInvitationsInbox();
+    const { activeOrganization } = useActiveContext();
     const [mobileDrawerOpen, setMobileDrawerOpen] = useState(false);
     const [userName, setUserName] = useState(null);
     const [userLastName, setUserLastName] = useState("");
@@ -44,12 +52,17 @@ const HeaderTendant = () => {
     };
 
     const navItems = [
-        { label: "Bodegas populares", href: "/storage", path: "/storage" },
+        { label: "Catálogo", href: "/storage", path: "/storage" },
         { label: "Mensajes", href: "/arrendatario/mensajes", path: "/arrendatario/mensajes" },
-        { label: "Calendario", href: "/arrendatario/calendario", path: "/arrendatario/calendario" }
+        { label: "Mis reservas", href: "/arrendatario/mis-reservas", path: "/arrendatario/mis-reservas" },
+        // The panel describes an organization, so it only exists while one is the active context.
+        ...(activeOrganization !== null
+            ? [{ label: PANEL_COPY.title, href: "/organizacion/panel", path: "/organizacion/panel" }]
+            : []),
     ];
 
     return (
+        <>
         <nav className="sticky top-0 z-50 py-5 px-12 backdrop-blur-lg border-b border-neutral-300 bg-white">
             <div className="container px-4 mx-auto relative text-sm">
                 <div className="flex justify-between items-center">
@@ -67,6 +80,7 @@ const HeaderTendant = () => {
                         ))}
                     </ul>
                     <div className="hidden lg:flex justify-center space-x-6 items-center">
+                        <ContextSwitcher placement="header" />
                         <div className="py-2 px-5 rounded-md text-white bg-leodega_p text-center flex items-center justify-center space-x-2">
                             <User className="w-6 h-6" />
                             <div className="pl-3 flex flex-col items-start">
@@ -121,17 +135,30 @@ const HeaderTendant = () => {
                             <div className="text-sm">{userLastName || ""}</div>
                         </div>
 
+                        <ContextSwitcher placement="drawer" />
+
                         <ul className="flex flex-col items-center space-y-6 w-full">
                             {navItems.map((item, index) => (
                                 <li key={index} className='py-2 w-full text-center border-b'>
                                     <a href={item.href}>{item.label}</a>
                                 </li>
                             ))}
+                            <li className='py-2 w-full text-center border-b'>
+                                <Link to="/mi-cuenta/invitaciones">{INVITATION_COPY.drawerEntry(pendingCount)}</Link>
+                            </li>
+                            <li className='py-2 w-full text-center border-b'>
+                                <Link to="/mi-cuenta/crear-organizacion">Crear organización</Link>
+                            </li>
+                            <li className='py-2 w-full text-center border-b'>
+                                <Link to="/login" onClick={handleLogout}>Cerrar sesión</Link>
+                            </li>
                         </ul>
                     </div>
                 )}
             </div>
         </nav>
+        <ActiveContextRibbon />
+        </>
     );
 };
 

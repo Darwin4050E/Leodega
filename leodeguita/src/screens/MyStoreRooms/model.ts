@@ -30,9 +30,14 @@ export const STATUS_META: Record<
   { label: string; tone: StatusTone; filterLabel: string }
 > = {
   rechazada: { label: 'Rechazada', tone: 'err', filterLabel: 'Rechazadas' },
-  pendiente: { label: 'Pendiente', tone: 'warn', filterLabel: 'Pendientes' },
+  pendiente: { label: 'Pendiente de verificación', tone: 'warn', filterLabel: 'Pendientes' },
   ocupada: { label: 'Ocupada', tone: 'info', filterLabel: 'Ocupadas' },
-  disponible: { label: 'Disponible', tone: 'ok', filterLabel: 'Disponibles' },
+  disponible: { label: 'Aprobada', tone: 'ok', filterLabel: 'Aprobadas' },
+}
+
+/** Header subtitle: "1 espacio publicado" / "{n} espacios publicados". */
+export function publishedCountLabel(count: number): string {
+  return count === 1 ? '1 espacio publicado' : `${count} espacios publicados`
 }
 
 export const FILTERS: StatusFilter[] = [

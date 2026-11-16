@@ -4,6 +4,8 @@ namespace App\Models;
 
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Database\Eloquent\Relations\HasMany;
 
 class Tenants extends Model
 {
@@ -17,12 +19,18 @@ class Tenants extends Model
     ];
     //
 
-    public function user()
+    /**
+     * @return BelongsTo<User, $this>
+     */
+    public function user(): BelongsTo
     {
         return $this->belongsTo(User::class, 'user_id');
     }
 
-    public function reservations()
+    /**
+     * @return HasMany<Reservations, $this>
+     */
+    public function reservations(): HasMany
     {
         return $this->hasMany(Reservations::class, 'tenant_id');
     }

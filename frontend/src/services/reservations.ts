@@ -1,5 +1,16 @@
 import api from "../api/axios";
 
+/**
+ * HUE-05 D15: org identity read live (never snapshotted) and eager-loaded as
+ * `organization:id,name,ruc` on every reservation row. Null for a personal
+ * reservation.
+ */
+export interface OrganizationSummary {
+  id: number;
+  name: string;
+  ruc: string;
+}
+
 export interface LandlordReservation {
   id: number;
   status: string;
@@ -25,7 +36,7 @@ export interface LandlordReservation {
    * `payment_status`, since REEMBOLSADO is also `payment_status: 'paid'`.
    */
   payment_id: number | null;
-  payment_method: "credit card" | "debit card" | null;
+  payment_method: "credit card" | "debit card" | "wallet" | null;
   payment_date: string | null;
   // Laravel serializes the `storeRooms()` relation snake_cased.
   store_rooms?: {
@@ -41,6 +52,8 @@ export interface LandlordReservation {
       phone?: string;
     };
   };
+  /** HUE-05 OR-12: null for a personal reservation. */
+  organization?: OrganizationSummary | null;
 }
 
 export function getLandlordReservations() {
@@ -90,14 +103,16 @@ export function getCancellationRate() {
 export interface Payment {
   id: number;
   reservation_id: number;
-  payment_method: "credit card" | "debit card";
+  payment_method: "credit card" | "debit card" | "wallet";
   payment_state: "paid" | "pending" | "failed";
   payment_date: string;
 }
 
 /**
  * Matches `StorePaymentRequest::rules()` on the backend (read-only
- * reference — backend unchanged). No card number/holder/expiry/CVV field
+ * reference — backend unchanged). Card-only on purpose: `wallet` is written
+ * server-side when an organization reservation is created, and the public
+ * endpoint rejects it. No card number/holder/expiry/CVV field
  * ever belongs here: those stay in local component state and are discarded
  * after submit (REQ-PAY-6).
  */
@@ -129,10 +144,13 @@ export interface TenantReceipt {
   end_date: string;
   total_paid: string;
   payment_id: number;
-  payment_method: "credit card" | "debit card" | null;
+  payment_method: "credit card" | "debit card" | "wallet" | null;
   payment_method_label: string | null;
   paid_at: string;
   paid_at_label: string;
+  /** HUE-05 OR-10: present only for an org reservation's receipt. */
+  organization_name?: string | null;
+  organization_ruc?: string | null;
 }
 
 /**
@@ -164,6 +182,21 @@ export interface TenantReservation {
     city?: string;
     size?: number;
   };
+  /**
+   * HUE-05 OR-8/OR-9/D15: present (and non-null) only for an org
+   * reservation; absent in personal context, where every row is trivially
+   * the caller's own. `organization_id` mirrors the plain column.
+   */
+  organization?: OrganizationSummary | null;
+  organization_id?: number | null;
+  /** Org-context rows only — absent for personal rows. */
+  is_creator?: boolean;
+  creator_name?: string | null;
+  /**
+   * HUE-06 OR-18: true on an eligible org row when the caller is not an org
+   * admin. Authoritative: the web never derives it from `activeOrganization.role`.
+   */
+  cancel_requires_admin?: boolean;
 }
 
 export function getTenantReservations() {
@@ -177,17 +210,20 @@ export function getTenantReservations() {
  */
 export interface CancellationPreview {
   can_be_cancelled: boolean;
+  total_amount: string;
   refund_amount: string;
+  penalty_amount: string;
 }
 
 export function getCancellationPreview(id: number | string) {
   return api.get<CancellationPreview>(`/tenant/reservations/${id}/cancellation-preview`);
 }
 
-export function cancelReservationAsTenant(id: number | string) {
+/** `reason` is required by the server for org reservations only; personal cancels send `{}`. */
+export function cancelReservationAsTenant(id: number | string, reason?: string) {
   return api.patch<{ message: string; reservation: TenantReservation }>(
     `/tenant/reservations/${id}/cancel`,
-    {}
+    reason === undefined ? {} : { reason }
   );
 }
 

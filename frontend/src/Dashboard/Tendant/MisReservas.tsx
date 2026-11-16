@@ -1,13 +1,19 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { Calendar } from "lucide-react";
+import { useNavigate } from "react-router-dom";
 
 import HeaderTendant from "../../Components/HeaderTendant";
 import { getTenantReservations, type TenantReservation } from "../../services/reservations";
+import { useActiveContext } from "../../context/useActiveContext";
 import { asApiError } from "../../api/errors";
+import { formatUSD } from "../../utils/money";
 import { deriveTenantTab, type TenantTab } from "../../utils/reservationVigencia";
 import ReservationCard from "./ReservationCard";
 import CancelarReservaTenantModal from "./CancelarReservaTenantModal";
 import ComprobanteReservaModal from "./ComprobanteReservaModal";
+import DejarResenaModal from "./DejarResenaModal";
+
+const TOAST_DURATION_MS = 5000;
 
 const RES_TABS: { key: TenantTab; label: string }[] = [
   { key: "activa", label: "Activas" },
@@ -18,35 +24,64 @@ const RES_TABS: { key: TenantTab; label: string }[] = [
 /**
  * Container for the tenant "Mis reservas" screen. Mirrors
  * TenantReservasPage (PrototipoLeodega-main/js/TenantReservasPage.jsx:223-311)
- * minus review/report actions (out of scope, spec #351). Fetches the list,
+ * with the review/report actions on each card. Fetches the list,
  * derives three tab buckets via `deriveTenantTab`, and renders
  * `ReservationCard[]` + empty states, plus the cancel modal on card click.
  */
 const MisReservas = () => {
+  const navigate = useNavigate();
+  const { context: activeContext } = useActiveContext();
+  // HUE-05 OR-W4: refetch whenever the active context changes (personal<->org,
+  // org A->B). Keyed on a string, not the context object identity, since a
+  // new ActiveContextSelection object is created on every provider render.
+  const contextKey =
+    activeContext.kind === "organization" ? `org:${activeContext.organizationId}` : "personal";
+
   const [reservations, setReservations] = useState<TenantReservation[]>([]);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState<string>("");
   const [tab, setTab] = useState<TenantTab>("activa");
   const [cancelingReservation, setCancelingReservation] = useState<TenantReservation | null>(null);
   const [receiptReservation, setReceiptReservation] = useState<TenantReservation | null>(null);
+  const [reviewingReservation, setReviewingReservation] = useState<TenantReservation | null>(null);
+  const [toast, setToast] = useState("");
+
+  // OR-WS10: a response from a context the user has already switched away
+  // from must never overwrite the current one. `requestId` is bumped on
+  // every load() call (including the context-change effect below) and
+  // compared when the promise settles.
+  const latestRequestId = useRef(0);
 
   const load = () => {
+    const requestId = ++latestRequestId.current;
     setLoading(true);
     setLoadError("");
     getTenantReservations()
-      .then((res) => setReservations(res.data))
+      .then((res) => {
+        if (requestId !== latestRequestId.current) return;
+        setReservations(res.data);
+      })
       .catch((error) => {
+        if (requestId !== latestRequestId.current) return;
         const apiError = asApiError(error);
         setReservations([]);
         setLoadError(apiError.response?.data?.message || "No se pudieron cargar las reservas.");
       })
-      .finally(() => setLoading(false));
+      .finally(() => {
+        if (requestId !== latestRequestId.current) return;
+        setLoading(false);
+      });
   };
 
   useEffect(() => {
     load();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [contextKey]);
+
+  useEffect(() => {
+    if (!toast) return;
+    const timer = setTimeout(() => setToast(""), TOAST_DURATION_MS);
+    return () => clearTimeout(timer);
+  }, [toast]);
 
   const buckets = useMemo(() => {
     const grouped: Record<TenantTab, TenantReservation[]> = {
@@ -69,7 +104,16 @@ const MisReservas = () => {
   const list = buckets[tab];
   const activeTabLabel = RES_TABS.find((t) => t.key === tab)?.label.toLowerCase() ?? "";
 
-  const handleCancelled = () => {
+  const handleCancelled = (refundAmount: string) => {
+    // OR-W10: only an org cancel confirms where the money went.
+    if (cancelingReservation?.organization) {
+      const hasRefund = Math.round(Number(refundAmount) * 100) > 0;
+      setToast(
+        hasRefund
+          ? `Reserva cancelada · ${formatUSD(refundAmount, { fixed: true })} reembolsados a la billetera`
+          : "Reserva cancelada"
+      );
+    }
     setCancelingReservation(null);
     setTab("cancelada");
     load();
@@ -85,6 +129,14 @@ const MisReservas = () => {
     setCancelingReservation(null);
     load();
   };
+
+  const handleReviewed = () => {
+    setReviewingReservation(null);
+    setToast("¡Gracias por tu reseña!");
+  };
+
+  // /reportIncident/:id takes the storeroom id, same as the detail page's "Reportar".
+  const handleReport = (r: TenantReservation) => navigate(`/reportIncident/${r.store_room_id}`);
 
   return (
     <>
@@ -157,11 +209,22 @@ const MisReservas = () => {
                 reservation={r}
                 onCancelClick={setCancelingReservation}
                 onReceiptClick={setReceiptReservation}
+                onReviewClick={setReviewingReservation}
+                onReportClick={handleReport}
               />
             ))}
           </div>
         )}
       </div>
+
+      {toast && (
+        <div
+          role="status"
+          className="fixed bottom-6 left-1/2 -translate-x-1/2 z-[2300] bg-gray-900 text-white text-sm font-medium px-5 py-3 rounded-lg shadow-lg"
+        >
+          {toast}
+        </div>
+      )}
 
       {cancelingReservation && (
         <CancelarReservaTenantModal
@@ -169,6 +232,14 @@ const MisReservas = () => {
           onClose={() => setCancelingReservation(null)}
           onCancelled={handleCancelled}
           onNeedsRefresh={handleNeedsRefresh}
+        />
+      )}
+
+      {reviewingReservation && (
+        <DejarResenaModal
+          reservation={reviewingReservation}
+          onClose={() => setReviewingReservation(null)}
+          onReviewed={handleReviewed}
         />
       )}
 

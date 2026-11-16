@@ -2,20 +2,10 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen, fireEvent, waitFor, within, act } from '@testing-library/react';
 
 const mockGetStoreRooms = vi.hoisted(() => vi.fn());
-const mockRateStoreRoom = vi.hoisted(() => vi.fn());
-const mockUseAuth = vi.hoisted(() => vi.fn());
 const mockNavigate = vi.hoisted(() => vi.fn());
 
 vi.mock('../../services/storeRooms', () => ({
   getStoreRooms: mockGetStoreRooms,
-}));
-
-vi.mock('../../services/ratings', () => ({
-  rateStoreRoom: mockRateStoreRoom,
-}));
-
-vi.mock('../../context/useAuth', () => ({
-  useAuth: mockUseAuth,
 }));
 
 vi.mock('../../Components/HeaderTendant', () => ({
@@ -87,7 +77,6 @@ const roomWithoutCoords = {
 describe('Storage (catalog container)', () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    mockUseAuth.mockReturnValue({ token: null });
     mockGetStoreRooms.mockResolvedValue({ data: [roomWithCoords, roomWithoutCoords] });
   });
 
@@ -391,9 +380,7 @@ describe('Storage (catalog container)', () => {
     });
   });
 
-  it('keeps the existing rating widget and "Ver bodega" navigation intact and additive', async () => {
-    mockUseAuth.mockReturnValue({ token: 'fake-token' });
-    mockRateStoreRoom.mockResolvedValue({ data: {} });
+  it('shows the rating as read-only on the card and offers no way to rate from the catalog', async () => {
     render(<Storage />);
     await screen.findByText('Bodega Centro');
 
@@ -402,15 +389,14 @@ describe('Storage (catalog container)', () => {
     const stars = Array.from(starsContainer.querySelectorAll('svg.lucide-star'));
     expect(stars.length).toBe(5);
 
-    fireEvent.click(stars[3]); // 4th star
-    fireEvent.click(within(card).getByRole('button', { name: 'Calificar' }));
+    expect(within(card).queryByRole('button', { name: /Calificar|Ya calificado/ })).not.toBeInTheDocument();
+  });
 
-    await waitFor(() =>
-      expect(mockRateStoreRoom).toHaveBeenCalledWith(
-        expect.objectContaining({ store_id: 1, stars: 4 })
-      )
-    );
+  it('keeps the "Ver bodega" navigation intact', async () => {
+    render(<Storage />);
+    await screen.findByText('Bodega Centro');
 
+    const card = screen.getByText('Bodega Centro').closest('.rounded-2xl') as HTMLElement;
     fireEvent.click(within(card).getByRole('button', { name: /Ver bodega/ }));
     expect(mockNavigate).toHaveBeenCalledWith('/detalles/1');
   });

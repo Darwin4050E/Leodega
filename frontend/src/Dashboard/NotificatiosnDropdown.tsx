@@ -7,13 +7,17 @@ import {
     type AppNotification,
 } from "../services/notifications";
 import { formatUSD } from "../utils/money";
+import { organizationIdentityLine } from "../utils/organization";
+import { resolveNotificationRoute } from "../utils/notificationRoutes";
 import { useEffect, useState, type Dispatch, type SetStateAction } from "react";
 
 interface NotificationsDropdownProps {
+    /** Called before navigating, so the host can close the dropdown. */
+    onClose?: () => void;
     onUnreadChange: Dispatch<SetStateAction<number>>;
 }
 
-const NotificationsDropdown = ({ onUnreadChange }: NotificationsDropdownProps) => {
+const NotificationsDropdown = ({ onClose, onUnreadChange }: NotificationsDropdownProps) => {
     const navigate = useNavigate();
     const [notifications, setNotifications] = useState<AppNotification[]>([]);
 
@@ -32,10 +36,10 @@ const NotificationsDropdown = ({ onUnreadChange }: NotificationsDropdownProps) =
         }
 
         // REDIRIGIR según tipo
-        if (n.type === "store_reported") {
-            navigate("/admin/solicitudes");
-        } else if (n.type === "reservation_booked_and_paid" || n.type === "reservation_expired") {
-            navigate("/arrendador/solicitudes");
+        const path = resolveNotificationRoute(n.type);
+        if (path !== null) {
+            onClose?.();
+            navigate(path);
         }
     };
 
@@ -56,6 +60,11 @@ const NotificationsDropdown = ({ onUnreadChange }: NotificationsDropdownProps) =
                             <p className="text-xs text-gray-500">
                                 {formatUSD(n.data.amount)} · {n.data.start_date} - {n.data.end_date}
                             </p>
+                            {n.data.organization_name && n.data.organization_ruc && (
+                                <p className="text-xs text-gray-500">
+                                    A nombre de {organizationIdentityLine(n.data.organization_name, n.data.organization_ruc)}
+                                </p>
+                            )}
                         </>
                     ) : hasExpiredReservationData(n) ? (
                         <>
@@ -64,6 +73,11 @@ const NotificationsDropdown = ({ onUnreadChange }: NotificationsDropdownProps) =
                             <p className="text-xs text-gray-500">
                                 {n.data.start_date} - {n.data.end_date}
                             </p>
+                            {n.data.organization_name && n.data.organization_ruc && (
+                                <p className="text-xs text-gray-500">
+                                    A nombre de {organizationIdentityLine(n.data.organization_name, n.data.organization_ruc)}
+                                </p>
+                            )}
                         </>
                     ) : (
                         <>

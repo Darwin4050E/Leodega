@@ -1,10 +1,41 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { render, screen, waitFor, fireEvent } from '@testing-library/react';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import { render, screen, waitFor, fireEvent, act } from '@testing-library/react';
 
 const mockGetTenantReservations = vi.hoisted(() => vi.fn());
+const mockUseActiveContext = vi.hoisted(() => vi.fn());
+const mockNavigate = vi.hoisted(() => vi.fn());
 
 vi.mock('../../services/reservations', () => ({
   getTenantReservations: mockGetTenantReservations,
+}));
+
+const PERSONAL_CONTEXT = { context: { kind: 'personal' } };
+
+vi.mock('react-router-dom', () => ({
+  useNavigate: () => mockNavigate,
+}));
+
+// Own test file covers the review modal; here it only has to open and close.
+vi.mock('./DejarResenaModal', () => ({
+  default: ({
+    reservation,
+    onClose,
+    onReviewed,
+  }: {
+    reservation: { id: number };
+    onClose: () => void;
+    onReviewed: () => void;
+  }) => (
+    <div data-testid="review-modal">
+      <span>{`review-for-${reservation.id}`}</span>
+      <button onClick={onClose}>close-review</button>
+      <button onClick={onReviewed}>reviewed</button>
+    </div>
+  ),
+}));
+
+vi.mock('../../context/useActiveContext', () => ({
+  useActiveContext: mockUseActiveContext,
 }));
 
 vi.mock('../../Components/HeaderTendant', () => ({
@@ -15,9 +46,20 @@ vi.mock('../../Components/HeaderTendant', () => ({
 // here it is stubbed so MisReservas' own responsibilities (fetch, tabs,
 // empty/loading/error states) stay isolated.
 vi.mock('./CancelarReservaTenantModal', () => ({
-  default: ({ onClose }: { onClose: () => void }) => (
+  default: ({
+    onClose,
+    onCancelled,
+    onNeedsRefresh,
+  }: {
+    onClose: () => void;
+    onCancelled: (refund: string) => void;
+    onNeedsRefresh: () => void;
+  }) => (
     <div data-testid="cancel-modal">
       <button onClick={onClose}>close-modal</button>
+      <button onClick={() => onCancelled('50.00')}>cancelled-50</button>
+      <button onClick={() => onCancelled('0.00')}>cancelled-0</button>
+      <button onClick={onNeedsRefresh}>needs-refresh</button>
     </div>
   ),
 }));
@@ -33,6 +75,8 @@ vi.mock('./ComprobanteReservaModal', () => ({
 }));
 
 import MisReservas from './MisReservas';
+
+mockUseActiveContext.mockReturnValue(PERSONAL_CONTEXT);
 
 // Far-future end date keeps 'confirmed' fixtures active regardless of today's date.
 const ACTIVE_END_DATE = '2999-12-31';
@@ -182,5 +226,190 @@ describe('MisReservas', () => {
 
     expect(screen.getByTestId('cancel-modal')).toBeInTheDocument();
     expect(screen.queryByTestId('receipt-modal')).not.toBeInTheDocument();
+  });
+});
+
+describe('MisReservas org cancel success (HUE-06 OR-W10)', () => {
+  const orgRow = (overrides = {}) =>
+    reservation({
+      organization: { id: 5, name: 'Andina', ruc: '1792146739001' },
+      is_creator: false,
+      creator_name: 'Ana Torres',
+      ...overrides,
+    });
+
+  async function openCancelModal() {
+    await waitFor(() => expect(screen.getByText('Galpón Logístico Centro')).toBeInTheDocument());
+    fireEvent.click(screen.getByRole('button', { name: 'Cancelar reserva' }));
+  }
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mockUseActiveContext.mockReturnValue(PERSONAL_CONTEXT);
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it('OR-WS35: shows the refund toast for an org cancel with a refund', async () => {
+    mockGetTenantReservations.mockResolvedValue({ data: [orgRow()] });
+    render(<MisReservas />);
+    await openCancelModal();
+
+    fireEvent.click(screen.getByRole('button', { name: 'cancelled-50' }));
+
+    expect(await screen.findByRole('status')).toHaveTextContent(
+      'Reserva cancelada · $50.00 reembolsados a la billetera'
+    );
+  });
+
+  it('OR-WS36: shows the plain toast when an org cancel refunds nothing', async () => {
+    mockGetTenantReservations.mockResolvedValue({ data: [orgRow()] });
+    render(<MisReservas />);
+    await openCancelModal();
+
+    fireEvent.click(screen.getByRole('button', { name: 'cancelled-0' }));
+
+    expect(await screen.findByRole('status')).toHaveTextContent(/^Reserva cancelada$/);
+  });
+
+  it('OR-WS37: closes the modal, switches to the cancelada tab and reloads the list', async () => {
+    mockGetTenantReservations.mockResolvedValueOnce({ data: [orgRow({ id: 1 })] });
+    render(<MisReservas />);
+    await openCancelModal();
+    expect(mockGetTenantReservations).toHaveBeenCalledTimes(1);
+
+    mockGetTenantReservations.mockResolvedValueOnce({
+      data: [orgRow({ id: 1, status: 'canceled', can_be_cancelled: false, refund_amount: '50.00' })],
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'cancelled-50' }));
+
+    expect(screen.queryByTestId('cancel-modal')).not.toBeInTheDocument();
+    await waitFor(() => expect(mockGetTenantReservations).toHaveBeenCalledTimes(2));
+    expect(await screen.findByText('LEO-000001')).toBeInTheDocument();
+    expect(screen.getByText('Cancelada')).toBeInTheDocument();
+  });
+
+  it('dismisses the toast after 5000 ms', async () => {
+    mockGetTenantReservations.mockResolvedValue({ data: [orgRow()] });
+    render(<MisReservas />);
+    await openCancelModal();
+
+    vi.useFakeTimers();
+    fireEvent.click(screen.getByRole('button', { name: 'cancelled-50' }));
+    expect(screen.getByRole('status')).toBeInTheDocument();
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(4999);
+    });
+    expect(screen.getByRole('status')).toBeInTheDocument();
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(1);
+    });
+    expect(screen.queryByRole('status')).not.toBeInTheDocument();
+  });
+
+  it('shows no toast after a personal cancel', async () => {
+    mockGetTenantReservations.mockResolvedValue({ data: [reservation()] });
+    render(<MisReservas />);
+    await openCancelModal();
+
+    fireEvent.click(screen.getByRole('button', { name: 'cancelled-50' }));
+
+    expect(screen.queryByTestId('cancel-modal')).not.toBeInTheDocument();
+    expect(screen.queryByRole('status')).not.toBeInTheDocument();
+  });
+
+  it('OR-WS38: a stale refresh closes the modal and reloads without a toast', async () => {
+    mockGetTenantReservations.mockResolvedValue({ data: [orgRow()] });
+    render(<MisReservas />);
+    await openCancelModal();
+
+    fireEvent.click(screen.getByRole('button', { name: 'needs-refresh' }));
+
+    expect(screen.queryByTestId('cancel-modal')).not.toBeInTheDocument();
+    await waitFor(() => expect(mockGetTenantReservations).toHaveBeenCalledTimes(2));
+    expect(screen.queryByRole('status')).not.toBeInTheDocument();
+  });
+});
+
+describe('MisReservas refetch on active context change (OR-W4/OR-WS9/OR-WS10)', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mockUseActiveContext.mockReturnValue(PERSONAL_CONTEXT);
+  });
+
+  it('OR-WS9: issues a new request and shows org rows when the context switches personal -> org1', async () => {
+    mockGetTenantReservations.mockResolvedValueOnce({ data: [reservation({ id: 1 })] });
+    mockUseActiveContext.mockReturnValue(PERSONAL_CONTEXT);
+
+    const { rerender } = render(<MisReservas />);
+    await waitFor(() => expect(screen.getByText('Galpón Logístico Centro')).toBeInTheDocument());
+    expect(mockGetTenantReservations).toHaveBeenCalledTimes(1);
+
+    mockGetTenantReservations.mockResolvedValueOnce({
+      data: [reservation({ id: 2, is_creator: true, creator_name: 'Ana Torres' })],
+    });
+    mockUseActiveContext.mockReturnValue({ context: { kind: 'organization', organizationId: 1 } });
+    rerender(<MisReservas />);
+
+    await waitFor(() => expect(mockGetTenantReservations).toHaveBeenCalledTimes(2));
+    await waitFor(() => expect(screen.getByText('LEO-000002')).toBeInTheDocument());
+    expect(screen.queryByText('LEO-000001')).not.toBeInTheDocument();
+  });
+
+  it('OR-WS10: discards a slow response from the old context that resolves after the switch', async () => {
+    let resolvePersonal: (value: { data: unknown[] }) => void = () => {};
+    mockGetTenantReservations.mockReturnValueOnce(
+      new Promise((resolve) => {
+        resolvePersonal = resolve;
+      })
+    );
+    mockUseActiveContext.mockReturnValue(PERSONAL_CONTEXT);
+
+    const { rerender } = render(<MisReservas />);
+    await waitFor(() => expect(mockGetTenantReservations).toHaveBeenCalledTimes(1));
+
+    mockGetTenantReservations.mockResolvedValueOnce({
+      data: [reservation({ id: 2, is_creator: true, creator_name: 'Ana Torres' })],
+    });
+    mockUseActiveContext.mockReturnValue({ context: { kind: 'organization', organizationId: 1 } });
+    rerender(<MisReservas />);
+
+    await waitFor(() => expect(screen.getByText('LEO-000002')).toBeInTheDocument());
+
+    // The stale personal-context response now resolves late — it must not
+    // overwrite the already-rendered org list.
+    resolvePersonal({ data: [reservation({ id: 1 })] });
+
+    await waitFor(() => expect(screen.getByText('LEO-000002')).toBeInTheDocument());
+    expect(screen.queryByText('LEO-000001')).not.toBeInTheDocument();
+  });
+
+  it('"Reportar un problema" opens the incident report for the reservation storeroom', async () => {
+    mockGetTenantReservations.mockResolvedValue({ data: [reservation({ id: 8, store_room_id: 3 })] });
+
+    render(<MisReservas />);
+    fireEvent.click(await screen.findByRole('button', { name: /Reportar un problema/ }));
+
+    expect(mockNavigate).toHaveBeenCalledWith('/reportIncident/3');
+  });
+
+  it('"Dejar reseña" opens the review modal on a finished reservation and thanks the user after', async () => {
+    mockGetTenantReservations.mockResolvedValue({
+      data: [reservation({ id: 8, end_date: '2020-01-01' })],
+    });
+
+    render(<MisReservas />);
+    fireEvent.click(await screen.findByRole('button', { name: /Finalizadas/ }));
+    fireEvent.click(await screen.findByRole('button', { name: /Dejar reseña/ }));
+    expect(screen.getByText('review-for-8')).toBeInTheDocument();
+
+    fireEvent.click(screen.getByText('reviewed'));
+
+    expect(screen.queryByTestId('review-modal')).not.toBeInTheDocument();
+    expect(screen.getByRole('status')).toHaveTextContent('¡Gracias por tu reseña!');
   });
 });

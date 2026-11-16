@@ -74,6 +74,34 @@ describe('AuthProvider / useAuth', () => {
     expect(localStorage.getItem('auth_user')).toBeNull();
   });
 
+  it('logout removes the active context key of the user that is leaving and no other', () => {
+    localStorage.setItem('auth_token', 'abc123');
+    localStorage.setItem('auth_user', JSON.stringify(sampleUser));
+    localStorage.setItem('active_context:1', '7');
+    localStorage.setItem('active_context:2', '9');
+
+    const { result } = renderHook(() => useAuth(), { wrapper });
+
+    act(() => {
+      result.current.logout();
+    });
+
+    expect(localStorage.getItem('active_context:1')).toBeNull();
+    expect(localStorage.getItem('active_context:2')).toBe('9');
+  });
+
+  it('logout without a stored session leaves every active context key alone', () => {
+    localStorage.setItem('active_context:1', '7');
+
+    const { result } = renderHook(() => useAuth(), { wrapper });
+
+    act(() => {
+      result.current.logout();
+    });
+
+    expect(localStorage.getItem('active_context:1')).toBe('7');
+  });
+
   it('useAuth throws when used outside AuthProvider', () => {
     expect(() => renderHook(() => useAuth())).toThrow(
       'useAuth debe usarse dentro de <AuthProvider>'

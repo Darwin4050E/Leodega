@@ -4,6 +4,17 @@ import { MemoryRouter } from "react-router-dom";
 
 const mockGetDashboardSummary = vi.hoisted(() => vi.fn());
 const mockGetRecentActivity = vi.hoisted(() => vi.fn());
+const mockGetPendingStoreRooms = vi.hoisted(() => vi.fn());
+const mockNavigate = vi.hoisted(() => vi.fn());
+
+vi.mock("react-router-dom", async () => ({
+  ...(await vi.importActual<typeof import("react-router-dom")>("react-router-dom")),
+  useNavigate: () => mockNavigate,
+}));
+
+vi.mock("../../services/storeRooms", () => ({
+  getPendingStoreRooms: mockGetPendingStoreRooms,
+}));
 
 vi.mock("../../services/dashboard", () => ({
   getDashboardSummary: mockGetDashboardSummary,
@@ -61,6 +72,7 @@ describe("ResumenAdmin", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     mockGetRecentActivity.mockResolvedValue({ data: [] });
+    mockGetPendingStoreRooms.mockResolvedValue({ data: [] });
   });
 
   // ── Metric cards ────────────────────────────────────────────
@@ -143,5 +155,67 @@ describe("ResumenAdmin", () => {
 
     await waitFor(() => expect(screen.getByText("Error de actividad")).toBeInTheDocument());
     expect(screen.getByText("14")).toBeInTheDocument();
+  });
+
+  // ── Pending rooms queue ─────────────────────────────────────
+
+  const pendingRoom = (id: number, title: string) => ({
+    id,
+    title,
+    landlord: { name: "Carlos Mora" },
+    size: 320,
+    monthly_price: 780,
+    permit_attached: id % 2 === 1,
+    photos: [],
+  });
+
+  it("lists the first pending rooms with a Revisar button that opens the moderation page", async () => {
+    mockGetDashboardSummary.mockResolvedValueOnce({ data: summary });
+    mockGetPendingStoreRooms.mockResolvedValueOnce({
+      data: [1, 2, 3, 4, 5].map((id) => pendingRoom(id, `Bodega ${id}`)),
+    });
+
+    renderComponent();
+
+    expect(await screen.findByText("Bodegas pendientes por aprobar")).toBeInTheDocument();
+    expect(screen.getByText("Aprobación por bodega, una sola vez.")).toBeInTheDocument();
+    await waitFor(() => expect(screen.getByText("Bodega 1")).toBeInTheDocument());
+    expect(screen.getByText("Bodega 4")).toBeInTheDocument();
+    expect(screen.queryByText("Bodega 5")).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /aprobar|rechazar/i })).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getAllByRole("button", { name: "Revisar" })[0]);
+    expect(mockNavigate).toHaveBeenLastCalledWith("/admin/moderacion");
+
+    fireEvent.click(screen.getByRole("button", { name: "Revisar cola →" }));
+    expect(mockNavigate).toHaveBeenLastCalledWith("/admin/moderacion");
+  });
+
+  it("shows 'Cola al día' in the queue block when nothing is pending", async () => {
+    mockGetDashboardSummary.mockResolvedValueOnce({ data: zeroSummary });
+
+    renderComponent();
+
+    await waitFor(() => expect(screen.getAllByText("Cola al día").length).toBe(2));
+    expect(screen.queryByRole("button", { name: "Revisar cola →" })).not.toBeInTheDocument();
+  });
+
+  it("does not blank the rest when the pending queue fails", async () => {
+    mockGetDashboardSummary.mockResolvedValueOnce({ data: summary });
+    mockGetPendingStoreRooms.mockRejectedValueOnce(new Error("boom"));
+
+    renderComponent();
+
+    await waitFor(() => expect(screen.getByText("14")).toBeInTheDocument());
+    expect(await screen.findByText(/no se pudo cargar la cola/i)).toBeInTheDocument();
+  });
+
+  it("links the Cuentas card to the accounts page", async () => {
+    mockGetDashboardSummary.mockResolvedValueOnce({ data: summary });
+
+    renderComponent();
+
+    fireEvent.click(await screen.findByRole("button", { name: "Gestionar →" }));
+    expect(mockNavigate).toHaveBeenLastCalledWith("/admin/usuarios");
   });
 });

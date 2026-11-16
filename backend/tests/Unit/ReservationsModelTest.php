@@ -2,6 +2,7 @@
 
 namespace Tests\Unit;
 
+use App\Models\Organization;
 use App\Models\Reservations;
 use App\Models\StoreRooms;
 use App\Models\Tenants;
@@ -188,5 +189,124 @@ class ReservationsModelTest extends TestCase
         ]);
 
         $this->assertTrue($reservation->isExpiredHold());
+    }
+
+    // -- HUE-05 D12 (refined, decision #589): organization() relation and
+    // the active-organization-hold scope backing the account-deletion 409
+    // guard (UserController::destroySelf, U1b). "Active" = a `confirmed`
+    // reservation that has not ended yet, OR an unexpired `pending` hold. --
+
+    public function test_organization_relation_resolves_the_owning_organization()
+    {
+        $organization = Organization::factory()->create();
+        $reservation = $this->reservation(['organization_id' => $organization->id]);
+
+        $this->assertTrue($reservation->organization()->getResults()->is($organization));
+    }
+
+    public function test_organization_relation_is_null_for_a_personal_reservation()
+    {
+        $reservation = $this->reservation();
+
+        $this->assertNull($reservation->organization);
+    }
+
+    public function test_active_organization_hold_scope_includes_confirmed_reservation_ending_in_the_future()
+    {
+        $organization = Organization::factory()->create();
+        $tenant = Tenants::factory()->create();
+        $reservation = $this->reservation([
+            'tenant_id' => $tenant->id,
+            'organization_id' => $organization->id,
+            'status' => 'confirmed',
+            'end_date' => today()->addDay()->toDateString(),
+        ]);
+
+        $this->assertTrue(
+            Reservations::activeOrganizationHoldFor($tenant->id)->where('id', $reservation->id)->exists()
+        );
+    }
+
+    public function test_active_organization_hold_scope_excludes_confirmed_reservation_that_already_ended()
+    {
+        $organization = Organization::factory()->create();
+        $tenant = Tenants::factory()->create();
+        $reservation = $this->reservation([
+            'tenant_id' => $tenant->id,
+            'organization_id' => $organization->id,
+            'status' => 'confirmed',
+            'end_date' => today()->subDay()->toDateString(),
+        ]);
+
+        $this->assertFalse(
+            Reservations::activeOrganizationHoldFor($tenant->id)->where('id', $reservation->id)->exists()
+        );
+    }
+
+    public function test_active_organization_hold_scope_includes_unexpired_pending_hold()
+    {
+        config(['reservations.payment_hold_minutes' => 15]);
+        Carbon::setTestNow('2026-01-01 12:00:00');
+        $organization = Organization::factory()->create();
+        $tenant = Tenants::factory()->create();
+        $reservation = $this->reservation([
+            'tenant_id' => $tenant->id,
+            'organization_id' => $organization->id,
+            'status' => 'pending',
+            'created_at' => Carbon::parse('2026-01-01 11:55:00'),
+        ]);
+
+        $this->assertTrue(
+            Reservations::activeOrganizationHoldFor($tenant->id)->where('id', $reservation->id)->exists()
+        );
+    }
+
+    public function test_active_organization_hold_scope_excludes_expired_pending_hold()
+    {
+        config(['reservations.payment_hold_minutes' => 15]);
+        Carbon::setTestNow('2026-01-01 12:00:00');
+        $organization = Organization::factory()->create();
+        $tenant = Tenants::factory()->create();
+        $reservation = $this->reservation([
+            'tenant_id' => $tenant->id,
+            'organization_id' => $organization->id,
+            'status' => 'pending',
+            'created_at' => Carbon::parse('2026-01-01 11:00:00'),
+        ]);
+
+        $this->assertFalse(
+            Reservations::activeOrganizationHoldFor($tenant->id)->where('id', $reservation->id)->exists()
+        );
+    }
+
+    public function test_active_organization_hold_scope_excludes_canceled_reservation()
+    {
+        $organization = Organization::factory()->create();
+        $tenant = Tenants::factory()->create();
+        $reservation = $this->reservation([
+            'tenant_id' => $tenant->id,
+            'organization_id' => $organization->id,
+            'status' => 'canceled',
+            'end_date' => today()->addDay()->toDateString(),
+        ]);
+
+        $this->assertFalse(
+            Reservations::activeOrganizationHoldFor($tenant->id)->where('id', $reservation->id)->exists()
+        );
+    }
+
+    public function test_active_organization_hold_scope_excludes_personal_reservations()
+    {
+        $tenant = Tenants::factory()->create();
+        $reservation = $this->reservation([
+            'tenant_id' => $tenant->id,
+            'organization_id' => null,
+            'status' => 'confirmed',
+            'end_date' => today()->addDay()->toDateString(),
+        ]);
+
+        $this->assertFalse(
+            Reservations::activeOrganizationHoldFor($tenant->id)->where('id', $reservation->id)->exists()
+        );
     }
 }

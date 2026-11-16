@@ -6,7 +6,9 @@ const mockGetStoreRoomQuote = vi.hoisted(() => vi.fn());
 const mockGetReservedDates = vi.hoisted(() => vi.fn());
 const mockCreateReservation = vi.hoisted(() => vi.fn());
 const mockCreatePayment = vi.hoisted(() => vi.fn());
+const mockGetOrganizationWallet = vi.hoisted(() => vi.fn());
 const mockUseAuth = vi.hoisted(() => vi.fn());
+const mockUseActiveContext = vi.hoisted(() => vi.fn());
 const mockAlert = vi.hoisted(() => vi.fn());
 const mockNavigate = vi.hoisted(() => vi.fn());
 
@@ -15,6 +17,25 @@ vi.mock('react-router-dom', () => ({
   useNavigate: () => mockNavigate,
   useLocation: () => ({ pathname: '/leodega/7' }),
 }));
+
+// HUE-05: every pre-existing test in this file exercises the personal
+// (non-org) path, so the default mock MUST resolve as "personal" or all
+// ~60 of them would see an unresolved/undefined context and break.
+vi.mock('../context/useActiveContext', () => ({
+  useActiveContext: mockUseActiveContext,
+}));
+
+const PERSONAL_CONTEXT = {
+  context: { kind: 'personal' },
+  activeOrganization: null,
+  organizations: [],
+  status: 'idle',
+  enabled: false,
+  selectOrganization: vi.fn(),
+  selectPersonal: vi.fn(),
+  activateOrganization: vi.fn(),
+  reloadOrganizations: vi.fn(),
+};
 
 vi.mock('react-leaflet', () => ({
   MapContainer: ({ children }: { children: React.ReactNode }) => (
@@ -39,12 +60,29 @@ vi.mock('../services/reservations', () => ({
   createPayment: mockCreatePayment,
 }));
 
+vi.mock('../services/organizations', () => ({
+  getOrganizationWallet: mockGetOrganizationWallet,
+}));
+
+// Own test file covers the modal; here it only has to prove it opens in place.
+vi.mock('./WalletTopUpModal', () => ({
+  default: ({ organizationId }: { organizationId: number }) => (
+    <div data-testid="top-up-modal">{`top-up-for-${organizationId}`}</div>
+  ),
+}));
+
 vi.mock('../context/useAuth', () => ({
   useAuth: mockUseAuth,
 }));
 
 import LeodegaUI from './LeodegaUI';
 import { RESERVATION_OVERLAP_MESSAGE } from '../utils/reservationFlow';
+import { subscribeToWalletChanges } from '../utils/walletEvents';
+
+// vi.clearAllMocks() (used throughout this file) only clears call history,
+// never the mockReturnValue implementation below -- so this default applies
+// to every test unless a describe block below overrides it explicitly.
+mockUseActiveContext.mockReturnValue(PERSONAL_CONTEXT);
 
 const storeRoomDetail = {
   title: 'Bodega Norte',
@@ -189,6 +227,28 @@ describe('LeodegaUI checkout step flow (replaces the dead-end alert())', () => {
     await waitFor(() => expect(screen.getByText('LEO-000042')).toBeInTheDocument());
     // Step header still renders at comprobante, with "Detalle" and "Pago" completed.
     expect(screen.getAllByText('✓')).toHaveLength(2);
+  });
+
+  it('receipt actions go to the tenant reservations and the catalog', async () => {
+    mockCreateReservation.mockResolvedValue({ data: { message: 'ok', reservation: createdReservation } });
+    mockCreatePayment.mockResolvedValue({ data: { message: 'ok', payment: { id: 1 } } });
+
+    await openReserveAndSubmit();
+    await waitFor(() => expect(screen.getByRole('button', { name: /Confirmar y pagar/ })).toBeInTheDocument());
+    fireEvent.change(screen.getByLabelText('Número de tarjeta'), { target: { value: '4242 4242 4242 4242' } });
+    fireEvent.change(screen.getByLabelText('Titular de la tarjeta'), { target: { value: 'María López' } });
+    fireEvent.change(screen.getByLabelText('Vencimiento'), { target: { value: '1225' } });
+    fireEvent.change(screen.getByLabelText('CVV'), { target: { value: '123' } });
+    fireEvent.click(screen.getByRole('button', { name: /Confirmar y pagar/ }));
+    await waitFor(() => expect(screen.getByText('LEO-000042')).toBeInTheDocument());
+
+    mockNavigate.mockClear();
+    fireEvent.click(screen.getByRole('button', { name: 'Ver mis reservas' }));
+    expect(mockNavigate).toHaveBeenCalledWith('/arrendatario/mis-reservas');
+
+    mockNavigate.mockClear();
+    fireEvent.click(screen.getByRole('button', { name: 'Volver al catálogo' }));
+    expect(mockNavigate).toHaveBeenCalledWith('/storage');
   });
 
   it('clicking "Salir" from BookingStepHeader while at pago returns to detail', async () => {
@@ -731,6 +791,16 @@ describe('LeodegaUI "Tu gestor" card', () => {
     expect(screen.getByRole('button', { name: 'Contactar' })).toBeInTheDocument();
   });
 
+  it('"Contactar" opens the tenant chat with the manager preselected', async () => {
+    mockGetStoreRoomDetail.mockResolvedValue({ data: storeRoomDetail });
+
+    render(<LeodegaUI />);
+    await waitFor(() => screen.getByText('Bodega Norte'));
+    fireEvent.click(screen.getByRole('button', { name: 'Contactar' }));
+
+    expect(mockNavigate).toHaveBeenCalledWith('/arrendatario/mensajes?userId=2');
+  });
+
   it('never renders "Verificado" or "Responde en", with or without start_date (no real source for either)', async () => {
     mockGetStoreRoomDetail.mockResolvedValue({
       data: { ...storeRoomDetail, landlord: { ...storeRoomDetail.landlord, start_date: '2026-09-15' } },
@@ -1132,5 +1202,350 @@ describe('LeodegaUI single reserve control and back label (RB-6, SRD-3)', () => 
     fireEvent.click(screen.getByRole('button', { name: '← Volver a mis bodegas' }));
 
     expect(mockNavigate).toHaveBeenCalledWith('/arrendador/bodegas');
+  });
+});
+
+describe('LeodegaUI organization reservation notice (OR-W1/OR-W2)', () => {
+  const orgReservation = {
+    id: 42,
+    status: 'confirmed',
+    payment_method: 'wallet',
+    is_creator: true,
+    start_date: '2030-01-10',
+    end_date: '2030-04-10',
+    total_mount: '4180.00',
+    rent_subtotal: '3800.00',
+    organization: { id: 5, name: 'Andina', ruc: '1792146739001' },
+  };
+
+  function orgContext(overrides: Partial<typeof PERSONAL_CONTEXT> = {}) {
+    return {
+      ...PERSONAL_CONTEXT,
+      context: { kind: 'organization', organizationId: 5 },
+      activeOrganization: { id: 5, name: 'Andina', ruc: '1792146739001', email: 'a@a.com', logo: null, status: 'active', role: 'member' },
+      status: 'ready',
+      enabled: true,
+      ...overrides,
+    };
+  }
+
+  function adminOrgContext() {
+    const base = orgContext();
+    return { ...base, activeOrganization: { ...base.activeOrganization!, role: 'admin' } };
+  }
+
+  async function openModal() {
+    render(<LeodegaUI />);
+    await waitFor(() => screen.getByText('Bodega Norte'));
+    fireEvent.click(screen.getByRole('button', { name: 'Reservar' }));
+    await waitFor(() => expect(screen.queryByText('Cargando disponibilidad...')).not.toBeInTheDocument());
+  }
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mockUseAuth.mockReturnValue({ user: { id: 9, role: 'tenant' } });
+    mockGetStoreRoomDetail.mockResolvedValue({ data: storeRoomDetail });
+    mockGetReservedDates.mockResolvedValue({ data: [] });
+    mockGetOrganizationWallet.mockResolvedValue({ data: { organization_id: 5, balance: '80.50' } });
+  });
+
+  async function submitDates() {
+    const dateInputs = screen.getAllByDisplayValue('');
+    fireEvent.change(dateInputs[0], { target: { value: '2030-01-10' } });
+    fireEvent.change(dateInputs[1], { target: { value: '2030-02-10' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Confirmar reserva' }));
+  }
+
+  it('OR-WS1: shows "Reservando como Andina" in the modal and it persists into the comprobante', async () => {
+    mockUseActiveContext.mockReturnValue(orgContext());
+    mockCreateReservation.mockResolvedValue({ data: { message: 'ok', reservation: orgReservation } });
+
+    await openModal();
+    expect(screen.getByText(/Reservando como/)).toBeInTheDocument();
+    expect(screen.getByText('Andina')).toBeInTheDocument();
+
+    const dateInputs = screen.getAllByDisplayValue('');
+    fireEvent.change(dateInputs[0], { target: { value: '2030-01-10' } });
+    fireEvent.change(dateInputs[1], { target: { value: '2030-02-10' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Confirmar reserva' }));
+
+    await waitFor(() => expect(screen.getByText('¡Reserva confirmada!')).toBeInTheDocument());
+    expect(screen.getByText(/Reservando como/)).toBeInTheDocument();
+    expect(screen.getByText('Andina')).toBeInTheDocument();
+  });
+
+  it('OW-WS9: names the wallet as payment source with its balance, then goes straight to the comprobante with one request and no card step', async () => {
+    mockUseActiveContext.mockReturnValue(orgContext());
+    mockCreateReservation.mockResolvedValue({ data: { message: 'ok', reservation: orgReservation } });
+
+    await openModal();
+    expect(screen.getByText('Saldo de Andina')).toBeInTheDocument();
+    await waitFor(() => expect(screen.getByTestId('booking-wallet-balance')).toHaveTextContent('$80.50'));
+    expect(mockGetOrganizationWallet).toHaveBeenCalledWith(5);
+
+    await submitDates();
+
+    await waitFor(() => expect(screen.getByText('¡Reserva confirmada!')).toBeInTheDocument());
+    expect(mockCreateReservation).toHaveBeenCalledTimes(1);
+    expect(mockCreatePayment).not.toHaveBeenCalled();
+    expect(screen.queryByText('Número de tarjeta')).not.toBeInTheDocument();
+    expect(screen.getByText('● PAGADA')).toBeInTheDocument();
+  });
+
+  it('OW-WS15: announces the wallet change once the reservation is paid from the wallet', async () => {
+    mockUseActiveContext.mockReturnValue(orgContext());
+    mockCreateReservation.mockResolvedValue({ data: { message: 'ok', reservation: orgReservation } });
+    const onWalletChanged = vi.fn();
+    const unsubscribe = subscribeToWalletChanges(onWalletChanged);
+
+    await openModal();
+    await submitDates();
+
+    await waitFor(() => expect(onWalletChanged).toHaveBeenCalledTimes(1));
+    unsubscribe();
+  });
+
+  it('does not announce a wallet change when the reservation is rejected', async () => {
+    mockUseActiveContext.mockReturnValue(orgContext());
+    mockCreateReservation.mockRejectedValue({ response: { status: 409, data: {} } });
+    const onWalletChanged = vi.fn();
+    const unsubscribe = subscribeToWalletChanges(onWalletChanged);
+
+    await openModal();
+    await submitDates();
+
+    await waitFor(() => expect(screen.getByText(RESERVATION_OVERLAP_MESSAGE)).toBeInTheDocument());
+    expect(onWalletChanged).not.toHaveBeenCalled();
+    unsubscribe();
+  });
+
+  it('OW-WS10: a personal reservation shows no wallet source, issues no wallet request and still goes to the card step', async () => {
+    mockUseActiveContext.mockReturnValue(PERSONAL_CONTEXT);
+    mockCreateReservation.mockResolvedValue({
+      data: { message: 'ok', reservation: { ...orgReservation, status: 'pending', payment_method: null, organization: null } },
+    });
+
+    await openModal();
+    expect(screen.queryByText(/Saldo de/)).not.toBeInTheDocument();
+    await submitDates();
+
+    await waitFor(() => expect(screen.getByText('Número de tarjeta')).toBeInTheDocument());
+    expect(mockGetOrganizationWallet).not.toHaveBeenCalled();
+  });
+
+  const walletError = {
+    response: {
+      status: 422,
+      data: {
+        message: 'Saldo insuficiente en la organización',
+        errors: { wallet: ['Saldo insuficiente en la organización'] },
+      },
+    },
+  };
+
+  it('OW-WS11: an admin gets the message plus a Recargar saldo CTA that opens the top-up in place and keeps the booking', async () => {
+    mockUseActiveContext.mockReturnValue(adminOrgContext());
+    mockCreateReservation.mockRejectedValue(walletError);
+
+    await openModal();
+    await submitDates();
+
+    expect(await screen.findByText('Saldo insuficiente en la organización')).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Recargar saldo' }));
+
+    expect(screen.getByText('top-up-for-5')).toBeInTheDocument();
+    expect(mockNavigate).not.toHaveBeenCalled();
+    expect(screen.getByRole('button', { name: 'Confirmar reserva' })).toBeInTheDocument();
+    expect(screen.getByDisplayValue('2030-01-10')).toBeInTheDocument();
+    expect(screen.getByDisplayValue('2030-02-10')).toBeInTheDocument();
+  });
+
+  it('OW-WS12: a member gets the message and no CTA', async () => {
+    mockUseActiveContext.mockReturnValue(orgContext());
+    mockCreateReservation.mockRejectedValue(walletError);
+
+    await openModal();
+    await submitDates();
+
+    expect(await screen.findByText('Saldo insuficiente en la organización')).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Recargar saldo' })).not.toBeInTheDocument();
+    expect(screen.queryByText(/Pide a un administrador/)).not.toBeInTheDocument();
+  });
+
+  const LIMIT_MESSAGE = 'Esta reserva supera tu límite mensual. Pide a un administrador que lo aumente.';
+  const limitError = {
+    response: {
+      status: 422,
+      data: { message: LIMIT_MESSAGE, errors: { monthly_limit: [LIMIT_MESSAGE] } },
+    },
+  };
+
+  it('ML-WS11/OW-WS17: an admin gets the limit message, no Recargar saldo CTA, and the modal stays open', async () => {
+    mockUseActiveContext.mockReturnValue(adminOrgContext());
+    mockCreateReservation.mockRejectedValue(limitError);
+
+    await openModal();
+    await submitDates();
+
+    expect(await screen.findByText(LIMIT_MESSAGE)).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Recargar saldo' })).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Confirmar reserva' })).toBeInTheDocument();
+    expect(screen.getByDisplayValue('2030-01-10')).toBeInTheDocument();
+  });
+
+  it('ML-WS12: a member gets the same limit message and no CTA', async () => {
+    mockUseActiveContext.mockReturnValue(orgContext());
+    mockCreateReservation.mockRejectedValue(limitError);
+
+    await openModal();
+    await submitDates();
+
+    expect(await screen.findByText(LIMIT_MESSAGE)).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Recargar saldo' })).not.toBeInTheDocument();
+  });
+
+  it('ML-WS14: any other 422 keeps the generic dates message', async () => {
+    mockUseActiveContext.mockReturnValue(adminOrgContext());
+    mockCreateReservation.mockRejectedValue({
+      response: { status: 422, data: { errors: { end_date: ['bad'] } } },
+    });
+
+    await openModal();
+    await submitDates();
+
+    expect(await screen.findByText('Revisa las fechas ingresadas.')).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Recargar saldo' })).not.toBeInTheDocument();
+  });
+
+  it('ML-WS15: a wallet shortage followed by a limit rejection drops the CTA, and a retry with other dates works', async () => {
+    mockUseActiveContext.mockReturnValue(adminOrgContext());
+    mockCreateReservation
+      .mockRejectedValueOnce(walletError)
+      .mockRejectedValueOnce(limitError)
+      .mockResolvedValueOnce({ data: { message: 'ok', reservation: orgReservation } });
+
+    await openModal();
+    await submitDates();
+    await screen.findByRole('button', { name: 'Recargar saldo' });
+
+    fireEvent.click(screen.getByRole('button', { name: 'Confirmar reserva' }));
+    expect(await screen.findByText(LIMIT_MESSAGE)).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Recargar saldo' })).not.toBeInTheDocument();
+
+    fireEvent.change(screen.getByDisplayValue('2030-02-10'), { target: { value: '2030-01-20' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Confirmar reserva' }));
+
+    await waitFor(() => expect(screen.getByText('¡Reserva confirmada!')).toBeInTheDocument());
+  });
+
+  it('clears the message and the CTA on a new attempt that succeeds', async () => {
+    mockUseActiveContext.mockReturnValue(adminOrgContext());
+    mockCreateReservation
+      .mockRejectedValueOnce(walletError)
+      .mockResolvedValueOnce({ data: { message: 'ok', reservation: orgReservation } });
+
+    await openModal();
+    await submitDates();
+    await screen.findByRole('button', { name: 'Recargar saldo' });
+
+    fireEvent.click(screen.getByRole('button', { name: 'Confirmar reserva' }));
+
+    await waitFor(() => expect(screen.getByText('¡Reserva confirmada!')).toBeInTheDocument());
+    expect(screen.queryByRole('button', { name: 'Recargar saldo' })).not.toBeInTheDocument();
+  });
+
+  it('OR-WS2: shows no notice in personal context', async () => {
+    mockUseActiveContext.mockReturnValue(PERSONAL_CONTEXT);
+
+    await openModal();
+
+    expect(screen.queryByText(/Reservando como/)).not.toBeInTheDocument();
+  });
+
+  it('OR-WS2: shows no notice while the organization context is still loading', async () => {
+    mockUseActiveContext.mockReturnValue(
+      orgContext({ status: 'loading', activeOrganization: null })
+    );
+
+    await openModal();
+
+    expect(screen.queryByText(/Reservando como/)).not.toBeInTheDocument();
+  });
+
+  it('OR-WS2: shows no notice when the organization context errored', async () => {
+    mockUseActiveContext.mockReturnValue(orgContext({ status: 'error', activeOrganization: null }));
+
+    await openModal();
+
+    expect(screen.queryByText(/Reservando como/)).not.toBeInTheDocument();
+  });
+
+  it('OR-WS1/fail-safe: disables "Confirmar reserva" while an org id is stored but the organization has not resolved yet', async () => {
+    mockUseActiveContext.mockReturnValue(
+      orgContext({ status: 'loading', activeOrganization: null })
+    );
+
+    await openModal();
+
+    const dateInputs = screen.getAllByDisplayValue('');
+    fireEvent.change(dateInputs[0], { target: { value: '2030-01-10' } });
+    fireEvent.change(dateInputs[1], { target: { value: '2030-02-10' } });
+
+    expect(screen.getByRole('button', { name: 'Confirmar reserva' })).toBeDisabled();
+    expect(mockCreateReservation).not.toHaveBeenCalled();
+  });
+
+  it('OR-WS3: the request body carries no organization field', async () => {
+    mockUseActiveContext.mockReturnValue(orgContext());
+    mockCreateReservation.mockResolvedValue({ data: { message: 'ok', reservation: orgReservation } });
+
+    await openModal();
+    const dateInputs = screen.getAllByDisplayValue('');
+    fireEvent.change(dateInputs[0], { target: { value: '2030-01-10' } });
+    fireEvent.change(dateInputs[1], { target: { value: '2030-02-10' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Confirmar reserva' }));
+
+    await waitFor(() => expect(mockCreateReservation).toHaveBeenCalledTimes(1));
+    expect(mockCreateReservation).toHaveBeenCalledWith({
+      store_room_id: 7,
+      start_date: '2030-01-10',
+      end_date: '2030-02-10',
+    });
+  });
+
+  it('OR-WS5: shows the server message on a 422 inactive-organization rejection and keeps the modal open', async () => {
+    mockUseActiveContext.mockReturnValue(orgContext());
+    mockCreateReservation.mockRejectedValue({
+      response: {
+        status: 422,
+        data: {
+          message: 'La organización seleccionada no está activa.',
+          errors: { organization: ['La organización seleccionada no está activa.'] },
+        },
+      },
+    });
+
+    await openModal();
+    const dateInputs = screen.getAllByDisplayValue('');
+    fireEvent.change(dateInputs[0], { target: { value: '2030-01-10' } });
+    fireEvent.change(dateInputs[1], { target: { value: '2030-02-10' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Confirmar reserva' }));
+
+    await waitFor(() =>
+      expect(screen.getByText('La organización seleccionada no está activa.')).toBeInTheDocument()
+    );
+    expect(screen.getByRole('button', { name: 'Confirmar reserva' })).toBeInTheDocument();
+    expect(mockNavigate).not.toHaveBeenCalledWith('/login', expect.anything());
+  });
+
+  it('OR-WS4: a non-tenant viewer (no booking modal) shows no regression and never renders the notice', async () => {
+    mockUseAuth.mockReturnValue({ user: { id: 2, role: 'landlord' } });
+    mockUseActiveContext.mockReturnValue(orgContext());
+
+    render(<LeodegaUI />);
+    await waitFor(() => screen.getByText('Bodega Norte'));
+
+    expect(screen.queryByText(/Reservando como/)).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Reservar' })).not.toBeInTheDocument();
   });
 });

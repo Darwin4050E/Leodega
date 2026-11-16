@@ -3,11 +3,13 @@
 use App\Exceptions\AccountBlockedException;
 use App\Exceptions\AccountModerationException;
 use App\Exceptions\DuplicateRatingException;
+use App\Exceptions\OrganizationInvitationException;
 use App\Exceptions\ReservationConflictException;
 use App\Exceptions\ReservationPricingException;
 use App\Exceptions\StoreRoomResubmissionException;
 use App\Http\Middleware\ApiAuthenticate;
 use App\Http\Middleware\EnsureUserHasRole;
+use App\Http\Middleware\ResolveActiveOrganization;
 use Illuminate\Foundation\Application;
 use Illuminate\Foundation\Configuration\Exceptions;
 use Illuminate\Foundation\Configuration\Middleware;
@@ -25,6 +27,7 @@ return Application::configure(basePath: dirname(__DIR__))
         $middleware->alias([
             'auth.api' => ApiAuthenticate::class,
             'role' => EnsureUserHasRole::class,
+            'org.context' => ResolveActiveOrganization::class,
         ]);
         $middleware->append(\Illuminate\Http\Middleware\HandleCors::class);
         $middleware->trustHosts([ // se cambia a hosting cuando haya dominio real
@@ -39,6 +42,7 @@ return Application::configure(basePath: dirname(__DIR__))
             AccountBlockedException::class,
             AccountModerationException::class,
             DuplicateRatingException::class,
+            OrganizationInvitationException::class,
             ReservationConflictException::class,
             ReservationPricingException::class,
             StoreRoomResubmissionException::class,

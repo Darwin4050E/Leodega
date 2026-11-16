@@ -18,6 +18,7 @@ const Layout: React.FC = () => {
     if (path.includes("/resumen")) setActiveItem("resumen");
     else if (path.includes("/bodegas")) setActiveItem("bodegas");
     else if (path.includes("/moderacion")) setActiveItem("moderacion");
+    else if (path.includes("/usuarios")) setActiveItem("usuarios");
     else if (path.includes("/mensajes")) setActiveItem("mensajes");
     else if (path.includes("/solicitudes")) setActiveItem("solicitudes");
     else if (path.includes("/calendario")) setActiveItem("calendario");

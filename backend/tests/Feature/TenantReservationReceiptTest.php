@@ -2,7 +2,9 @@
 
 namespace Tests\Feature;
 
+use App\Enums\OrganizationRole;
 use App\Models\Landlords;
+use App\Models\Organization;
 use App\Models\Payments;
 use App\Models\Reservations;
 use App\Models\StoreRooms;
@@ -205,6 +207,56 @@ class TenantReservationReceiptTest extends TestCase
 
         $response->assertStatus(200);
         $this->assertStringStartsWith('%PDF', $response->getContent());
+    }
+
+    /**
+     * OR-S18/D6/D13: viewing the receipt stays creator-only -- another
+     * member of the SAME org (even an admin) is denied, exactly like any
+     * other non-owner, regardless of organization membership.
+     */
+    public function test_another_org_member_is_forbidden_from_the_creators_receipt_even_as_admin()
+    {
+        $creator = User::factory()->create(['role' => 'tenant']);
+        $creatorTenant = Tenants::factory()->create(['user_id' => $creator->id]);
+        $admin = User::factory()->create(['role' => 'tenant']);
+        Tenants::factory()->create(['user_id' => $admin->id]);
+        Organization::factory()
+            ->withMember($creator, OrganizationRole::MEMBER)
+            ->withMember($admin, OrganizationRole::ADMIN)
+            ->create();
+        $reservation = $this->reservationFor($creatorTenant, ['id' => 456]);
+        $this->pay($reservation);
+
+        $response = $this->actingAs($admin, 'sanctum')->getJson($this->receiptUrl(456));
+
+        $response->assertStatus(403);
+        $this->assertNotSame('application/pdf', $response->headers->get('Content-Type'));
+    }
+
+    /**
+     * org-wallet OR-S17/OR-S18: the creator downloads the PDF of a wallet-paid
+     * org reservation; a different admin of the same org is still denied.
+     */
+    public function test_the_creator_downloads_the_pdf_of_a_wallet_paid_org_reservation_and_an_admin_does_not()
+    {
+        [$creator, $creatorTenant] = $this->tenantUser();
+        [$admin] = $this->tenantUser();
+        $organization = Organization::factory()
+            ->withMember($creator, OrganizationRole::MEMBER)
+            ->withMember($admin, OrganizationRole::ADMIN)
+            ->create(['name' => 'Andina']);
+        $reservation = $this->reservationFor($creatorTenant, ['organization_id' => $organization->id]);
+        Payments::factory()->create([
+            'reservation_id' => $reservation->id,
+            'payment_state' => 'paid',
+            'payment_method' => 'wallet',
+        ]);
+
+        $this->actingAs($creator, 'sanctum')->get($this->receiptUrl($reservation->id))
+            ->assertStatus(200)
+            ->assertHeader('Content-Type', 'application/pdf');
+        $this->actingAs($admin, 'sanctum')->getJson($this->receiptUrl($reservation->id))
+            ->assertStatus(403);
     }
 
     public function test_a_room_title_with_accents_and_markup_still_renders_a_pdf()

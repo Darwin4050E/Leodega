@@ -1,68 +1,98 @@
 parameters:
 	ignoreErrors:
 		-
-			message: '#^Relation ''landlord'' is not found in App\\Models\\User model\.$#'
-			identifier: larastan.relationExistence
-			count: 1
-			path: app/Http/Controllers/AuthController.php
-
-		-
-			message: '#^Relation ''tenant'' is not found in App\\Models\\User model\.$#'
-			identifier: larastan.relationExistence
-			count: 1
-			path: app/Http/Controllers/AuthController.php
-
-		-
-			message: '#^Class App\\Models\\cancelations_polices not found\.$#'
-			identifier: class.notFound
-			count: 5
-			path: app/Http/Controllers/CancelationsPolicesController.php
-
-		-
-			message: '#^Relation ''lastMessage'' is not found in App\\Models\\Conversation model\.$#'
-			identifier: larastan.relationExistence
-			count: 1
-			path: app/Http/Controllers/ConversationController.php
-
-		-
-			message: '#^Relation ''users'' is not found in App\\Models\\Conversation model\.$#'
-			identifier: larastan.relationExistence
-			count: 4
-			path: app/Http/Controllers/ConversationController.php
-
-		-
-			message: '#^Access to an undefined property App\\Models\\Conversation\:\:\$users\.$#'
+			message: '#^Access to an undefined property Illuminate\\Database\\Eloquent\\Relations\\Pivot\:\:\$role\.$#'
 			identifier: property.notFound
 			count: 1
-			path: app/Http/Controllers/MessageController.php
+			path: app/Http/Controllers/OrganizationInvitationController.php
 
 		-
-			message: '#^Relation ''evidences'' is not found in App\\Models\\Reports model\.$#'
-			identifier: larastan.relationExistence
-			count: 2
-			path: app/Http/Controllers/ReportsController.php
+			message: '#^Access to an undefined property App\\Models\\Organization\:\:\$pivot\.$#'
+			identifier: property.notFound
+			count: 1
+			path: app/Http/Controllers/OrganizationPanelController.php
 
 		-
-			message: '#^Relation ''store'' is not found in App\\Models\\Reports model\.$#'
-			identifier: larastan.relationExistence
-			count: 2
-			path: app/Http/Controllers/ReportsController.php
+			message: '#^Access to an undefined property App\\Models\\Organization\:\:\$pivot\.$#'
+			identifier: property.notFound
+			count: 1
+			path: app/Http/Controllers/OrganizationWalletController.php
 
 		-
-			message: '#^Relation ''user'' is not found in App\\Models\\Reports model\.$#'
-			identifier: larastan.relationExistence
-			count: 2
-			path: app/Http/Controllers/ReportsController.php
-
-		-
-			message: '#^Relation ''storeRooms'' is not found in App\\Models\\Reservations model\.$#'
-			identifier: larastan.relationExistence
+			message: '#^Access to an undefined property App\\Models\\Reservations\:\:\$can_be_cancelled\.$#'
+			identifier: property.notFound
 			count: 2
 			path: app/Http/Controllers/ReservationsController.php
 
 		-
-			message: '#^Relation ''tenants'' is not found in App\\Models\\Reservations model\.$#'
-			identifier: larastan.relationExistence
+			message: '#^Access to an undefined property App\\Models\\Reservations\:\:\$cancel_requires_admin\.$#'
+			identifier: property.notFound
+			count: 1
+			path: app/Http/Controllers/ReservationsController.php
+
+		-
+			message: '#^Access to an undefined property App\\Models\\Reservations\:\:\$creator_name\.$#'
+			identifier: property.notFound
+			count: 1
+			path: app/Http/Controllers/ReservationsController.php
+
+		-
+			message: '#^Access to an undefined property App\\Models\\Reservations\:\:\$has_refund_obligation\.$#'
+			identifier: property.notFound
+			count: 1
+			path: app/Http/Controllers/ReservationsController.php
+
+		-
+			message: '#^Access to an undefined property App\\Models\\Reservations\:\:\$is_creator\.$#'
+			identifier: property.notFound
+			count: 2
+			path: app/Http/Controllers/ReservationsController.php
+
+		-
+			message: '#^Access to an undefined property App\\Models\\Reservations\:\:\$payment_date\.$#'
+			identifier: property.notFound
+			count: 1
+			path: app/Http/Controllers/ReservationsController.php
+
+		-
+			message: '#^Access to an undefined property App\\Models\\Reservations\:\:\$payment_id\.$#'
+			identifier: property.notFound
+			count: 1
+			path: app/Http/Controllers/ReservationsController.php
+
+		-
+			message: '#^Access to an undefined property App\\Models\\Reservations\:\:\$payment_method\.$#'
+			identifier: property.notFound
+			count: 2
+			path: app/Http/Controllers/ReservationsController.php
+
+		-
+			message: '#^Access to an undefined property App\\Models\\Reservations\:\:\$payment_status\.$#'
+			identifier: property.notFound
+			count: 1
+			path: app/Http/Controllers/ReservationsController.php
+
+		-
+			message: '#^Access to an undefined property App\\Models\\Reservations\:\:\$photo_url\.$#'
+			identifier: property.notFound
+			count: 1
+			path: app/Http/Controllers/ReservationsController.php
+
+		-
+			message: '#^Access to an undefined property App\\Models\\Reservations\:\:\$receipt\.$#'
+			identifier: property.notFound
+			count: 1
+			path: app/Http/Controllers/ReservationsController.php
+
+		-
+			message: '#^Access to an undefined property Illuminate\\Contracts\\Auth\\Authenticatable\:\:\$id\.$#'
+			identifier: property.notFound
+			count: 1
+			path: app/Http/Controllers/ReservationsController.php
+
+		-
+			message: '#^Parameter \#2 \$viewer of static method Illuminate\\Database\\Eloquent\\Builder\<App\\Models\\StoreRooms\>\:\:viewableById\(\) expects App\\Models\\User\|null, Illuminate\\Contracts\\Auth\\Authenticatable\|null given\.$#'
+			identifier: argument.type
 			count: 1
 			path: app/Http/Controllers/ReservationsController.php
 
@@ -79,68 +109,26 @@ parameters:
 			path: app/Http/Controllers/SessionController.php
 
 		-
-			message: '#^Access to an undefined property App\\Models\\StoreRooms\:\:\$landlord\.$#'
+			message: '#^Access to an undefined property App\\Models\\Organization\:\:\$pivot\.$#'
 			identifier: property.notFound
-			count: 5
-			path: app/Http/Controllers/StoreRoomsController.php
+			count: 1
+			path: app/Http/Controllers/SpendingLimitController.php
 
 		-
-			message: '#^Access to an undefined property App\\Models\\StoreRooms\:\:\$storePhotos\.$#'
-			identifier: property.notFound
-			count: 3
-			path: app/Http/Controllers/StoreRoomsController.php
-
-		-
-			message: '#^Access to an undefined property App\\Models\\StoreRooms\:\:\$storePrices\.$#'
-			identifier: property.notFound
+			message: '#^Parameter \#1 \$viewer of method Illuminate\\Database\\Eloquent\\Builder\<App\\Models\\StoreRooms\>\:\:visibleTo\(\) expects App\\Models\\User\|null, Illuminate\\Contracts\\Auth\\Authenticatable\|null given\.$#'
+			identifier: argument.type
 			count: 2
 			path: app/Http/Controllers/StoreRoomsController.php
 
 		-
-			message: '#^Access to an undefined property App\\Models\\StoreRooms\|Illuminate\\Database\\Eloquent\\Collection\<int, App\\Models\\StoreRooms\>\:\:\$landlord\.$#'
-			identifier: property.notFound
-			count: 4
-			path: app/Http/Controllers/StoreRoomsController.php
-
-		-
-			message: '#^Access to an undefined property App\\Models\\StoreRooms\|Illuminate\\Database\\Eloquent\\Collection\<int, App\\Models\\StoreRooms\>\:\:\$storePhotos\.$#'
-			identifier: property.notFound
+			message: '#^Parameter \#2 \$viewer of method Illuminate\\Database\\Eloquent\\Builder\<App\\Models\\StoreRooms\>\:\:viewableById\(\) expects App\\Models\\User\|null, Illuminate\\Contracts\\Auth\\Authenticatable\|null given\.$#'
+			identifier: argument.type
 			count: 1
 			path: app/Http/Controllers/StoreRoomsController.php
 
 		-
-			message: '#^Access to an undefined property App\\Models\\StoreRooms\|Illuminate\\Database\\Eloquent\\Collection\<int, App\\Models\\StoreRooms\>\:\:\$storePrices\.$#'
-			identifier: property.notFound
-			count: 1
-			path: app/Http/Controllers/StoreRoomsController.php
-
-		-
-			message: '#^Parameter \#1 \$callback of method Illuminate\\Database\\Eloquent\\Collection\<int,App\\Models\\StoreRooms\>\:\:map\(\) contains unresolvable type\.$#'
-			identifier: argument.unresolvableType
-			count: 2
-			path: app/Http/Controllers/StoreRoomsController.php
-
-		-
-			message: '#^Relation ''landlord'' is not found in App\\Models\\StoreRooms model\.$#'
-			identifier: larastan.relationExistence
-			count: 2
-			path: app/Http/Controllers/StoreRoomsController.php
-
-		-
-			message: '#^Relation ''storeDisponibility'' is not found in App\\Models\\StoreRooms model\.$#'
-			identifier: larastan.relationExistence
-			count: 1
-			path: app/Http/Controllers/StoreRoomsController.php
-
-		-
-			message: '#^Relation ''storePhotos'' is not found in App\\Models\\StoreRooms model\.$#'
-			identifier: larastan.relationExistence
-			count: 1
-			path: app/Http/Controllers/StoreRoomsController.php
-
-		-
-			message: '#^Relation ''storePrices'' is not found in App\\Models\\StoreRooms model\.$#'
-			identifier: larastan.relationExistence
+			message: '#^Parameter \#2 \$viewer of static method Illuminate\\Database\\Eloquent\\Builder\<App\\Models\\StoreRooms\>\:\:viewableById\(\) expects App\\Models\\User\|null, Illuminate\\Contracts\\Auth\\Authenticatable\|null given\.$#'
+			identifier: argument.type
 			count: 1
 			path: app/Http/Controllers/StoreRoomsController.php
 
@@ -151,61 +139,517 @@ parameters:
 			path: app/Http/Middleware/ApiAuthenticate.php
 
 		-
-			message: '#^Class App\\Models\\cancelations_polices not found\.$#'
-			identifier: class.notFound
-			count: 1
-			path: app/Models/Landlords.php
-
-		-
-			message: '#^Parameter \#1 \$related of method Illuminate\\Database\\Eloquent\\Model\:\:hasMany\(\) expects class\-string\<Illuminate\\Database\\Eloquent\\Model\>, string given\.$#'
-			identifier: argument.type
-			count: 1
-			path: app/Models/Landlords.php
-
-		-
-			message: '#^Access to an undefined property App\\Models\\Reservations\:\:\$storeRooms\.$#'
+			message: '#^Access to an undefined property Illuminate\\Database\\Eloquent\\Relations\\Pivot\:\:\$role\.$#'
 			identifier: property.notFound
 			count: 1
-			path: app/Policies/ReservationsPolicy.php
+			path: app/Http/Middleware/ResolveActiveOrganization.php
 
 		-
-			message: '#^PHPDoc tag @SuppressWarnings has invalid value \(\(PHPMD\.UnusedFormalParameter\)\)\: Unexpected token "\.UnusedFormalParameter\)", expected ''\)'' at offset 778 on line 15$#'
+			message: '#^Access to an undefined property Illuminate\\Database\\Eloquent\\Relations\\Pivot\:\:\$role\.$#'
+			identifier: property.notFound
+			count: 1
+			path: app/Http/Requests/InviteMemberRequest.php
+
+		-
+			message: '#^Access to an undefined property Illuminate\\Database\\Eloquent\\Relations\\Pivot\:\:\$role\.$#'
+			identifier: property.notFound
+			count: 1
+			path: app/Http/Requests/SetSpendingLimitRequest.php
+
+		-
+			message: '#^Access to an undefined property Illuminate\\Database\\Eloquent\\Relations\\Pivot\:\:\$role\.$#'
+			identifier: property.notFound
+			count: 1
+			path: app/Http/Requests/TopUpWalletRequest.php
+
+		-
+			message: '#^Access to an undefined property App\\Http\\Resources\\InvitationInboxItemResource\:\:\$effective_status\.$#'
+			identifier: property.notFound
+			count: 1
+			path: app/Http/Resources/InvitationInboxItemResource.php
+
+		-
+			message: '#^Cannot call method toISOString\(\) on string\.$#'
+			identifier: method.nonObject
+			count: 2
+			path: app/Http/Resources/InvitationInboxItemResource.php
+
+		-
+			message: '#^Access to an undefined property App\\Http\\Resources\\InvitationResource\:\:\$effective_status\.$#'
+			identifier: property.notFound
+			count: 1
+			path: app/Http/Resources/InvitationResource.php
+
+		-
+			message: '#^Cannot call method toISOString\(\) on string\.$#'
+			identifier: method.nonObject
+			count: 2
+			path: app/Http/Resources/InvitationResource.php
+
+		-
+			message: '#^Access to an undefined property App\\Http\\Resources\\OrganizationResource\:\:\$email\.$#'
+			identifier: property.notFound
+			count: 1
+			path: app/Http/Resources/OrganizationResource.php
+
+		-
+			message: '#^Access to an undefined property App\\Http\\Resources\\OrganizationResource\:\:\$id\.$#'
+			identifier: property.notFound
+			count: 1
+			path: app/Http/Resources/OrganizationResource.php
+
+		-
+			message: '#^Access to an undefined property App\\Http\\Resources\\OrganizationResource\:\:\$logo_path\.$#'
+			identifier: property.notFound
+			count: 1
+			path: app/Http/Resources/OrganizationResource.php
+
+		-
+			message: '#^Access to an undefined property App\\Http\\Resources\\OrganizationResource\:\:\$name\.$#'
+			identifier: property.notFound
+			count: 1
+			path: app/Http/Resources/OrganizationResource.php
+
+		-
+			message: '#^Access to an undefined property App\\Http\\Resources\\OrganizationResource\:\:\$pivot\.$#'
+			identifier: property.notFound
+			count: 1
+			path: app/Http/Resources/OrganizationResource.php
+
+		-
+			message: '#^Access to an undefined property App\\Http\\Resources\\OrganizationResource\:\:\$ruc\.$#'
+			identifier: property.notFound
+			count: 1
+			path: app/Http/Resources/OrganizationResource.php
+
+		-
+			message: '#^Access to an undefined property App\\Http\\Resources\\OrganizationResource\:\:\$status\.$#'
+			identifier: property.notFound
+			count: 1
+			path: app/Http/Resources/OrganizationResource.php
+
+		-
+			message: '#^Access to an undefined property App\\Http\\Resources\\StoreRoomDetailResource\:\:\$active_reservations_count\.$#'
+			identifier: property.notFound
+			count: 1
+			path: app/Http/Resources/StoreRoomDetailResource.php
+
+		-
+			message: '#^Access to an undefined property App\\Http\\Resources\\StoreRoomDetailResource\:\:\$city\.$#'
+			identifier: property.notFound
+			count: 1
+			path: app/Http/Resources/StoreRoomDetailResource.php
+
+		-
+			message: '#^Access to an undefined property App\\Http\\Resources\\StoreRoomDetailResource\:\:\$description\.$#'
+			identifier: property.notFound
+			count: 1
+			path: app/Http/Resources/StoreRoomDetailResource.php
+
+		-
+			message: '#^Access to an undefined property App\\Http\\Resources\\StoreRoomDetailResource\:\:\$direction\.$#'
+			identifier: property.notFound
+			count: 1
+			path: app/Http/Resources/StoreRoomDetailResource.php
+
+		-
+			message: '#^Access to an undefined property App\\Http\\Resources\\StoreRoomDetailResource\:\:\$id\.$#'
+			identifier: property.notFound
+			count: 1
+			path: app/Http/Resources/StoreRoomDetailResource.php
+
+		-
+			message: '#^Access to an undefined property App\\Http\\Resources\\StoreRoomDetailResource\:\:\$landlord\.$#'
+			identifier: property.notFound
+			count: 6
+			path: app/Http/Resources/StoreRoomDetailResource.php
+
+		-
+			message: '#^Access to an undefined property App\\Http\\Resources\\StoreRoomDetailResource\:\:\$latitude\.$#'
+			identifier: property.notFound
+			count: 1
+			path: app/Http/Resources/StoreRoomDetailResource.php
+
+		-
+			message: '#^Access to an undefined property App\\Http\\Resources\\StoreRoomDetailResource\:\:\$longitude\.$#'
+			identifier: property.notFound
+			count: 1
+			path: app/Http/Resources/StoreRoomDetailResource.php
+
+		-
+			message: '#^Access to an undefined property App\\Http\\Resources\\StoreRoomDetailResource\:\:\$publication_status\.$#'
+			identifier: property.notFound
+			count: 1
+			path: app/Http/Resources/StoreRoomDetailResource.php
+
+		-
+			message: '#^Access to an undefined property App\\Http\\Resources\\StoreRoomDetailResource\:\:\$room_type\.$#'
+			identifier: property.notFound
+			count: 1
+			path: app/Http/Resources/StoreRoomDetailResource.php
+
+		-
+			message: '#^Access to an undefined property App\\Http\\Resources\\StoreRoomDetailResource\:\:\$size\.$#'
+			identifier: property.notFound
+			count: 1
+			path: app/Http/Resources/StoreRoomDetailResource.php
+
+		-
+			message: '#^Access to an undefined property App\\Http\\Resources\\StoreRoomDetailResource\:\:\$storage_type\.$#'
+			identifier: property.notFound
+			count: 1
+			path: app/Http/Resources/StoreRoomDetailResource.php
+
+		-
+			message: '#^Access to an undefined property App\\Http\\Resources\\StoreRoomDetailResource\:\:\$storePhotos\.$#'
+			identifier: property.notFound
+			count: 1
+			path: app/Http/Resources/StoreRoomDetailResource.php
+
+		-
+			message: '#^Access to an undefined property App\\Http\\Resources\\StoreRoomDetailResource\:\:\$storePrices\.$#'
+			identifier: property.notFound
+			count: 1
+			path: app/Http/Resources/StoreRoomDetailResource.php
+
+		-
+			message: '#^Access to an undefined property App\\Http\\Resources\\StoreRoomDetailResource\:\:\$title\.$#'
+			identifier: property.notFound
+			count: 1
+			path: app/Http/Resources/StoreRoomDetailResource.php
+
+		-
+			message: '#^Call to an undefined method App\\Http\\Resources\\StoreRoomDetailResource\:\:currentlyOccupiedReservations\(\)\.$#'
+			identifier: method.notFound
+			count: 1
+			path: app/Http/Resources/StoreRoomDetailResource.php
+
+		-
+			message: '#^Call to an undefined method App\\Http\\Resources\\StoreRoomDetailResource\:\:getRawOriginal\(\)\.$#'
+			identifier: method.notFound
+			count: 1
+			path: app/Http/Resources/StoreRoomDetailResource.php
+
+		-
+			message: '#^Access to an undefined property App\\Http\\Resources\\StoreRoomModerationDetailResource\:\:\$cancellation_policy_tier\.$#'
+			identifier: property.notFound
+			count: 1
+			path: app/Http/Resources/StoreRoomModerationDetailResource.php
+
+		-
+			message: '#^Access to an undefined property App\\Http\\Resources\\StoreRoomModerationDetailResource\:\:\$city\.$#'
+			identifier: property.notFound
+			count: 1
+			path: app/Http/Resources/StoreRoomModerationDetailResource.php
+
+		-
+			message: '#^Access to an undefined property App\\Http\\Resources\\StoreRoomModerationDetailResource\:\:\$description\.$#'
+			identifier: property.notFound
+			count: 1
+			path: app/Http/Resources/StoreRoomModerationDetailResource.php
+
+		-
+			message: '#^Access to an undefined property App\\Http\\Resources\\StoreRoomModerationDetailResource\:\:\$direction\.$#'
+			identifier: property.notFound
+			count: 1
+			path: app/Http/Resources/StoreRoomModerationDetailResource.php
+
+		-
+			message: '#^Access to an undefined property App\\Http\\Resources\\StoreRoomModerationDetailResource\:\:\$firefighter_permit_path\.$#'
+			identifier: property.notFound
+			count: 2
+			path: app/Http/Resources/StoreRoomModerationDetailResource.php
+
+		-
+			message: '#^Access to an undefined property App\\Http\\Resources\\StoreRoomModerationDetailResource\:\:\$id\.$#'
+			identifier: property.notFound
+			count: 1
+			path: app/Http/Resources/StoreRoomModerationDetailResource.php
+
+		-
+			message: '#^Access to an undefined property App\\Http\\Resources\\StoreRoomModerationDetailResource\:\:\$landlord\.$#'
+			identifier: property.notFound
+			count: 2
+			path: app/Http/Resources/StoreRoomModerationDetailResource.php
+
+		-
+			message: '#^Access to an undefined property App\\Http\\Resources\\StoreRoomModerationDetailResource\:\:\$latitude\.$#'
+			identifier: property.notFound
+			count: 1
+			path: app/Http/Resources/StoreRoomModerationDetailResource.php
+
+		-
+			message: '#^Access to an undefined property App\\Http\\Resources\\StoreRoomModerationDetailResource\:\:\$longitude\.$#'
+			identifier: property.notFound
+			count: 1
+			path: app/Http/Resources/StoreRoomModerationDetailResource.php
+
+		-
+			message: '#^Access to an undefined property App\\Http\\Resources\\StoreRoomModerationDetailResource\:\:\$moderations\.$#'
+			identifier: property.notFound
+			count: 1
+			path: app/Http/Resources/StoreRoomModerationDetailResource.php
+
+		-
+			message: '#^Access to an undefined property App\\Http\\Resources\\StoreRoomModerationDetailResource\:\:\$publication_date\.$#'
+			identifier: property.notFound
+			count: 1
+			path: app/Http/Resources/StoreRoomModerationDetailResource.php
+
+		-
+			message: '#^Access to an undefined property App\\Http\\Resources\\StoreRoomModerationDetailResource\:\:\$room_type\.$#'
+			identifier: property.notFound
+			count: 1
+			path: app/Http/Resources/StoreRoomModerationDetailResource.php
+
+		-
+			message: '#^Access to an undefined property App\\Http\\Resources\\StoreRoomModerationDetailResource\:\:\$security\.$#'
+			identifier: property.notFound
+			count: 1
+			path: app/Http/Resources/StoreRoomModerationDetailResource.php
+
+		-
+			message: '#^Access to an undefined property App\\Http\\Resources\\StoreRoomModerationDetailResource\:\:\$size\.$#'
+			identifier: property.notFound
+			count: 1
+			path: app/Http/Resources/StoreRoomModerationDetailResource.php
+
+		-
+			message: '#^Access to an undefined property App\\Http\\Resources\\StoreRoomModerationDetailResource\:\:\$storage_type\.$#'
+			identifier: property.notFound
+			count: 1
+			path: app/Http/Resources/StoreRoomModerationDetailResource.php
+
+		-
+			message: '#^Access to an undefined property App\\Http\\Resources\\StoreRoomModerationDetailResource\:\:\$storePhotos\.$#'
+			identifier: property.notFound
+			count: 1
+			path: app/Http/Resources/StoreRoomModerationDetailResource.php
+
+		-
+			message: '#^Access to an undefined property App\\Http\\Resources\\StoreRoomModerationDetailResource\:\:\$storePrices\.$#'
+			identifier: property.notFound
+			count: 1
+			path: app/Http/Resources/StoreRoomModerationDetailResource.php
+
+		-
+			message: '#^Access to an undefined property App\\Http\\Resources\\StoreRoomModerationDetailResource\:\:\$title\.$#'
+			identifier: property.notFound
+			count: 1
+			path: app/Http/Resources/StoreRoomModerationDetailResource.php
+
+		-
+			message: '#^Access to an undefined property App\\Http\\Resources\\WalletMovementResource\:\:\$amount\.$#'
+			identifier: property.notFound
+			count: 1
+			path: app/Http/Resources/WalletMovementResource.php
+
+		-
+			message: '#^Access to an undefined property App\\Http\\Resources\\WalletMovementResource\:\:\$balance_after\.$#'
+			identifier: property.notFound
+			count: 1
+			path: app/Http/Resources/WalletMovementResource.php
+
+		-
+			message: '#^Access to an undefined property App\\Http\\Resources\\WalletMovementResource\:\:\$created_at\.$#'
+			identifier: property.notFound
+			count: 1
+			path: app/Http/Resources/WalletMovementResource.php
+
+		-
+			message: '#^Access to an undefined property App\\Http\\Resources\\WalletMovementResource\:\:\$id\.$#'
+			identifier: property.notFound
+			count: 1
+			path: app/Http/Resources/WalletMovementResource.php
+
+		-
+			message: '#^Access to an undefined property App\\Http\\Resources\\WalletMovementResource\:\:\$reservation_id\.$#'
+			identifier: property.notFound
+			count: 1
+			path: app/Http/Resources/WalletMovementResource.php
+
+		-
+			message: '#^Access to an undefined property App\\Http\\Resources\\WalletMovementResource\:\:\$type\.$#'
+			identifier: property.notFound
+			count: 1
+			path: app/Http/Resources/WalletMovementResource.php
+
+		-
+			message: '#^Access to an undefined property App\\Http\\Resources\\WalletMovementResource\:\:\$user\.$#'
+			identifier: property.notFound
+			count: 1
+			path: app/Http/Resources/WalletMovementResource.php
+
+		-
+			message: '#^Cannot call method lte\(\) on string\.$#'
+			identifier: method.nonObject
+			count: 1
+			path: app/Models/OrganizationInvitation.php
+
+		-
+			message: '#^Result of && is always false\.$#'
+			identifier: booleanAnd.alwaysFalse
+			count: 1
+			path: app/Models/OrganizationInvitation.php
+
+		-
+			message: '#^Strict comparison using \=\=\= between string and App\\Enums\\InvitationStatus\:\:Pending will always evaluate to false\.$#'
+			identifier: identical.alwaysFalse
+			count: 1
+			path: app/Models/OrganizationInvitation.php
+
+		-
+			message: '#^Call to an undefined method Illuminate\\Database\\Eloquent\\Builder\<Illuminate\\Database\\Eloquent\\Model\>\:\:activeHold\(\)\.$#'
+			identifier: method.notFound
+			count: 1
+			path: app/Models/Reservations.php
+
+		-
+			message: '#^Access to an undefined property Illuminate\\Database\\Eloquent\\Model\:\:\$name\.$#'
+			identifier: property.notFound
+			count: 3
+			path: app/Notifications/OrganizationReservationCancelledNotification.php
+
+		-
+			message: '#^Access to an undefined property Illuminate\\Database\\Eloquent\\Model\:\:\$ruc\.$#'
+			identifier: property.notFound
+			count: 1
+			path: app/Notifications/OrganizationReservationCancelledNotification.php
+
+		-
+			message: '#^Access to an undefined property Illuminate\\Database\\Eloquent\\Model\:\:\$name\.$#'
+			identifier: property.notFound
+			count: 1
+			path: app/Notifications/ReservationCancellationNotification.php
+
+		-
+			message: '#^Access to an undefined property Illuminate\\Database\\Eloquent\\Model\:\:\$ruc\.$#'
+			identifier: property.notFound
+			count: 1
+			path: app/Notifications/ReservationCancellationNotification.php
+
+		-
+			message: '#^Access to an undefined property Illuminate\\Database\\Eloquent\\Model\:\:\$name\.$#'
+			identifier: property.notFound
+			count: 1
+			path: app/Notifications/ReservationReceiptNotification.php
+
+		-
+			message: '#^Access to an undefined property Illuminate\\Database\\Eloquent\\Model\:\:\$ruc\.$#'
+			identifier: property.notFound
+			count: 1
+			path: app/Notifications/ReservationReceiptNotification.php
+
+		-
+			message: '#^PHPDoc tag @SuppressWarnings has invalid value \(\(PHPMD\.UnusedFormalParameter\)\)\: Unexpected token "\.UnusedFormalParameter\)", expected ''\)'' at offset 856 on line 16$#'
 			identifier: phpDoc.parseError
 			count: 1
 			path: app/Policies/ReservationsPolicy.php
 
 		-
-			message: '#^Access to an undefined property App\\Models\\StoreRooms\:\:\$landlord\.$#'
+			message: '#^PHPDoc tag @SuppressWarnings has invalid value \(\(PHPMD\.UnusedFormalParameter\)\)\: Unexpected token "\.UnusedFormalParameter\)", expected ''\)'' at offset 290 on line 7$#'
+			identifier: phpDoc.parseError
+			count: 1
+			path: app/Policies/StoreRoomsPolicy.php
+
+		-
+			message: '#^PHPDoc tag @SuppressWarnings has invalid value \(\(PHPMD\.UnusedFormalParameter\)\)\: Unexpected token "\.UnusedFormalParameter\)", expected ''\)'' at offset 493 on line 8$#'
+			identifier: phpDoc.parseError
+			count: 1
+			path: app/Policies/StoreRoomsPolicy.php
+
+		-
+			message: '#^PHPDoc tag @SuppressWarnings has invalid value \(\(PHPMD\.UnusedFormalParameter\)\)\: Unexpected token "\.UnusedFormalParameter\)", expected ''\)'' at offset 613 on line 13$#'
+			identifier: phpDoc.parseError
+			count: 1
+			path: app/Policies/StoreRoomsPolicy.php
+
+		-
+			message: '#^Using nullsafe property access "\?\-\>name" on left side of \?\? is unnecessary\. Use \-\> instead\.$#'
+			identifier: nullsafe.neverNull
+			count: 1
+			path: app/Services/DashboardService.php
+
+		-
+			message: '#^Using nullsafe property access "\?\-\>title" on left side of \?\? is unnecessary\. Use \-\> instead\.$#'
+			identifier: nullsafe.neverNull
+			count: 1
+			path: app/Services/DashboardService.php
+
+		-
+			message: '#^Access to an undefined property Illuminate\\Database\\Eloquent\\Model\:\:\$name\.$#'
 			identifier: property.notFound
 			count: 1
-			path: app/Services/ReportService.php
+			path: app/Services/OrganizationCancellationNotifier.php
 
 		-
-			message: '#^Relation ''landlord'' is not found in App\\Models\\StoreRooms model\.$#'
-			identifier: larastan.relationExistence
+			message: '#^Method App\\Services\\OrganizationHistoryService\:\:page\(\) should return Illuminate\\Pagination\\LengthAwarePaginator\<int, array\{id\: string, kind\: string, occurred_at\: string, actor_name\: string\|null, target_label\: string\|null, amount\: float\|int\|string\|null\}\> but returns Illuminate\\Pagination\\LengthAwarePaginator\<\(int\|string\), array\{actor_name\: string\|null, target_label\: string\|null, amount\: float\|int\|string\|null, id\: string, kind\: mixed, occurred_at\: mixed\}\>\.$#'
+			identifier: return.type
 			count: 1
-			path: app/Services/ReportService.php
+			path: app/Services/OrganizationHistoryService.php
 
 		-
-			message: '#^Access to an undefined property App\\Models\\Reservations\:\:\$tenants\.$#'
+			message: '#^Strict comparison using \=\=\= between string and App\\Enums\\WalletMovementType\:\:Recarga will always evaluate to false\.$#'
+			identifier: identical.alwaysFalse
+			count: 1
+			path: app/Services/OrganizationHistoryService.php
+
+		-
+			message: '#^Access to an undefined property App\\Models\\OrganizationInvitation\:\:\$effective_status\.$#'
 			identifier: property.notFound
 			count: 2
-			path: app/Services/ReservationService.php
+			path: app/Services/OrganizationInvitationService.php
 
 		-
-			message: '#^Access to an undefined property App\\Models\\StoreRooms\:\:\$landlord\.$#'
+			message: '#^Cannot call method gt\(\) on string\.$#'
+			identifier: method.nonObject
+			count: 1
+			path: app/Services/OrganizationInvitationService.php
+
+		-
+			message: '#^Call to an undefined method Illuminate\\Support\\Collection\<int, Illuminate\\Database\\Eloquent\\Model\>\:\:modelKeys\(\)\.$#'
+			identifier: method.notFound
+			count: 1
+			path: app/Services/OrganizationPanelService.php
+
+		-
+			message: '#^Parameter \#1 \$callback of method Illuminate\\Pagination\\AbstractPaginator\<int,Illuminate\\Database\\Eloquent\\Model\>\:\:through\(\) expects callable\(Illuminate\\Database\\Eloquent\\Model, int\)\: array\{id\: int, warehouse_name\: string\|null, member_name\: string\|null, start_date\: string, end_date\: string, status\: ''canceled''\|''confirmed''\|''pending'', total_mount\: float, paid_with_wallet\: bool\}, Closure\(App\\Models\\Reservations\)\: array\{id\: int, warehouse_name\: string\|null, member_name\: string\|null, start_date\: string, end_date\: string, status\: ''canceled''\|''confirmed''\|''pending'', total_mount\: float, paid_with_wallet\: bool\} given\.$#'
+			identifier: argument.type
+			count: 1
+			path: app/Services/OrganizationPanelService.php
+
+		-
+			message: '#^Using nullsafe property access "\?\-\>id" on left side of \?\? is unnecessary\. Use \-\> instead\.$#'
+			identifier: nullsafe.neverNull
+			count: 1
+			path: app/Services/OrganizationPanelService.php
+
+		-
+			message: '#^Access to an undefined property Illuminate\\Database\\Eloquent\\Model\:\:\$name\.$#'
 			identifier: property.notFound
 			count: 1
 			path: app/Services/ReservationService.php
 
 		-
-			message: '#^Access to an undefined property App\\Models\\Reservations\:\:\$tenants\.$#'
+			message: '#^Access to an undefined property Illuminate\\Database\\Eloquent\\Model\:\:\$ruc\.$#'
 			identifier: property.notFound
 			count: 1
-			path: app/Policies/PaymentsPolicy.php
+			path: app/Services/ReservationService.php
 
 		-
-			message: '#^Access to an undefined property App\\Models\\StoreRooms\:\:\$landlord\.$#'
+			message: '#^Call to an undefined method Illuminate\\Database\\Eloquent\\Builder\:\:expiredHold\(\)\.$#'
+			identifier: method.notFound
+			count: 1
+			path: app/Services/ReservationService.php
+
+		-
+			message: '#^Access to an undefined property Illuminate\\Database\\Eloquent\\Model\:\:\$name\.$#'
+			identifier: property.notFound
+			count: 2
+			path: app/Support/ReservationReceipt.php
+
+		-
+			message: '#^Access to an undefined property Illuminate\\Database\\Eloquent\\Model\:\:\$ruc\.$#'
 			identifier: property.notFound
 			count: 1
-			path: app/Services/StoreModerationService.php
+			path: app/Support/ReservationReceipt.php

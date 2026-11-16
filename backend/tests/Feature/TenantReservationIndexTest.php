@@ -2,7 +2,9 @@
 
 namespace Tests\Feature;
 
+use App\Enums\OrganizationRole;
 use App\Models\Landlords;
+use App\Models\Organization;
 use App\Models\Payments;
 use App\Models\Reservations;
 use App\Models\StorePhoto;
@@ -267,5 +269,257 @@ class TenantReservationIndexTest extends TestCase
         }
 
         $this->assertSame($withTwo, $this->indexQueryCount($user));
+    }
+
+    // -- HUE-05 U1b: organization-reservations listing (OR-6, OR-7, OR-9) --
+
+    private function organizationFor(User $user, OrganizationRole $role = OrganizationRole::ADMIN): Organization
+    {
+        return Organization::factory()->withMember($user, $role)->create();
+    }
+
+    /**
+     * OR-S4/OR-S12: without a header, only the caller's own reservations
+     * with organization_id IS NULL come back -- an org reservation of the
+     * SAME tenant must be excluded.
+     */
+    public function test_personal_list_excludes_the_callers_own_organization_reservations()
+    {
+        [$user, $tenant] = $this->tenant();
+        $organization = $this->organizationFor($user);
+        $room = StoreRooms::factory()->create();
+
+        $personal = Reservations::factory()->create([
+            'store_room_id' => $room->id,
+            'tenant_id' => $tenant->id,
+            'organization_id' => null,
+        ]);
+        Reservations::factory()->forOrganization($organization)->create([
+            'store_room_id' => $room->id,
+            'tenant_id' => $tenant->id,
+        ]);
+
+        $items = collect($this->actingAs($user, 'sanctum')->getJson('/api/tenant/reservations')->json());
+
+        $this->assertSame([$personal->id], $items->pluck('id')->all());
+    }
+
+    /**
+     * OR-S13/OR-S14: with a valid header, every member's reservation in that
+     * org comes back (not only the caller's), each carrying the creator's
+     * name -- and personal/other-org reservations are excluded.
+     */
+    public function test_org_context_list_returns_every_members_reservation_with_creator_name()
+    {
+        $admin = User::factory()->create(['role' => 'tenant', 'name' => 'Ana', 'lastname' => 'Reyes']);
+        $adminTenant = Tenants::factory()->create(['user_id' => $admin->id]);
+        $member = User::factory()->create(['role' => 'tenant', 'name' => 'Luis', 'lastname' => 'Paz']);
+        $memberTenant = Tenants::factory()->create(['user_id' => $member->id]);
+        $organization = Organization::factory()
+            ->withMember($admin, OrganizationRole::ADMIN)
+            ->withMember($member, OrganizationRole::MEMBER)
+            ->create();
+        $otherOrganization = $this->organizationFor($admin);
+        $room = StoreRooms::factory()->create();
+
+        $byAdmin = Reservations::factory()->forOrganization($organization)->create([
+            'store_room_id' => $room->id,
+            'tenant_id' => $adminTenant->id,
+        ]);
+        $byMember = Reservations::factory()->forOrganization($organization)->create([
+            'store_room_id' => $room->id,
+            'tenant_id' => $memberTenant->id,
+        ]);
+        Reservations::factory()->forOrganization($otherOrganization)->create([
+            'store_room_id' => $room->id,
+            'tenant_id' => $adminTenant->id,
+        ]);
+        Reservations::factory()->create([
+            'store_room_id' => $room->id,
+            'tenant_id' => $adminTenant->id,
+            'organization_id' => null,
+        ]);
+
+        $response = $this->actingAs($member, 'sanctum')
+            ->getJson('/api/tenant/reservations', ['X-Organization-Id' => (string) $organization->id]);
+
+        $items = collect($response->json());
+        $this->assertSame(
+            [$byAdmin->id, $byMember->id],
+            $items->pluck('id')->sort()->values()->all(),
+        );
+        $this->assertSame('Ana Reyes', $items->firstWhere('id', $byAdmin->id)['creator_name']);
+        $this->assertSame('Luis Paz', $items->firstWhere('id', $byMember->id)['creator_name']);
+    }
+
+    public function test_org_context_returns_an_empty_list_when_the_org_has_no_reservations()
+    {
+        $user = User::factory()->create(['role' => 'tenant']);
+        Tenants::factory()->create(['user_id' => $user->id]);
+        $organization = $this->organizationFor($user);
+
+        $response = $this->actingAs($user, 'sanctum')
+            ->getJson('/api/tenant/reservations', ['X-Organization-Id' => (string) $organization->id]);
+
+        $response->assertStatus(200);
+        $this->assertSame([], $response->json());
+    }
+
+    /**
+     * OR-S16: is_creator reflects whether the CALLER authored the row, not
+     * whether anyone did.
+     */
+    public function test_is_creator_is_true_for_the_authors_row_and_false_for_another_members()
+    {
+        [$author, $authorTenant] = $this->tenant();
+        $viewer = User::factory()->create(['role' => 'tenant']);
+        $viewerTenant = Tenants::factory()->create(['user_id' => $viewer->id]);
+        $organization = Organization::factory()
+            ->withMember($author, OrganizationRole::ADMIN)
+            ->withMember($viewer, OrganizationRole::MEMBER)
+            ->create();
+        $room = StoreRooms::factory()->create();
+
+        $reservation = Reservations::factory()->forOrganization($organization)->create([
+            'store_room_id' => $room->id,
+            'tenant_id' => $authorTenant->id,
+        ]);
+
+        $asAuthor = collect(
+            $this->actingAs($author, 'sanctum')
+                ->getJson('/api/tenant/reservations', ['X-Organization-Id' => (string) $organization->id])
+                ->json()
+        )->firstWhere('id', $reservation->id);
+        $asViewer = collect(
+            $this->actingAs($viewer, 'sanctum')
+                ->getJson('/api/tenant/reservations', ['X-Organization-Id' => (string) $organization->id])
+                ->json()
+        )->firstWhere('id', $reservation->id);
+
+        $this->assertTrue($asAuthor['is_creator']);
+        $this->assertFalse($asViewer['is_creator']);
+    }
+
+    /**
+     * HUE-06 OR-18: in an org context the cancel flags follow the caller's
+     * live role, not authorship. The receipt stays creator-only (D13).
+     */
+    private function orgRow(OrganizationRole $viewerRole, bool $viewerIsCreator, array $overrides = []): array
+    {
+        [$author, $authorTenant] = $this->tenant();
+        $viewer = $author;
+        if (! $viewerIsCreator) {
+            $viewer = User::factory()->create(['role' => 'tenant']);
+            Tenants::factory()->create(['user_id' => $viewer->id]);
+        }
+        $organization = Organization::factory()
+            ->withMember($author, $viewerIsCreator ? $viewerRole : OrganizationRole::MEMBER)
+            ->when(! $viewerIsCreator, fn ($factory) => $factory->withMember($viewer, $viewerRole))
+            ->create();
+        $reservation = $this->paidReservation($authorTenant, ['organization_id' => $organization->id] + $overrides);
+        $this->payment($reservation, 'paid');
+
+        $item = collect(
+            $this->actingAs($viewer, 'sanctum')
+                ->getJson('/api/tenant/reservations', ['X-Organization-Id' => (string) $organization->id])
+                ->json()
+        )->firstWhere('id', $reservation->id);
+
+        return [$item, $viewer, $organization, $reservation];
+    }
+
+    public function test_an_admin_who_is_not_the_creator_can_cancel_but_gets_no_receipt()
+    {
+        [$item] = $this->orgRow(OrganizationRole::ADMIN, false);
+
+        $this->assertTrue($item['can_be_cancelled']);
+        $this->assertFalse($item['cancel_requires_admin']);
+        $this->assertNull($item['receipt']);
+    }
+
+    public function test_a_member_who_is_not_the_creator_is_told_the_cancel_needs_an_admin()
+    {
+        [$item] = $this->orgRow(OrganizationRole::MEMBER, false);
+
+        $this->assertFalse($item['can_be_cancelled']);
+        $this->assertTrue($item['cancel_requires_admin']);
+        $this->assertNull($item['receipt']);
+    }
+
+    public function test_a_member_who_is_the_creator_can_no_longer_cancel_but_keeps_the_receipt()
+    {
+        [$item] = $this->orgRow(OrganizationRole::MEMBER, true);
+
+        $this->assertFalse($item['can_be_cancelled']);
+        $this->assertTrue($item['cancel_requires_admin']);
+        $this->assertNotNull($item['receipt']);
+    }
+
+    public function test_an_admin_who_is_the_creator_can_cancel()
+    {
+        [$item] = $this->orgRow(OrganizationRole::ADMIN, true);
+
+        $this->assertTrue($item['can_be_cancelled']);
+        $this->assertFalse($item['cancel_requires_admin']);
+    }
+
+    public function test_an_ineligible_org_row_sets_neither_flag_for_anyone()
+    {
+        $started = ['start_date' => today()->toDateString()];
+
+        [$asAdmin] = $this->orgRow(OrganizationRole::ADMIN, false, $started);
+        [$asMember] = $this->orgRow(OrganizationRole::MEMBER, false, $started);
+
+        $this->assertFalse($asAdmin['can_be_cancelled']);
+        $this->assertFalse($asAdmin['cancel_requires_admin']);
+        $this->assertFalse($asMember['can_be_cancelled']);
+        $this->assertFalse($asMember['cancel_requires_admin']);
+    }
+
+    public function test_a_demotion_between_two_listings_flips_the_flags_immediately()
+    {
+        [$before, $viewer, $organization, $reservation] = $this->orgRow(OrganizationRole::ADMIN, false);
+        DB::table('organization_user')
+            ->where('user_id', $viewer->id)
+            ->where('organization_id', $organization->id)
+            ->update(['role' => OrganizationRole::MEMBER->value]);
+
+        $after = collect(
+            $this->actingAs($viewer, 'sanctum')
+                ->getJson('/api/tenant/reservations', ['X-Organization-Id' => (string) $organization->id])
+                ->json()
+        )->firstWhere('id', $reservation->id);
+
+        $this->assertTrue($before['can_be_cancelled']);
+        $this->assertFalse($after['can_be_cancelled']);
+        $this->assertTrue($after['cancel_requires_admin']);
+    }
+
+    public function test_a_personal_row_always_carries_cancel_requires_admin_false()
+    {
+        [$user, $tenant] = $this->tenant();
+        $reservation = $this->paidReservation($tenant);
+
+        $item = collect($this->actingAs($user, 'sanctum')->getJson('/api/tenant/reservations')->json())
+            ->firstWhere('id', $reservation->id);
+
+        $this->assertTrue($item['can_be_cancelled']);
+        $this->assertFalse($item['cancel_requires_admin']);
+    }
+
+    /**
+     * OR-S9: a header the caller is not a member of must 403 before the
+     * controller runs, on the real listing route (not just the probe).
+     */
+    public function test_a_stale_header_is_forbidden_on_the_real_listing_route()
+    {
+        [$user] = $this->tenant();
+        $foreign = Organization::factory()->create();
+
+        $response = $this->actingAs($user, 'sanctum')
+            ->getJson('/api/tenant/reservations', ['X-Organization-Id' => (string) $foreign->id]);
+
+        $response->assertStatus(403);
+        $response->assertExactJson(['message' => 'No perteneces a la organización seleccionada']);
     }
 }

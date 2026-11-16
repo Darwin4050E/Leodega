@@ -4,6 +4,8 @@ namespace App\Http\Controllers;
 
 use App\Http\Requests\StoreUserRequest;
 use App\Http\Requests\UpdateUserRequest;
+use App\Models\Reservations;
+use App\Models\Tenants;
 use App\Models\User;
 use App\Services\UserRegistrationService;
 use Illuminate\Http\Request;
@@ -78,11 +80,27 @@ class UserController extends ApiController
         return $this->destroyModel(User::class, $id);
     }
 
+    /**
+     * HUE-05 AD-1 (D7/D12 refined): blocks deletion while the caller
+     * CREATED at least one organization reservation that is still active --
+     * a confirmed reservation that has not ended yet (end_date >= today), or
+     * an unexpired pending hold (Reservations::scopeActiveOrganizationHoldFor).
+     * Checked BEFORE the deletion transaction opens, so a blocked request
+     * writes/deletes nothing. A tenant profile-less caller (landlord/admin)
+     * has no org reservations by construction and is never blocked.
+     */
     public function destroySelf()
     {
         $authId = Auth::id();
         if (! $authId) {
             return response()->json(['message' => 'No autenticado'], 401);
+        }
+
+        $tenant = Tenants::where('user_id', $authId)->first();
+        if ($tenant && Reservations::activeOrganizationHoldFor($tenant->id)->exists()) {
+            return response()->json([
+                'message' => 'No puedes eliminar tu cuenta mientras tengas reservas activas a nombre de una organización',
+            ], 409);
         }
 
         DB::transaction(function () use ($authId) {

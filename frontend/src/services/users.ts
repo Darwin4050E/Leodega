@@ -9,6 +9,8 @@ export interface UserListItem {
   email: string;
   role: "admin" | "landlord" | "tenant";
   state: UserState;
+  /** ISO timestamp; present because the admin index returns the full row. */
+  created_at?: string;
 }
 
 export function registerUser(data: Record<string, unknown>) {

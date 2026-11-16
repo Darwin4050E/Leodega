@@ -99,6 +99,17 @@ describe("ModeracionAdmin", () => {
     expect(mockGetPendingStoreRooms).toHaveBeenCalledTimes(1);
   });
 
+  it("titles the page 'Bodegas por aprobar' and shows the once-per-room banner", async () => {
+    mockGetPendingStoreRooms.mockResolvedValue({ data: [moderationDetail] });
+    renderScreen();
+
+    expect(screen.getByRole("heading", { name: "Bodegas por aprobar" })).toBeInTheDocument();
+    expect(
+      screen.getByText("La verificación es por bodega y se hace una sola vez."),
+    ).toBeInTheDocument();
+    await waitFor(() => expect(screen.getByText(moderationDetail.title)).toBeInTheDocument());
+  });
+
   it("renders the empty state on a bare 200 [] response, not an error", async () => {
     mockGetPendingStoreRooms.mockResolvedValue({ data: [] });
     renderScreen();

@@ -3,6 +3,9 @@
 namespace Tests\Feature;
 
 use App\Models\Landlords;
+use App\Models\Organization;
+use App\Models\Reservations;
+use App\Models\StoreRooms;
 use App\Models\Tenants;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -365,6 +368,181 @@ class UserTest extends TestCase
         $response = $this->actingAs($user, 'sanctum')->deleteJson('/api/account');
 
         $response->assertStatus(200);
+        $this->assertDatabaseMissing('user', ['id' => $user->id]);
+    }
+
+    // -- HUE-05 AD-1/AD-2/AD-3 (D7/D12 refined): block DELETE /account while
+    // the caller created an active org reservation --
+
+    private function tenantWithOrg(): array
+    {
+        $user = User::factory()->create(['role' => 'tenant']);
+        $tenant = Tenants::factory()->create(['user_id' => $user->id]);
+        $organization = Organization::factory()->create();
+
+        return [$user, $tenant, $organization];
+    }
+
+    private const AD_MESSAGE = 'No puedes eliminar tu cuenta mientras tengas reservas activas a nombre de una organización';
+
+    /** AD-S1: a confirmed, not-yet-ended org reservation blocks. */
+    public function test_destroy_self_is_blocked_by_a_confirmed_future_org_reservation()
+    {
+        [$user, $tenant, $organization] = $this->tenantWithOrg();
+        $room = StoreRooms::factory()->create();
+        Reservations::factory()->create([
+            'store_room_id' => $room->id,
+            'tenant_id' => $tenant->id,
+            'organization_id' => $organization->id,
+            'status' => 'confirmed',
+            'end_date' => today()->addDays(10)->toDateString(),
+        ]);
+
+        $response = $this->actingAs($user, 'sanctum')->deleteJson('/api/account');
+
+        $response->assertStatus(409);
+        $response->assertExactJson(['message' => self::AD_MESSAGE]);
+        $this->assertDatabaseHas('user', ['id' => $user->id]);
+    }
+
+    /** AD-S2: an unexpired pending org hold blocks. */
+    public function test_destroy_self_is_blocked_by_an_unexpired_pending_org_hold()
+    {
+        [$user, $tenant, $organization] = $this->tenantWithOrg();
+        $room = StoreRooms::factory()->create();
+        config(['reservations.payment_hold_minutes' => 15]);
+        Reservations::factory()->create([
+            'store_room_id' => $room->id,
+            'tenant_id' => $tenant->id,
+            'organization_id' => $organization->id,
+            'status' => 'pending',
+            'created_at' => now(),
+        ]);
+
+        $response = $this->actingAs($user, 'sanctum')->deleteJson('/api/account');
+
+        $response->assertStatus(409);
+        $this->assertDatabaseHas('user', ['id' => $user->id]);
+    }
+
+    /** AD-S3: a cancelled or expired-hold org reservation does not block. */
+    public function test_destroy_self_is_not_blocked_by_a_cancelled_or_expired_org_reservation()
+    {
+        [$user, $tenant, $organization] = $this->tenantWithOrg();
+        $room = StoreRooms::factory()->create();
+        config(['reservations.payment_hold_minutes' => 15]);
+        Reservations::factory()->create([
+            'store_room_id' => $room->id,
+            'tenant_id' => $tenant->id,
+            'organization_id' => $organization->id,
+            'status' => 'canceled',
+        ]);
+        Reservations::factory()->create([
+            'store_room_id' => $room->id,
+            'tenant_id' => $tenant->id,
+            'organization_id' => $organization->id,
+            'status' => 'pending',
+            'created_at' => now()->subMinutes(20),
+        ]);
+
+        $response = $this->actingAs($user, 'sanctum')->deleteJson('/api/account');
+
+        $response->assertStatus(200);
+        $this->assertDatabaseMissing('user', ['id' => $user->id]);
+    }
+
+    /** AD-S3 (ended confirmed): a confirmed org reservation that already ended does not block. */
+    public function test_destroy_self_is_not_blocked_by_a_confirmed_org_reservation_that_already_ended()
+    {
+        [$user, $tenant, $organization] = $this->tenantWithOrg();
+        $room = StoreRooms::factory()->create();
+        Reservations::factory()->create([
+            'store_room_id' => $room->id,
+            'tenant_id' => $tenant->id,
+            'organization_id' => $organization->id,
+            'status' => 'confirmed',
+            'start_date' => today()->subDays(40)->toDateString(),
+            'end_date' => today()->subDays(10)->toDateString(),
+        ]);
+
+        $response = $this->actingAs($user, 'sanctum')->deleteJson('/api/account');
+
+        $response->assertStatus(200);
+        $this->assertDatabaseMissing('user', ['id' => $user->id]);
+    }
+
+    /** AD-S4: a personal confirmed reservation never blocks (existing cascade behavior). */
+    public function test_destroy_self_is_not_blocked_by_a_personal_reservation_of_any_status()
+    {
+        $user = User::factory()->create(['role' => 'tenant']);
+        $tenant = Tenants::factory()->create(['user_id' => $user->id]);
+        $room = StoreRooms::factory()->create();
+        Reservations::factory()->create([
+            'store_room_id' => $room->id,
+            'tenant_id' => $tenant->id,
+            'organization_id' => null,
+            'status' => 'confirmed',
+            'end_date' => today()->addDays(10)->toDateString(),
+        ]);
+
+        $response = $this->actingAs($user, 'sanctum')->deleteJson('/api/account');
+
+        $response->assertStatus(200);
+        $this->assertDatabaseMissing('user', ['id' => $user->id]);
+    }
+
+    /** AD-S5: an org reservation created by ANOTHER member never blocks this caller. */
+    public function test_destroy_self_is_not_blocked_by_another_members_org_reservation()
+    {
+        [$author, $authorTenant, $organization] = $this->tenantWithOrg();
+        $caller = User::factory()->create(['role' => 'tenant']);
+        Tenants::factory()->create(['user_id' => $caller->id]);
+        $room = StoreRooms::factory()->create();
+        Reservations::factory()->create([
+            'store_room_id' => $room->id,
+            'tenant_id' => $authorTenant->id,
+            'organization_id' => $organization->id,
+            'status' => 'confirmed',
+            'end_date' => today()->addDays(10)->toDateString(),
+        ]);
+
+        $response = $this->actingAs($caller, 'sanctum')->deleteJson('/api/account');
+
+        $response->assertStatus(200);
+        $this->assertDatabaseMissing('user', ['id' => $caller->id]);
+    }
+
+    /** AD-S6/AD-S3: baseline preserved -- no reservations at all still deletes. */
+    public function test_destroy_self_baseline_is_unchanged_with_no_reservations()
+    {
+        $user = User::factory()->create(['role' => 'tenant']);
+        Tenants::factory()->create(['user_id' => $user->id]);
+
+        $response = $this->actingAs($user, 'sanctum')->deleteJson('/api/account');
+
+        $response->assertStatus(200);
+        $response->assertExactJson(['message' => 'Cuenta eliminada correctamente']);
+        $this->assertDatabaseMissing('user', ['id' => $user->id]);
+    }
+
+    /** AD-S8: once the blocking org reservation is cancelled, a retry succeeds. */
+    public function test_destroy_self_retry_succeeds_after_the_blocking_org_reservation_is_cancelled()
+    {
+        [$user, $tenant, $organization] = $this->tenantWithOrg();
+        $room = StoreRooms::factory()->create();
+        $reservation = Reservations::factory()->create([
+            'store_room_id' => $room->id,
+            'tenant_id' => $tenant->id,
+            'organization_id' => $organization->id,
+            'status' => 'confirmed',
+            'end_date' => today()->addDays(10)->toDateString(),
+        ]);
+
+        $this->actingAs($user, 'sanctum')->deleteJson('/api/account')->assertStatus(409);
+
+        $reservation->update(['status' => 'canceled']);
+
+        $this->actingAs($user, 'sanctum')->deleteJson('/api/account')->assertStatus(200);
         $this->assertDatabaseMissing('user', ['id' => $user->id]);
     }
 }

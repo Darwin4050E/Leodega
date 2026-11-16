@@ -5,9 +5,14 @@ use App\Http\Controllers\AuthController;
 use App\Http\Controllers\CancelationsPolicesController;
 use App\Http\Controllers\ConversationController;
 use App\Http\Controllers\DashboardController;
+use App\Http\Controllers\InvitationInboxController;
 use App\Http\Controllers\LandlordsController;
 use App\Http\Controllers\MessageController;
 use App\Http\Controllers\NotificationsController;
+use App\Http\Controllers\OrganizationController;
+use App\Http\Controllers\OrganizationInvitationController;
+use App\Http\Controllers\OrganizationPanelController;
+use App\Http\Controllers\OrganizationWalletController;
 use App\Http\Controllers\PasswordResetController;
 use App\Http\Controllers\PaymentsController;
 use App\Http\Controllers\ProfileController;
@@ -16,6 +21,7 @@ use App\Http\Controllers\ReportsController;
 use App\Http\Controllers\ReservationsController;
 use App\Http\Controllers\SecurityController;
 use App\Http\Controllers\SessionController;
+use App\Http\Controllers\SpendingLimitController;
 use App\Http\Controllers\StoreDisponibilityController;
 use App\Http\Controllers\StoreModerationController;
 use App\Http\Controllers\StoreModerationQueueController;
@@ -141,7 +147,9 @@ Route::middleware('auth.api:sanctum')->group(function () {
 });
 
 Route::middleware('auth.api:sanctum')->group(function () {
-    Route::post('/reservations', [ReservationsController::class, 'store']);
+    // HUE-05 AC-24: per-route mount, not per-group -- a stale header must
+    // never 403 the other actions in this group (landlord cancel etc.).
+    Route::post('/reservations', [ReservationsController::class, 'store'])->middleware('org.context');
     Route::get('/landlord/reservations', [ReservationsController::class, 'landlordIndex']);
     Route::get('/landlord/reservations/cancellation-rate', [ReservationsController::class, 'cancellationRate']);
     Route::patch('/landlord/reservations/{reservation}/cancel', [ReservationsController::class, 'cancel']);
@@ -204,7 +212,10 @@ Route::middleware('auth.api:sanctum')->group(function () {
 Route::middleware('auth.api:sanctum')->delete('/account', [UserController::class, 'destroySelf']);
 
 Route::middleware('auth.api:sanctum')->group(function () {
-    Route::get('/tenant/reservations', [ReservationsController::class, 'tenantIndex']);
+    // HUE-05 AC-24: per-route mount, same reasoning as POST /reservations
+    // above -- cancel/preview/receipt below must stay reachable on a stale
+    // or non-member header (the user acts on their OWN reservation there).
+    Route::get('/tenant/reservations', [ReservationsController::class, 'tenantIndex'])->middleware('org.context');
     // sdd/tenant-self-cancel: the owning tenant cancels their own
     // reservation; ownership is enforced by ReservationsPolicy::cancelAsTenant.
     Route::patch('/tenant/reservations/{reservation}/cancel', [ReservationsController::class, 'cancelAsTenant']);
@@ -215,6 +226,68 @@ Route::middleware('auth.api:sanctum')->group(function () {
     // sdd/huc05-payment-receipt: owner-scoped payment receipt PDF.
     Route::get('/tenant/reservations/{reservation}/receipt', [ReservationsController::class, 'receipt']);
 });
+
+// HUE-04: organizations are a tenant-only feature. The group also covers the
+// listing (GET) so landlords and admins get the same 403 as on creation.
+Route::middleware(['auth.api:sanctum', 'role:tenant'])->group(function () {
+    Route::get('/organizations', [OrganizationController::class, 'index']);
+    Route::post('/organizations', [OrganizationController::class, 'store']);
+});
+
+// org-wallet OW-12: the organization is addressed in the path and membership is
+// checked in the controller, so `org.context` is NOT mounted here (AC-S19).
+// {organization} stays a raw id (no model binding) so a non-member and a
+// nonexistent organization get the same 403; the pattern keeps it inside int64.
+Route::middleware(['auth.api:sanctum', 'role:tenant'])
+    ->where(['organization' => '[1-9][0-9]{0,17}'])
+    ->group(function () {
+        Route::get('/organizations/{organization}/wallet', [OrganizationWalletController::class, 'show']);
+        Route::get('/organizations/{organization}/wallet/movements', [OrganizationWalletController::class, 'movements']);
+        Route::post('/organizations/{organization}/wallet/top-ups', [OrganizationWalletController::class, 'topUp']);
+    });
+
+// member-spending-limit ML-15: same path-based shape as the wallet routes above,
+// no `org.context`. {user} follows the same int64-safe pattern.
+Route::middleware(['auth.api:sanctum', 'role:tenant'])
+    ->where(['organization' => '[1-9][0-9]{0,17}', 'user' => '[1-9][0-9]{0,17}'])
+    ->group(function () {
+        Route::get('/organizations/{organization}/spending-limits', [SpendingLimitController::class, 'index']);
+        Route::put('/organizations/{organization}/spending-limits/{user}', [SpendingLimitController::class, 'update']);
+    });
+
+// hue-01 INV-2: invitations are addressed by path like the wallet and the
+// spending limits above, no `org.context`.
+Route::middleware(['auth.api:sanctum', 'role:tenant'])
+    ->where(['organization' => '[1-9][0-9]{0,17}', 'invitation' => '[1-9][0-9]{0,17}'])
+    ->group(function () {
+        Route::post('/organizations/{organization}/invitations', [OrganizationInvitationController::class, 'store'])
+            ->middleware('throttle:org-invitations');
+        Route::get('/organizations/{organization}/invitations', [OrganizationInvitationController::class, 'index']);
+        Route::delete('/organizations/{organization}/invitations/{invitation}', [OrganizationInvitationController::class, 'destroy']);
+    });
+
+// hue-03 PAN-1: read-only organization control panel, path-addressed like the
+// routes above (no `org.context`). The membership gate lives in the controller.
+Route::middleware(['auth.api:sanctum', 'role:tenant'])
+    ->where(['organization' => '[1-9][0-9]{0,17}'])
+    ->group(function () {
+        Route::get('/organizations/{organization}/panel/summary', [OrganizationPanelController::class, 'summary']);
+        Route::get('/organizations/{organization}/panel/members', [OrganizationPanelController::class, 'members']);
+        Route::get('/organizations/{organization}/panel/reservations', [OrganizationPanelController::class, 'reservations']);
+        Route::get('/organizations/{organization}/panel/history', [OrganizationPanelController::class, 'history']);
+    });
+
+// huc-14 INV-15: the invitee side of an invitation is personal, not organization
+// addressed: no `org.context`, X-Organization-Id is ignored. {invitation} stays
+// a raw id (no model binding) so a foreign, a nonexistent and a malformed id
+// all end in the same 404; the pattern keeps it inside int64.
+Route::middleware(['auth.api:sanctum', 'role:tenant'])
+    ->where(['invitation' => '[1-9][0-9]{0,17}'])
+    ->group(function () {
+        Route::get('/invitations', [InvitationInboxController::class, 'index']);
+        Route::post('/invitations/{invitation}/accept', [InvitationInboxController::class, 'accept']);
+        Route::post('/invitations/{invitation}/reject', [InvitationInboxController::class, 'reject']);
+    });
 
 Route::middleware(['auth.api:sanctum', 'role:admin'])->group(function () {
     Route::get('/store-rooms/{storeRoom}/permit/download', [StorePermitController::class, 'download']);

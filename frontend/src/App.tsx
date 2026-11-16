@@ -1,5 +1,7 @@
 import { BrowserRouter as Router, Routes, Route } from 'react-router-dom'
 import { AuthProvider } from './context/AuthContext'
+import { ActiveContextProvider } from './context/ActiveContext'
+import { InvitationsInboxProvider } from './context/InvitationsInboxContext'
 import { WizardProvider } from './context/WizardContext'
 import './App.css'
 import Header from './Components/Header'
@@ -50,10 +52,17 @@ import Role from './Routes/Role'
 import PagePrincipal from './Dashboard/Tendant/PagePrincipal'
 import CalendarioTendant from './Dashboard/Tendant/CalendarioTendant'
 import MisReservas from './Dashboard/Tendant/MisReservas'
+import CrearOrganizacion from './Dashboard/Tendant/CrearOrganizacion'
+import BilleteraOrganizacion from './Dashboard/Tendant/BilleteraOrganizacion'
+import MiembrosOrganizacion from './Dashboard/Tendant/MiembrosOrganizacion'
+import PanelOrganizacion from './Dashboard/Tendant/PanelOrganizacion'
+import MisInvitaciones from './Dashboard/Tendant/MisInvitaciones'
 
 function App() {
   return (
     <AuthProvider>
+    <ActiveContextProvider>
+    <InvitationsInboxProvider>
     <Router>
       <Routes>
         <Route path="/register" element={<Register />} />
@@ -134,12 +143,19 @@ function App() {
             "tenant" case). */}
         <Route element={<Protected />}>
           <Route path="/arrendatario/dashboard" element={<PagePrincipal />} />
-          <Route path="/arrendatario/mensajes" element={<Mensajes />} />
+          <Route path="/arrendatario/mensajes" element={<Mensajes tenantLayout />} />
           <Route path="/arrendatario/calendario" element={<CalendarioTendant />} />
           <Route path="/arrendatario/mis-reservas" element={<MisReservas />} />
+          <Route path="/mi-cuenta/crear-organizacion" element={<CrearOrganizacion />} />
+          <Route path="/mi-cuenta/invitaciones" element={<MisInvitaciones />} />
+          <Route path="/organizacion/billetera" element={<BilleteraOrganizacion />} />
+          <Route path="/organizacion/miembros" element={<MiembrosOrganizacion />} />
+          <Route path="/organizacion/panel" element={<PanelOrganizacion />} />
         </Route>
       </Routes>
     </Router>
+    </InvitationsInboxProvider>
+    </ActiveContextProvider>
     </AuthProvider>
   )
 }

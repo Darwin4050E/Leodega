@@ -62,6 +62,7 @@ function renderScreen() {
         <Routes>
           <Route path="/publicar" element={<PublishStoreRoomScreen />} />
           <Route path="/" element={<div>Inicio</div>} />
+          <Route path="/mis-bodegas" element={<div>Mis bodegas abiertas</div>} />
         </Routes>
       </MemoryRouter>
     </AuthProvider>,
@@ -408,5 +409,15 @@ describe('PublishStoreRoomScreen (HUL-03)', () => {
         'Solo un gestor de almacenamiento puede publicar espacios.',
       ),
     ).toBeInTheDocument()
+  })
+
+  it('sends the gestor back to Mis bodegas from the first step', async () => {
+    seedSession('landlord')
+    const user = userEvent.setup()
+    renderScreen()
+
+    await user.click(screen.getByRole('button', { name: 'Volver' }))
+
+    expect(screen.getByText('Mis bodegas abiertas')).toBeInTheDocument()
   })
 })

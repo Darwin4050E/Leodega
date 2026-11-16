@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react
 import { AuthContext, type AuthUser } from './authContextBase'
 import { clearSession, readToken, readUser, writeSession } from './session'
 import { registerUnauthorizedHandler } from './sessionExpiry'
+import { clearStoredActiveContext } from '../context/activeContextStorage'
 
 /**
  * Single source of the session for the whole app. Components read `token` /
@@ -23,6 +24,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, [])
 
   const clear = useCallback(() => {
+    clearStoredActiveContext()
     clearSession()
     setToken(null)
     setUser(null)

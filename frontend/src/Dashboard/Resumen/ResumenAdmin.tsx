@@ -1,4 +1,6 @@
 import React, { useCallback, useEffect, useState } from "react";
+import { useNavigate } from "react-router-dom";
+import { getPendingStoreRooms, type StoreRoomModerationDetail } from "../../services/storeRooms";
 import { getDashboardSummary, getRecentActivity, type DashboardSummary, type ActivityEntry } from "../../services/dashboard";
 import { asApiError } from "../../api/errors";
 import MetricCard from "./MetricCard";
@@ -14,6 +16,14 @@ type ActivityState =
   | { status: "error"; message: string }
   | { status: "ready"; entries: ActivityEntry[] };
 
+type PendingState =
+  | { status: "loading" }
+  | { status: "error"; message: string }
+  | { status: "ready"; items: StoreRoomModerationDetail[] };
+
+/** How many pending rooms the summary previews before linking to the full queue. */
+const PENDING_PREVIEW_LIMIT = 4;
+
 /**
  * Admin dashboard landing at `/admin/resumen`. Two independent
  * {status}/useEffect pairs (one per endpoint), per design #197's
@@ -21,6 +31,9 @@ type ActivityState =
  * never blank the metric cards, and vice versa.
  */
 const ResumenAdmin: React.FC = () => {
+  const navigate = useNavigate();
+  const goModeracion = () => navigate("/admin/moderacion");
+
   // -- Summary metrics -------------------------------------------
   const [summaryState, setSummaryState] = useState<SummaryState>({ status: "loading" });
 
@@ -63,6 +76,29 @@ const ResumenAdmin: React.FC = () => {
     loadActivity();
   }, [loadActivity]);
 
+  // -- Pending rooms preview --------------------------------------
+  const [pendingState, setPendingState] = useState<PendingState>({ status: "loading" });
+
+  useEffect(() => {
+    let cancelled = false;
+    getPendingStoreRooms()
+      .then(({ data }) => {
+        if (!cancelled) setPendingState({ status: "ready", items: data });
+      })
+      .catch((error) => {
+        if (cancelled) return;
+        const apiError = asApiError(error);
+        setPendingState({
+          status: "error",
+          message:
+            apiError.response?.data?.message ?? "No se pudo cargar la cola de bodegas pendientes.",
+        });
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
   return (
     <div className="p-6 lg:p-8 bg-gray-50 min-h-full">
       <div className="mb-5">
@@ -101,9 +137,67 @@ const ResumenAdmin: React.FC = () => {
             value={summaryState.data.accounts.total}
             secondaryLabel="Bloqueadas"
             secondaryValue={summaryState.data.accounts.blocked}
+            action={{ label: "Gestionar →", onClick: () => navigate("/admin/usuarios") }}
           />
         </div>
       )}
+
+      {/* Pending rooms — its own independent state, like the activity feed. */}
+      <div className="bg-white rounded-2xl border border-gray-200 mb-6 overflow-hidden">
+        <div className="flex items-center justify-between px-5 py-4 border-b border-gray-100">
+          <div>
+            <h2 className="text-[15px] font-semibold text-gray-900">Bodegas pendientes por aprobar</h2>
+            <p className="text-xs text-gray-400 mt-0.5">Aprobación por bodega, una sola vez.</p>
+          </div>
+          {pendingState.status === "ready" && pendingState.items.length > 0 && (
+            <button
+              type="button"
+              onClick={goModeracion}
+              className="text-xs font-semibold text-violet-600 hover:text-violet-700"
+            >
+              Revisar cola →
+            </button>
+          )}
+        </div>
+
+        {pendingState.status === "loading" && (
+          <p className="px-5 py-4 text-sm text-gray-400">Cargando bodegas pendientes...</p>
+        )}
+
+        {pendingState.status === "error" && (
+          <p className="px-5 py-4 text-sm text-red-600">{pendingState.message}</p>
+        )}
+
+        {pendingState.status === "ready" && pendingState.items.length === 0 && (
+          <div className="px-6 py-10 text-center">
+            <p className="text-sm font-semibold text-gray-900">Cola al día</p>
+            <p className="text-xs text-gray-400 mt-1">No hay bodegas pendientes.</p>
+          </div>
+        )}
+
+        {pendingState.status === "ready" &&
+          pendingState.items.slice(0, PENDING_PREVIEW_LIMIT).map((room) => (
+            <div
+              key={room.id}
+              className="flex items-center gap-3 px-5 py-3 border-b border-gray-50 last:border-b-0"
+            >
+              <div className="flex-1 min-w-0">
+                <p className="text-[13px] font-semibold text-gray-900 truncate">{room.title}</p>
+                <p className="text-[11.5px] text-gray-400 mt-0.5">
+                  {room.landlord.name} · {room.size} m² · ${room.monthly_price}/mes
+                  {!room.permit_attached && " · permiso faltante"}
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={goModeracion}
+                className="shrink-0 px-3 py-1.5 rounded-lg bg-violet-50 text-violet-600 text-xs font-semibold hover:bg-violet-100"
+              >
+                Revisar
+              </button>
+            </div>
+          ))}
+      </div>
 
       {/* Activity feed — its own independent loading/error state, so a
           failed activity fetch never blanks the metric cards above. */}

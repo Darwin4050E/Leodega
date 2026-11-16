@@ -148,12 +148,16 @@ describe('reservations service', () => {
     expect(mockApi.get).toHaveBeenCalledWith('/tenant/reservations/11/cancellation-preview');
   });
 
-  it('getCancellationPreview resolves with can_be_cancelled and refund_amount', async () => {
-    mockApi.get.mockResolvedValue({ data: { can_be_cancelled: true, refund_amount: '50.00' } });
+  it('getCancellationPreview resolves with can_be_cancelled, total, refund and penalty amounts', async () => {
+    const preview = {
+      can_be_cancelled: true,
+      total_amount: '100.00',
+      refund_amount: '50.00',
+      penalty_amount: '50.00',
+    };
+    mockApi.get.mockResolvedValue({ data: preview });
 
-    await expect(getCancellationPreview(11)).resolves.toEqual({
-      data: { can_be_cancelled: true, refund_amount: '50.00' },
-    });
+    await expect(getCancellationPreview(11)).resolves.toEqual({ data: preview });
   });
 
   it('getCancellationPreview rejects with a 409 when the reservation is no longer cancellable', async () => {
@@ -167,6 +171,12 @@ describe('reservations service', () => {
     mockApi.patch.mockResolvedValue({ data: { message: 'Reserva cancelada' } });
     cancelReservationAsTenant(9);
     expect(mockApi.patch).toHaveBeenCalledWith('/tenant/reservations/9/cancel', {});
+  });
+
+  it('OR-WS29: cancelReservationAsTenant sends {reason} only when a reason is given', () => {
+    mockApi.patch.mockResolvedValue({ data: { message: 'Reserva cancelada' } });
+    cancelReservationAsTenant(9, 'x');
+    expect(mockApi.patch).toHaveBeenCalledWith('/tenant/reservations/9/cancel', { reason: 'x' });
   });
 
   it('cancelReservationAsTenant resolves on success (200)', async () => {

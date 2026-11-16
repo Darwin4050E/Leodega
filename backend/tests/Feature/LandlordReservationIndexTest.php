@@ -3,10 +3,12 @@
 namespace Tests\Feature;
 
 use App\Models\Landlords;
+use App\Models\Organization;
 use App\Models\Payments;
 use App\Models\ReservationCancellationObligation;
 use App\Models\Reservations;
 use App\Models\StoreRooms;
+use App\Models\Tenants;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Tests\TestCase;
@@ -304,5 +306,69 @@ class LandlordReservationIndexTest extends TestCase
         $this->assertSame('canceled', $item['status']);
         $this->assertSame('pending', $item['payment_status']);
         $this->assertFalse($item['has_refund_obligation']);
+    }
+
+    /**
+     * OR-S23/OR-12/D5: the landlord sees the org identity (live, not
+     * snapshotted) on an org reservation's row; a personal reservation
+     * keeps organization null.
+     */
+    public function test_an_organization_reservation_carries_the_live_org_identity()
+    {
+        [$user, $landlord] = $this->landlord();
+        $room = StoreRooms::factory()->create(['landlord_id' => $landlord->id]);
+        $tenantUser = User::factory()->create(['name' => 'Luis', 'lastname' => 'Paz']);
+        $tenant = Tenants::factory()->create(['user_id' => $tenantUser->id]);
+        $organization = Organization::factory()->create(['name' => 'Andina', 'ruc' => '1790011111001']);
+        $reservation = Reservations::factory()->create([
+            'store_room_id' => $room->id,
+            'tenant_id' => $tenant->id,
+            'organization_id' => $organization->id,
+        ]);
+
+        $response = $this->actingAs($user, 'sanctum')->getJson('/api/landlord/reservations');
+
+        $item = collect($response->json())->firstWhere('id', $reservation->id);
+        $this->assertSame($organization->id, $item['organization']['id']);
+        $this->assertSame('Andina', $item['organization']['name']);
+        $this->assertSame('1790011111001', $item['organization']['ruc']);
+        $this->assertSame('Luis Paz', trim($item['tenants']['user']['name'].' '.$item['tenants']['user']['lastname']));
+    }
+
+    public function test_a_personal_reservation_has_a_null_organization()
+    {
+        [$user, $landlord] = $this->landlord();
+        $room = StoreRooms::factory()->create(['landlord_id' => $landlord->id]);
+        $reservation = Reservations::factory()->create([
+            'store_room_id' => $room->id,
+            'organization_id' => null,
+        ]);
+
+        $response = $this->actingAs($user, 'sanctum')->getJson('/api/landlord/reservations');
+
+        $item = collect($response->json())->firstWhere('id', $reservation->id);
+        $this->assertNull($item['organization']);
+    }
+
+    /**
+     * OR-S15/D5: a live read, not a snapshot -- renaming the org after the
+     * reservation was created must show the NEW name.
+     */
+    public function test_the_organization_name_is_read_live_not_snapshotted()
+    {
+        [$user, $landlord] = $this->landlord();
+        $room = StoreRooms::factory()->create(['landlord_id' => $landlord->id]);
+        $organization = Organization::factory()->create(['name' => 'Nombre Viejo']);
+        $reservation = Reservations::factory()->create([
+            'store_room_id' => $room->id,
+            'organization_id' => $organization->id,
+        ]);
+
+        $organization->update(['name' => 'Nombre Nuevo']);
+
+        $response = $this->actingAs($user, 'sanctum')->getJson('/api/landlord/reservations');
+
+        $item = collect($response->json())->firstWhere('id', $reservation->id);
+        $this->assertSame('Nombre Nuevo', $item['organization']['name']);
     }
 }

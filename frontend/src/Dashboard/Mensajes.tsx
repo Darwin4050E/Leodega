@@ -9,6 +9,7 @@ import {
     createConversation,
 } from "../services/conversations";
 import { getUsers } from "../services/users";
+import HeaderTendant from "../Components/HeaderTendant";
 import { Send, Plus, Search, Paperclip, X } from "lucide-react";
 
 interface User {
@@ -35,7 +36,13 @@ interface Conversation {
     unread_count: number;
 }
 
-const Mensajes = () => {
+interface MensajesProps {
+    // The tenant route renders its own header (it is not nested in <Layout/>),
+    // so the chat must fill the height left under it instead of the screen.
+    tenantLayout?: boolean;
+}
+
+const Mensajes = ({ tenantLayout = false }: MensajesProps) => {
     const [searchParams, setSearchParams] = useSearchParams();
     const openedUserIdRef = useRef<number | null>(null);
     const [authUser, setAuthUser] = useState<User | null>(null);
@@ -166,8 +173,8 @@ const Mensajes = () => {
 
     /* ================= UI ================= */
 
-    return (
-        <div className="flex h-screen bg-gray-100">
+    const chat = (
+        <div className={`flex bg-gray-100 ${tenantLayout ? "flex-1 min-h-0" : "h-screen"}`}>
 
             {/* SIDEBAR */}
             <div className="w-1/4 bg-white border-r flex flex-col">
@@ -333,6 +340,15 @@ const Mensajes = () => {
                     </div>
                 </div>
             )}
+        </div>
+    );
+
+    if (!tenantLayout) return chat;
+
+    return (
+        <div className="flex flex-col h-screen">
+            <HeaderTendant />
+            {chat}
         </div>
     );
 };

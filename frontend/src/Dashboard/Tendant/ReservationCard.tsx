@@ -1,4 +1,5 @@
-import { FileText, ImageOff, MapPin, X } from "lucide-react";
+import { useState } from "react";
+import { FileText, ImageOff, Lock, MapPin, MessageCircle, Star, X } from "lucide-react";
 
 import { formatReservationCode } from "../../utils/reservationCode";
 import { formatUSD } from "../../utils/money";
@@ -15,18 +16,34 @@ interface ReservationCardProps {
   reservation: TenantReservation;
   onCancelClick: (reservation: TenantReservation) => void;
   onReceiptClick: (reservation: TenantReservation) => void;
+  /** "Dejar reseña" shows on finished reservations when provided. */
+  onReviewClick?: (reservation: TenantReservation) => void;
+  /** "Reportar un problema" shows on non-canceled reservations when provided. */
+  onReportClick?: (reservation: TenantReservation) => void;
 }
+
+const ADMIN_ONLY_TOOLTIP = "Solo el administrador puede cancelar reservas de la organización";
 
 /**
  * Presentational card for the tenant reservations list. Mirrors ResCard
  * (PrototipoLeodega-main/js/TenantReservasPage.jsx:166-195) -- thumbnail,
  * title, badge, direction/city/size line, Período/Monto/Reserva stat row --
- * minus review/report actions (out of scope, spec #351). The cancel button
- * is gated exclusively on `reservation.can_be_cancelled` (server-computed),
- * never client-side date math. "Ver comprobante" shows iff the server sent a
- * non-null `reservation.receipt`.
+ * with the review/report actions (ResActions, same file :137-162): review on
+ * finished reservations, report on every non-canceled one. Cancel is gated
+ * exclusively on the server flags (`can_be_cancelled`, and on org rows
+ * `cancel_requires_admin` for the disabled state), never on client-side date
+ * math, `is_creator` or the cached organization role. "Ver comprobante"
+ * shows iff the server sent a non-null `reservation.receipt` and the caller
+ * is the creator.
  */
-const ReservationCard = ({ reservation, onCancelClick, onReceiptClick }: ReservationCardProps) => {
+const ReservationCard = ({
+  reservation,
+  onCancelClick,
+  onReceiptClick,
+  onReviewClick,
+  onReportClick,
+}: ReservationCardProps) => {
+  const [tooltipOpen, setTooltipOpen] = useState(false);
   const tab = deriveTenantTab(reservation);
   const badge = RES_BADGE[tab];
   const title = reservation.store_rooms?.title ?? "Bodega";
@@ -35,6 +52,16 @@ const ReservationCard = ({ reservation, onCancelClick, onReceiptClick }: Reserva
   const direction = reservation.store_rooms?.direction ?? "";
   const city = reservation.store_rooms?.city ?? "";
   const size = reservation.store_rooms?.size ?? "";
+  // HUE-06 OR-W5: org cancel follows the server flags only. `is_creator` still
+  // gates the receipt (creator-only) and is absent on a personal row.
+  const isOrgRow = Boolean(reservation.organization);
+  const isCreatorOrPersonal = reservation.is_creator !== false;
+  const showCancelButton = reservation.can_be_cancelled && (isOrgRow || isCreatorOrPersonal);
+  const showDisabledCancel = isOrgRow && reservation.cancel_requires_admin === true;
+  const showReceiptButton = Boolean(reservation.receipt) && isCreatorOrPersonal;
+  const showReviewButton = Boolean(onReviewClick) && tab === "finalizada";
+  const showReportButton = Boolean(onReportClick) && tab !== "cancelada";
+  const tooltipId = `cancel-tooltip-${reservation.id}`;
 
   return (
     <div className="bg-white border border-gray-200 rounded-2xl shadow-sm overflow-hidden">
@@ -56,18 +83,28 @@ const ReservationCard = ({ reservation, onCancelClick, onReceiptClick }: Reserva
         <div className="flex-1 min-w-[200px]">
           <div className="flex justify-between items-start gap-2.5 mb-1">
             <h3 className="text-base font-semibold text-gray-900 m-0">{title}</h3>
-            <span
-              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-semibold whitespace-nowrap"
-              style={{ background: badge.bg, color: badge.color }}
-            >
-              <span className="w-1.5 h-1.5 rounded-full" style={{ background: badge.color }} />
-              {badge.label}
-            </span>
+            <div className="flex items-center gap-1.5">
+              {reservation.organization && (
+                <span className="inline-flex items-center px-3 py-1.5 rounded-full text-xs font-semibold whitespace-nowrap bg-[#EDE9FE] text-[#7551E9]">
+                  {reservation.organization.name}
+                </span>
+              )}
+              <span
+                className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-semibold whitespace-nowrap"
+                style={{ background: badge.bg, color: badge.color }}
+              >
+                <span className="w-1.5 h-1.5 rounded-full" style={{ background: badge.color }} />
+                {badge.label}
+              </span>
+            </div>
           </div>
           <p className="text-xs text-gray-500 mb-2.5 flex items-center gap-1.5">
             <MapPin size={13} color="#9CA3AF" />
             {direction}, {city} · {size} m²
           </p>
+          {reservation.organization && reservation.creator_name && (
+            <p className="text-xs text-gray-500 mb-2.5">Reservada por {reservation.creator_name}</p>
+          )}
           <div className="flex gap-6 flex-wrap">
             <div>
               <p className="text-[11px] text-gray-400 mb-0.5">Período</p>
@@ -99,10 +136,10 @@ const ReservationCard = ({ reservation, onCancelClick, onReceiptClick }: Reserva
           </div>
         </div>
       </div>
-      {(reservation.receipt || reservation.can_be_cancelled) && (
+      {(showReceiptButton || showCancelButton || showDisabledCancel || showReviewButton || showReportButton) && (
         <div className="px-4 pb-4">
           <div className="border-t border-gray-100 pt-3.5 flex gap-2.5 flex-wrap">
-            {reservation.receipt && (
+            {showReceiptButton && (
               <button
                 onClick={() => onReceiptClick(reservation)}
                 className="inline-flex items-center gap-1.5 px-4 py-2 bg-white text-[#7551E9] border border-[#7551E9] rounded-lg text-sm font-semibold"
@@ -111,13 +148,59 @@ const ReservationCard = ({ reservation, onCancelClick, onReceiptClick }: Reserva
                 Ver comprobante
               </button>
             )}
-            {reservation.can_be_cancelled && (
+            {showCancelButton && (
               <button
                 onClick={() => onCancelClick(reservation)}
                 className="inline-flex items-center gap-1.5 px-4 py-2 bg-white text-red-600 border border-red-300 rounded-lg text-sm font-semibold"
               >
                 <X size={14} color="#DC2626" />
                 Cancelar reserva
+              </button>
+            )}
+            {showDisabledCancel && (
+              <div className="relative">
+                <button
+                  type="button"
+                  aria-disabled="true"
+                  aria-describedby={tooltipId}
+                  onMouseEnter={() => setTooltipOpen(true)}
+                  onMouseLeave={() => setTooltipOpen(false)}
+                  onFocus={() => setTooltipOpen(true)}
+                  onBlur={() => setTooltipOpen(false)}
+                  onKeyDown={(e) => {
+                    if (e.key === "Escape") setTooltipOpen(false);
+                  }}
+                  className="inline-flex items-center gap-1.5 px-4 py-2 bg-gray-50 text-gray-400 border border-gray-200 rounded-lg text-sm font-semibold cursor-not-allowed"
+                >
+                  <Lock size={14} color="#9CA3AF" />
+                  Cancelar reserva
+                </button>
+                <span
+                  id={tooltipId}
+                  role="tooltip"
+                  hidden={!tooltipOpen}
+                  className="absolute bottom-full left-0 mb-2 w-64 px-3 py-2 bg-gray-900 text-white text-xs rounded-lg shadow-lg z-10"
+                >
+                  {ADMIN_ONLY_TOOLTIP}
+                </span>
+              </div>
+            )}
+            {showReviewButton && (
+              <button
+                onClick={() => onReviewClick?.(reservation)}
+                className="inline-flex items-center gap-1.5 px-4 py-2 bg-white text-[#7551E9] border border-[#7551E9] rounded-lg text-sm font-semibold"
+              >
+                <Star size={14} color="#7551E9" />
+                Dejar reseña
+              </button>
+            )}
+            {showReportButton && (
+              <button
+                onClick={() => onReportClick?.(reservation)}
+                className="inline-flex items-center gap-1.5 px-4 py-2 bg-white text-gray-700 border border-gray-300 rounded-lg text-sm font-semibold"
+              >
+                <MessageCircle size={14} color="#374151" />
+                Reportar un problema
               </button>
             )}
           </div>

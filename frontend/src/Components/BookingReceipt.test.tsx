@@ -186,4 +186,65 @@ describe("BookingReceipt", () => {
 
     expect(onBackToCatalog).toHaveBeenCalledTimes(1);
   });
+
+  // HUE-05 OR-WS6/WS7
+  it("shows the organization name and RUC when the reservation carries one", () => {
+    render(
+      <BookingReceipt
+        storeRoom={storeRoom}
+        reservation={{ ...reservation, organization: { id: 5, name: "Andina", ruc: "1792146739001" } }}
+        onViewReservations={onViewReservations}
+        onBackToCatalog={onBackToCatalog}
+      />
+    );
+
+    expect(screen.getByText(/Andina/)).toBeInTheDocument();
+    expect(screen.getByText(/1792146739001/)).toBeInTheDocument();
+  });
+
+  it("shows no organization row for a personal reservation", () => {
+    render(
+      <BookingReceipt
+        storeRoom={storeRoom}
+        reservation={reservation}
+        onViewReservations={onViewReservations}
+        onBackToCatalog={onBackToCatalog}
+      />
+    );
+
+    expect(screen.queryByText("A nombre de")).not.toBeInTheDocument();
+  });
+
+  // org-wallet OW-WS13/WS14
+  it("shows 'Pagado con' and 'Saldo de {org}' for a wallet-paid organization reservation", () => {
+    render(
+      <BookingReceipt
+        storeRoom={storeRoom}
+        reservation={{
+          ...reservation,
+          payment_method: "wallet",
+          organization: { id: 5, name: "Andina", ruc: "1792146739001" },
+        }}
+        onViewReservations={onViewReservations}
+        onBackToCatalog={onBackToCatalog}
+      />
+    );
+
+    expect(screen.getByText("Pagado con")).toBeInTheDocument();
+    expect(screen.getByText("Saldo de Andina")).toBeInTheDocument();
+  });
+
+  it("shows no payment method row for a personal reservation", () => {
+    render(
+      <BookingReceipt
+        storeRoom={storeRoom}
+        reservation={reservation}
+        onViewReservations={onViewReservations}
+        onBackToCatalog={onBackToCatalog}
+      />
+    );
+
+    expect(screen.queryByText("Pagado con")).not.toBeInTheDocument();
+    expect(screen.queryByText(/Saldo de/)).not.toBeInTheDocument();
+  });
 });

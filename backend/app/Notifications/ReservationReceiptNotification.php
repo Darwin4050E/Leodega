@@ -36,19 +36,29 @@ class ReservationReceiptNotification extends Notification
     {
         unset($notifiable);
 
+        $this->reservation->loadMissing('organization');
+
         $tenantName = $this->reservation->tenants->user->name;
         $code = ReservationCode::format($this->reservation->id);
         $storeRoomTitle = $this->reservation->storeRooms->title;
         $amount = '$'.number_format((float) $this->reservation->total_mount, 2, '.', ',');
 
-        return (new MailMessage)
+        $mail = (new MailMessage)
             ->subject('Confirmación de tu reserva - Leodega')
             ->greeting('Hola, '.$tenantName.'.')
             ->line('Tu reserva ha sido confirmada y el pago fue procesado correctamente.')
             ->line('Código de reserva: '.$code)
             ->line('Almacén: '.$storeRoomTitle)
             ->line('Período: '.$this->reservation->start_date.' – '.$this->reservation->end_date)
-            ->line('Monto pagado: '.$amount)
-            ->line('Gracias por confiar en Leodega.');
+            ->line('Monto pagado: '.$amount);
+
+        // HUE-05 OR-11/D5: org identity line, live-read, absent for a
+        // personal reservation.
+        $organization = $this->reservation->organization;
+        if ($organization !== null) {
+            $mail->line("Reservado a nombre de: {$organization->name} (RUC {$organization->ruc})");
+        }
+
+        return $mail->line('Gracias por confiar en Leodega.');
     }
 }

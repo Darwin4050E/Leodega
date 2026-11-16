@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom'
 import { useAuth } from '../../auth/useAuth'
 import PhoneFrame from '../../components/PhoneFrame'
 import Button from '../../components/Button'
+import RoleTabBar from '../../components/RoleTabBar'
 import { listMyStoreRooms, type MyStoreRoom } from '../../services/storeRooms'
 import StoreRoomCard from './StoreRoomCard'
 import {
@@ -10,6 +11,7 @@ import {
   STATUS_META,
   countByStatus,
   filterRooms,
+  publishedCountLabel,
   type StatusFilter,
 } from './model'
 
@@ -24,12 +26,15 @@ type Phase = 'loading' | 'error' | 'ready'
 const chipLabel = (filter: StatusFilter): string =>
   filter === 'todas' ? 'Todas' : STATUS_META[filter].filterLabel
 
-function Header() {
+function Header({ count }: { count?: number }) {
   return (
     <div className="shrink-0 px-5 pb-3 pt-12">
       <h1 className="m-0 text-xl font-bold tracking-tight text-lg-ink">
         Mis bodegas
       </h1>
+      {count !== undefined && (
+        <p className="m-0 mt-1 text-sm text-lg-t3">{publishedCountLabel(count)}</p>
+      )}
     </div>
   )
 }
@@ -86,7 +91,7 @@ export default function MyStoreRoomsScreen() {
 
   if (phase === 'loading') {
     return (
-      <PhoneFrame>
+      <PhoneFrame footer={<RoleTabBar />}>
         <Header />
         <div className="flex flex-1 items-center justify-center px-6 text-sm text-lg-t3">
           Cargando tus bodegas…
@@ -97,7 +102,7 @@ export default function MyStoreRoomsScreen() {
 
   if (phase === 'error') {
     return (
-      <PhoneFrame>
+      <PhoneFrame footer={<RoleTabBar />}>
         <Header />
         <div className="flex flex-1 flex-col items-center justify-center gap-4 px-6 text-center">
           <p className="text-sm text-lg-t3">
@@ -113,8 +118,8 @@ export default function MyStoreRoomsScreen() {
 
   if (rooms.length === 0) {
     return (
-      <PhoneFrame>
-        <Header />
+      <PhoneFrame footer={<RoleTabBar />}>
+        <Header count={0} />
         <div className="flex flex-1 flex-col items-center justify-center gap-4 px-6 text-center">
           <p className="text-sm text-lg-t3">
             Aún no has publicado ninguna bodega.
@@ -134,8 +139,8 @@ export default function MyStoreRoomsScreen() {
   const visible = filterRooms(rooms, filter)
 
   return (
-    <PhoneFrame>
-      <Header />
+    <PhoneFrame footer={<RoleTabBar />}>
+      <Header count={rooms.length} />
 
       <div className="flex shrink-0 gap-2 overflow-x-auto px-5 pb-3">
         {FILTERS.map((option) => {
@@ -158,14 +163,23 @@ export default function MyStoreRoomsScreen() {
         })}
       </div>
 
-      <div className="flex flex-1 flex-col gap-3 overflow-y-auto px-5 pb-8">
-        {visible.length === 0 ? (
-          <p className="mt-8 text-center text-sm text-lg-t3">
-            Ninguna bodega coincide con este filtro.
-          </p>
-        ) : (
-          visible.map((room) => <StoreRoomCard key={room.id} room={room} />)
-        )}
+      <div className="relative flex min-h-0 flex-1 flex-col">
+        <div className="flex flex-1 flex-col gap-3 overflow-y-auto px-5 pb-24">
+          {visible.length === 0 ? (
+            <p className="mt-8 text-center text-sm text-lg-t3">
+              Ninguna bodega coincide con este filtro.
+            </p>
+          ) : (
+            visible.map((room) => <StoreRoomCard key={room.id} room={room} />)
+          )}
+        </div>
+        <button
+          type="button"
+          onClick={() => navigate('/publicar')}
+          className="absolute bottom-5 right-5 rounded-full bg-lg-primary px-5 py-3 text-sm font-semibold text-white shadow-lg"
+        >
+          + Publicar
+        </button>
       </div>
     </PhoneFrame>
   )

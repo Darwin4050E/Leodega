@@ -4,6 +4,7 @@ namespace App\Models;
 
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Database\Eloquent\Relations\BelongsTo;
 
 class ReservationCancellationObligation extends Model
 {
@@ -27,12 +28,18 @@ class ReservationCancellationObligation extends Model
         'penalty_rate' => 'decimal:4',
     ];
 
-    public function reservation()
+    /**
+     * @return BelongsTo<Reservations, $this>
+     */
+    public function reservation(): BelongsTo
     {
         return $this->belongsTo(Reservations::class, 'reservation_id');
     }
 
-    public function landlord()
+    /**
+     * @return BelongsTo<Landlords, $this>
+     */
+    public function landlord(): BelongsTo
     {
         return $this->belongsTo(Landlords::class, 'landlord_id');
     }

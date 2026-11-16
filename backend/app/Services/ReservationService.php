@@ -4,20 +4,34 @@ namespace App\Services;
 
 use App\Enums\NotificationType;
 use App\Exceptions\ReservationConflictException;
+use App\Models\Organization;
+use App\Models\Payments;
 use App\Models\ReservationCancellationObligation;
 use App\Models\Reservations;
 use App\Models\StoreRooms;
 use App\Models\Tenants;
 use App\Notifications\ReservationCancellationNotification;
+use App\Notifications\ReservationReceiptNotification;
 use App\Support\CancellationRefundCalculator;
+use App\Support\Money;
 use Carbon\Carbon;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
+use Illuminate\Validation\ValidationException;
 
 class ReservationService
 {
-    public function __construct(private ReservationPricingService $pricingService) {}
+    // A deadlock retry is safe: the org transaction body only touches the database.
+    private const ORGANIZATION_CREATE_ATTEMPTS = 3;
+
+    public function __construct(
+        private ReservationPricingService $pricingService,
+        private WalletService $walletService = new WalletService,
+        private SpendingLimitService $spendingLimitService = new SpendingLimitService,
+        private OrganizationReservationEventService $events = new OrganizationReservationEventService,
+        private OrganizationCancellationNotifier $orgNotifier = new OrganizationCancellationNotifier,
+    ) {}
 
     /**
      * Extraído de ReservationsController::store: crea la reserva si no hay
@@ -43,10 +57,35 @@ class ReservationService
      * double-notify). The conflict check then blocks on either a
      * `confirmed` row or ANOTHER tenant's active (non-expired) `pending`
      * hold -- a `pending` row alone no longer silently coexists.
+     *
+     * sdd/hue-05-reservar-organizacion (D4/D16/D17): `$organization` is the
+     * caller's active org context (resolved by `org.context`, null means
+     * personal). When given, its `status` MUST be `active` -- checked
+     * BEFORE the transaction opens, so an inactive org never takes the room
+     * lock or writes anything (OR-3). `tenant_id` always stays the creating
+     * member (D4); the conflict/supersede logic right below is intentionally
+     * unaware of `$organization` and keeps keying everything on `tenant_id`
+     * only, so the SAME tenant's personal and org holds supersede each
+     * other exactly like two personal holds would (D17, pinned by a test).
+     *
+     * sdd/org-wallet (OW-5, OW-6): in org context the reservation is paid
+     * from the organization wallet and confirmed in the SAME transaction, so
+     * there is no pending hold and no card step. Lock order is
+     * room -> reservation -> organization. The receipt email goes out after
+     * the transaction has returned, like PaymentService::process().
+     * @throws ValidationException when $organization->status !== 'active'
+     *                             or, on the locked row, is no longer active.
+     * @throws \App\Exceptions\InsufficientWalletBalanceException when the wallet cannot cover the total.
      */
-    public function create(Tenants $tenant, StoreRooms $room, array $data, ?int $actingUserId): Reservations
+    public function create(Tenants $tenant, StoreRooms $room, array $data, ?int $actingUserId, ?Organization $organization = null): Reservations
     {
-        return DB::transaction(function () use ($tenant, $room, $data) {
+        if ($organization !== null && $organization->status !== 'active') {
+            throw ValidationException::withMessages([
+                'organization' => ['La organización seleccionada no está activa.'],
+            ]);
+        }
+
+        $reservation = DB::transaction(function () use ($tenant, $room, $data, $actingUserId, $organization) {
             StoreRooms::where('id', $room->id)->lockForUpdate()->first();
 
             $this->expireElapsedHolds(Reservations::where('store_room_id', $room->id));
@@ -78,9 +117,10 @@ class ReservationService
 
             $quote = $this->pricingService->quote($room, $data['start_date'], $data['end_date']);
 
-            return Reservations::create([
+            $reservation = Reservations::create([
                 'store_room_id' => $room->id,
                 'tenant_id' => $tenant->id,
+                'organization_id' => $organization?->id,
                 'start_date' => $data['start_date'],
                 'end_date' => $data['end_date'],
                 'status' => 'pending',
@@ -94,7 +134,78 @@ class ReservationService
                 'cancellation_policy_tier' => $room->cancellation_policy_tier,
                 'creation_date' => now(),
             ]);
-        });
+
+            if ($organization === null) {
+                return $reservation;
+            }
+
+            return $this->payFromWallet($reservation, $organization, $tenant, $quote['total_mount'], $actingUserId);
+        }, $organization === null ? 1 : self::ORGANIZATION_CREATE_ATTEMPTS);
+
+        if ($organization === null) {
+            return $reservation;
+        }
+
+        try {
+            $reservation->tenants->user->notify(new ReservationReceiptNotification($reservation));
+        } catch (\Throwable $e) {
+            Log::error('Failed to send reservation receipt email', [
+                'reservation_id' => $reservation->id,
+                'error' => $e->getMessage(),
+            ]);
+        }
+
+        // Same payload shape as a personal create: no eager-loaded relations.
+        return $reservation->unsetRelations();
+    }
+
+    /**
+     * Confirms the freshly inserted organization reservation and debits its
+     * total from the wallet. Runs inside create()'s transaction, with the room
+     * already locked: confirm() takes the reservation lock, then the
+     * organization row is locked last. The status re-check on that locked row
+     * closes the window in which the org was deactivated after being loaded
+     * (D11), and runs before any money moves. The monthly-limit guard then
+     * reads the member's spend under that same row lock, so two bookings
+     * cannot both pass; it rejects before the debit, which also gives its
+     * error precedence over an insufficient balance (ML-10).
+     *
+     * @throws \App\Exceptions\MonthlyLimitExceededException
+     */
+    private function payFromWallet(Reservations $reservation, Organization $organization, Tenants $tenant, string $total, ?int $actingUserId): Reservations
+    {
+        $confirmed = $this->confirm($reservation, $actingUserId ?? $tenant->user_id);
+
+        $locked = $this->walletService->lockOrganization($organization->id);
+
+        if ($locked->status !== 'active') {
+            throw ValidationException::withMessages([
+                'organization' => ['La organización seleccionada no está activa.'],
+            ]);
+        }
+
+        $this->assertOrganizationMaySpend($locked, $tenant, $confirmed, $total);
+
+        $this->walletService->debitForReservation($locked, $confirmed, $total, $tenant->user_id);
+
+        Payments::create([
+            'reservation_id' => $confirmed->id,
+            'payment_method' => 'wallet',
+            'payment_state' => 'paid',
+            'payment_date' => now(),
+        ]);
+
+        return $confirmed;
+    }
+
+    /**
+     * Seam between the organization lock and the debit: the check and the
+     * debit cannot interleave with another spend. `$confirmed` is the row
+     * re-read from the database, so its `start_date` is the stored value.
+     */
+    private function assertOrganizationMaySpend(Organization $locked, Tenants $tenant, Reservations $confirmed, string $total): void
+    {
+        $this->spendingLimitService->assertMaySpend($locked, $tenant->user_id, $confirmed, $total);
     }
 
     /**
@@ -183,10 +294,11 @@ class ReservationService
                 ]
             );
 
-            $locked->load(['storeRooms.landlord.user', 'tenants.user']);
+            $locked->load(['storeRooms.landlord.user', 'tenants.user', 'organization']);
             $room = $locked->storeRooms;
             if ($room && $room->landlord && $room->landlord->user) {
                 $tenantUser = $locked->tenants->user;
+                $organization = $locked->organization;
                 NotificationService::send(
                     $actingUserId,
                     $room->landlord->user->id,
@@ -196,11 +308,15 @@ class ReservationService
                     [
                         'reservation_id' => $locked->id,
                         'store_room_id' => $locked->store_room_id,
+                        // HUE-05 OR-11/D5: the creator's name, never the
+                        // org's -- unchanged by $organization being present.
                         'customer_name' => trim("{$tenantUser->name} {$tenantUser->lastname}"),
                         'store_room_title' => $room->title,
                         'amount' => $locked->total_mount,
                         'start_date' => $locked->start_date,
                         'end_date' => $locked->end_date,
+                        'organization_name' => $organization?->name,
+                        'organization_ruc' => $organization?->ruc,
                     ]
                 );
             }
@@ -245,7 +361,7 @@ class ReservationService
     public function expireElapsedHolds(Builder $scope): void
     {
         $rows = (clone $scope)->expiredHold()
-            ->with(['storeRooms.landlord.user', 'tenants.user'])
+            ->with(['storeRooms.landlord.user', 'tenants.user', 'organization'])
             ->get();
 
         if ($rows->isEmpty()) {
@@ -281,6 +397,7 @@ class ReservationService
                 continue;
             }
 
+            $organization = $row->organization;
             NotificationService::send(
                 $tenantUser->id,
                 $room->landlord->user->id,
@@ -294,6 +411,8 @@ class ReservationService
                     'store_room_title' => $room->title,
                     'start_date' => $row->start_date,
                     'end_date' => $row->end_date,
+                    'organization_name' => $organization?->name,
+                    'organization_ruc' => $organization?->ruc,
                 ]
             );
         }
@@ -325,13 +444,15 @@ class ReservationService
      */
     public function cancelByLandlord(Reservations $reservation, string $reason, ?int $actingUserId): Reservations
     {
-        if (! $reservation->isCancellableByLandlord()) {
-            throw new ReservationConflictException(
-                'Esta reserva no puede cancelarse: debe estar pagada y no haber iniciado.'
-            );
-        }
+        $this->assertCancellableByLandlord($reservation);
 
         $reservation = DB::transaction(function () use ($reservation, $reason, $actingUserId) {
+            // Re-read under the row lock and re-check: a wallet credit must
+            // never be written for a row a concurrent cancel already settled.
+            // Lock order is room -> reservation -> organization.
+            $reservation = Reservations::where('id', $reservation->id)->lockForUpdate()->firstOrFail();
+            $this->assertCancellableByLandlord($reservation);
+
             $reservation->load('storeRooms');
             $landlordId = $reservation->storeRooms->landlord_id;
 
@@ -344,16 +465,20 @@ class ReservationService
             $rentSubtotalCents = (int) round(((float) $reservation->rent_subtotal) * 100);
             $totalCents = (int) round(((float) $reservation->total_mount) * 100);
             $penaltyCents = (int) round($rentSubtotalCents * $penaltyRate);
+            $refundAmount = number_format($totalCents / 100, 2, '.', '');
 
             ReservationCancellationObligation::create([
                 'reservation_id' => $reservation->id,
                 'landlord_id' => $landlordId,
-                'refund_amount' => number_format($totalCents / 100, 2, '.', ''),
+                'refund_amount' => $refundAmount,
                 'penalty_amount' => number_format($penaltyCents / 100, 2, '.', ''),
                 'penalty_rate' => $penaltyRate,
                 'reason' => $reason,
                 'settlement_status' => 'pending_settlement',
             ]);
+
+            // The gestor cancelling returns the full amount, never a tier.
+            $this->creditOrganizationRefund($reservation, $refundAmount);
 
             NotificationService::send(
                 $actingUserId,
@@ -404,7 +529,7 @@ class ReservationService
      */
     public function cancelByTenant(Reservations $reservation, ?string $reason, ?int $actingUserId): Reservations
     {
-        return DB::transaction(function () use ($reservation, $reason, $actingUserId) {
+        $canceled = DB::transaction(function () use ($reservation, $reason, $actingUserId) {
             $locked = Reservations::where('id', $reservation->id)->lockForUpdate()->firstOrFail();
 
             if (! $locked->isCancellableByTenant()) {
@@ -421,24 +546,80 @@ class ReservationService
                 'refund_amount' => $refundAmount,
             ]);
 
-            $locked->load('storeRooms.landlord.user');
-            $room = $locked->storeRooms;
-            if ($room && $room->landlord && $room->landlord->user) {
-                NotificationService::send(
-                    $actingUserId,
-                    $room->landlord->user->id,
-                    NotificationType::RESERVATION_CANCELED,
-                    'Reserva cancelada por el cliente',
-                    'El cliente canceló su reserva. Revisa el reembolso correspondiente.',
-                    [
-                        'reservation_id' => $locked->id,
-                        'store_room_id' => $locked->store_room_id,
-                    ]
-                );
+            $this->creditOrganizationRefund($locked, $refundAmount);
+
+            if ($locked->organization_id !== null) {
+                $this->events->recordCancelled($locked, $actingUserId, $reason);
+                $this->orgNotifier->notifyInApp($locked, $actingUserId);
+            } else {
+                $locked->load('storeRooms.landlord.user');
+                $room = $locked->storeRooms;
+                if ($room && $room->landlord && $room->landlord->user) {
+                    NotificationService::send(
+                        $actingUserId,
+                        $room->landlord->user->id,
+                        NotificationType::RESERVATION_CANCELED,
+                        'Reserva cancelada por el cliente',
+                        'El cliente canceló su reserva. Revisa el reembolso correspondiente.',
+                        [
+                            'reservation_id' => $locked->id,
+                            'store_room_id' => $locked->store_room_id,
+                        ]
+                    );
+                }
             }
 
             return $locked->load(['storeRooms', 'tenants.user']);
         });
+
+        if ($canceled->organization_id !== null) {
+            try {
+                $this->orgNotifier->emailCreator($canceled, $actingUserId);
+            } catch (\Throwable $e) {
+                Log::error('Failed to send organization reservation cancellation email', [
+                    'reservation_id' => $canceled->id,
+                    'error' => $e->getMessage(),
+                ]);
+            }
+        }
+
+        return $canceled;
+    }
+
+    private function assertCancellableByLandlord(Reservations $reservation): void
+    {
+        if (! $reservation->isCancellableByLandlord()) {
+            throw new ReservationConflictException(
+                'Esta reserva no puede cancelarse: debe estar pagada y no haber iniciado.'
+            );
+        }
+    }
+
+    /**
+     * org-wallet OW-8..OW-10: credits a refund to the organization wallet when
+     * the reservation was paid from it. A personal reservation, a legacy
+     * card-paid organization row and a zero refund leave the wallet alone. The
+     * organization is locked last (room -> reservation -> organization), its
+     * status is deliberately not checked (OW-S32) and the actor is always the
+     * reservation creator, whoever cancelled and whether or not they still
+     * belong to the organization (OW-S36, OW-S49).
+     */
+    private function creditOrganizationRefund(Reservations $reservation, string $amount): void
+    {
+        if ($reservation->organization_id === null || Money::toCents($amount) === 0) {
+            return;
+        }
+
+        $reservation->load('payments');
+
+        if ($reservation->latestPaidPayment()?->payment_method !== 'wallet') {
+            return;
+        }
+
+        $organization = $this->walletService->lockOrganization($reservation->organization_id);
+        $creatorUserId = Tenants::findOrFail($reservation->tenant_id)->user_id;
+
+        $this->walletService->creditRefund($organization, $reservation, $amount, $creatorUserId);
     }
 
     /**
@@ -469,12 +650,31 @@ class ReservationService
      */
     public function previewRefund(Reservations $reservation): string
     {
+        return $this->previewBreakdown($reservation)['refund_amount'];
+    }
+
+    /**
+     * HUE-06 OW-8: total, refund and penalty for the cancel modal. Penalty is
+     * derived in integer cents (never stored), so refund + penalty = total.
+     * An unpaid legacy pending reservation previews 0.00 across the board.
+     *
+     * @return array{total_amount: string, refund_amount: string, penalty_amount: string}
+     */
+    public function previewBreakdown(Reservations $reservation): array
+    {
         if (! $reservation->isCancellableByTenant()) {
             throw new ReservationConflictException(
                 'Esta reserva no puede cancelarse: ya fue cancelada, ya inició, o no existe.'
             );
         }
 
-        return $this->computeRefund($reservation);
+        $refund = $this->computeRefund($reservation);
+        $totalCents = $reservation->status === 'confirmed' ? Money::toCents((string) $reservation->total_mount) : 0;
+
+        return [
+            'total_amount' => Money::fromCents($totalCents),
+            'refund_amount' => $refund,
+            'penalty_amount' => Money::fromCents($totalCents - Money::toCents($refund)),
+        ];
     }
 }

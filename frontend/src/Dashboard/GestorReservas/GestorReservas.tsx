@@ -10,6 +10,7 @@ import {
   derivePagoEstado,
   type PagoEstado,
 } from "../../utils/reservationEligibility";
+import { organizationIdentityLine } from "../../utils/organization";
 import CancelarReservaModal from "./CancelarReservaModal";
 import ComprobantePagoModal from "./ComprobantePagoModal";
 
@@ -181,6 +182,10 @@ const GestorReservas = () => {
               ["Fin", selected.end_date],
               ["Vigencia", VIGENCIA_LABEL[vigencia].label],
               ["Monto total", formatUSD(selected.total_mount ?? 0, { suffix: true })],
+              // HUE-05 OR-W6: present only for an org reservation.
+              ...(selected.organization
+                ? ([["Organización", organizationIdentityLine(selected.organization.name, selected.organization.ruc)]] as const)
+                : []),
             ].map(([label, value]) => (
               <div key={label}>
                 <p className="text-[11px] text-gray-400 mb-0.5">{label}</p>
@@ -266,6 +271,9 @@ const GestorReservas = () => {
       <div className="flex justify-between items-end mb-4 flex-wrap gap-2.5">
         <div>
           <h1 className="text-xl font-semibold text-gray-900 m-0">Reservas de mis bodegas</h1>
+          <p className="text-sm text-gray-500 mt-1">
+            Reservas confirmadas al instante. El pago confirma la renta — sin aprobación manual.
+          </p>
         </div>
       </div>
 

@@ -1,5 +1,6 @@
 import { useCallback, useState, type ReactNode } from "react";
 import { AuthContext, type AuthUser } from "./authContextBase";
+import { clearStoredActiveContext } from "../utils/activeContext";
 
 function readStoredUser(): AuthUser | null {
   const raw = localStorage.getItem("auth_user");
@@ -34,6 +35,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const logout = useCallback(() => {
+    clearStoredActiveContext();
     localStorage.removeItem("auth_token");
     localStorage.removeItem("auth_user");
     setToken(null);

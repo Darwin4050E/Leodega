@@ -100,6 +100,16 @@ describe('GestorReservas', () => {
     mockGetLandlordReservations.mockResolvedValue({ data: reservations });
   });
 
+  it('explains that reservations are confirmed by payment, under the title', async () => {
+    render(<GestorReservas />);
+    await waitFor(() => screen.getAllByText('Bodega Norte'));
+
+    expect(screen.getByRole('heading', { name: 'Reservas de mis bodegas' })).toBeInTheDocument();
+    expect(
+      screen.getByText('Reservas confirmadas al instante. El pago confirma la renta — sin aprobación manual.')
+    ).toBeInTheDocument();
+  });
+
   it('renders all four PAGO labels', async () => {
     render(<GestorReservas />);
     await waitFor(() => screen.getAllByText('Bodega Norte'));
@@ -302,5 +312,36 @@ describe('GestorReservas', () => {
     await waitFor(() =>
       expect(screen.queryByText('Cancelar reserva')).not.toBeInTheDocument()
     );
+  });
+
+  // HUE-05 OR-WS13/WS14
+  describe('organization identity (OR-W6)', () => {
+    it('OR-WS13: shows the organization name and RUC alongside the creator in the detail view', async () => {
+      mockGetLandlordReservations.mockResolvedValueOnce({
+        data: [
+          {
+            ...reservations[0],
+            organization: { id: 5, name: 'Andina', ruc: '1792146739001' },
+          },
+        ],
+      });
+
+      render(<GestorReservas />);
+      await waitFor(() => screen.getAllByText('Bodega Norte'));
+
+      fireEvent.click(screen.getByText('Ana Torres'));
+
+      expect(screen.getByText(/Andina/)).toBeInTheDocument();
+      expect(screen.getByText(/1792146739001/)).toBeInTheDocument();
+    });
+
+    it('OR-WS14: shows no organization field for a personal reservation', async () => {
+      render(<GestorReservas />);
+      await waitFor(() => screen.getAllByText('Bodega Norte'));
+
+      fireEvent.click(screen.getByText('Ana Torres'));
+
+      expect(screen.queryByText('Organización')).not.toBeInTheDocument();
+    });
   });
 });

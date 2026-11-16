@@ -2,6 +2,7 @@
 
 namespace Tests\Unit;
 
+use App\Models\Organization;
 use App\Models\Reservations;
 use App\Models\StoreRooms;
 use App\Models\Tenants;
@@ -15,7 +16,7 @@ class ReservationReceiptNotificationTest extends TestCase
 {
     use RefreshDatabase;
 
-    private function makeReservation(): Reservations
+    private function makeReservation(?int $organizationId = null): Reservations
     {
         $tenantUser = User::factory()->create(['name' => 'Ana Perez']);
         $tenant = Tenants::factory()->create(['user_id' => $tenantUser->id]);
@@ -27,7 +28,8 @@ class ReservationReceiptNotificationTest extends TestCase
             'start_date' => '2026-01-10',
             'end_date' => '2026-01-15',
             'total_mount' => 450.00,
-        ])->load(['storeRooms', 'tenants.user']);
+            'organization_id' => $organizationId,
+        ])->load(['storeRooms', 'tenants.user', 'organization']);
     }
 
     public function test_via_returns_mail_only()
@@ -51,5 +53,28 @@ class ReservationReceiptNotificationTest extends TestCase
         $this->assertStringContainsString(ReservationCode::format($reservation->id), $rendered);
         $this->assertStringContainsString('Bodega Central', $rendered);
         $this->assertStringContainsString('$450.00', $rendered);
+    }
+
+    // -- HUE-05 OR-11/OR-S20/OR-S22: org identity line --
+
+    public function test_to_mail_contains_the_org_identity_line_for_an_organization_reservation()
+    {
+        $organization = Organization::factory()->create(['name' => 'Andina', 'ruc' => '1790011111001']);
+        $reservation = $this->makeReservation($organization->id);
+        $notification = new ReservationReceiptNotification($reservation);
+
+        $rendered = $notification->toMail($reservation->tenants->user)->render();
+
+        $this->assertStringContainsString('Reservado a nombre de: Andina (RUC 1790011111001)', $rendered);
+    }
+
+    public function test_to_mail_has_no_org_text_for_a_personal_reservation()
+    {
+        $reservation = $this->makeReservation();
+        $notification = new ReservationReceiptNotification($reservation);
+
+        $rendered = $notification->toMail($reservation->tenants->user)->render();
+
+        $this->assertStringNotContainsString('Reservado a nombre de', $rendered);
     }
 }

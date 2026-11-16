@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { render, screen } from '@testing-library/react';
+import { render, screen, waitFor } from '@testing-library/react';
 
 vi.mock('./Components/login', () => ({
   default: () => <div>Pantalla de inicio de sesión</div>,
@@ -15,6 +15,34 @@ vi.mock('./Dashboard/Tendant/CalendarioTendant', () => ({
 }));
 vi.mock('./Dashboard/Tendant/MisReservas', () => ({
   default: () => <div>Mis reservas</div>,
+}));
+
+vi.mock('./Dashboard/Tendant/BilleteraOrganizacion', () => ({
+  default: () => <div>Billetera de la organización</div>,
+}));
+
+vi.mock('./Dashboard/Tendant/MiembrosOrganizacion', () => ({
+  default: () => <div>Miembros de la organización</div>,
+}));
+
+vi.mock('./Dashboard/Tendant/PanelOrganizacion', () => ({
+  default: () => <div>Panel de la organización</div>,
+}));
+
+vi.mock('./Dashboard/Tendant/CrearOrganizacion', () => ({
+  default: () => <div>Crear organización</div>,
+}));
+
+vi.mock('./Dashboard/Tendant/MisInvitaciones', () => ({
+  default: () => <div>Mis invitaciones</div>,
+}));
+
+const mockGetOrganizations = vi.hoisted(() => vi.fn());
+const mockGetMyInvitations = vi.hoisted(() => vi.fn());
+vi.mock('./services/organizations', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('./services/organizations')>()),
+  getOrganizations: mockGetOrganizations,
+  getMyInvitations: mockGetMyInvitations,
 }));
 
 import App from './App';
@@ -38,11 +66,20 @@ const TENANT_ROUTES: [string, string][] = [
   ['/arrendatario/mensajes', 'Mensajes del arrendatario'],
   ['/arrendatario/calendario', 'Calendario del arrendatario'],
   ['/arrendatario/mis-reservas', 'Mis reservas'],
+  ['/mi-cuenta/crear-organizacion', 'Crear organización'],
+  ['/mi-cuenta/invitaciones', 'Mis invitaciones'],
+  ['/organizacion/billetera', 'Billetera de la organización'],
+  ['/organizacion/miembros', 'Miembros de la organización'],
+  ['/organizacion/panel', 'Panel de la organización'],
 ];
 
 describe('tenant routes auth guard', () => {
   beforeEach(() => {
     localStorage.clear();
+    mockGetOrganizations.mockReset();
+    mockGetOrganizations.mockResolvedValue({ data: [] });
+    mockGetMyInvitations.mockReset();
+    mockGetMyInvitations.mockResolvedValue({ data: { data: [], pending_count: 0 } });
   });
 
   afterEach(() => {
@@ -66,5 +103,75 @@ describe('tenant routes auth guard', () => {
     visit(path);
 
     expect(screen.getByText(marker)).toBeInTheDocument();
+  });
+});
+
+describe('active context provider mounting', () => {
+  beforeEach(() => {
+    localStorage.clear();
+    mockGetOrganizations.mockReset();
+    mockGetOrganizations.mockResolvedValue({ data: [] });
+    mockGetMyInvitations.mockReset();
+    mockGetMyInvitations.mockResolvedValue({ data: { data: [], pending_count: 0 } });
+  });
+
+  afterEach(() => {
+    window.history.pushState({}, '', '/');
+  });
+
+  it('loads the organizations once for a tenant session', async () => {
+    localStorage.setItem('auth_token', 'test-token');
+    localStorage.setItem('auth_user', JSON.stringify({ id: 1, role: 'tenant' }));
+
+    visit('/arrendatario/dashboard');
+
+    await waitFor(() => expect(mockGetOrganizations).toHaveBeenCalledTimes(1));
+  });
+
+  it('does not call the organizations endpoint for an anonymous visitor on a public page', async () => {
+    visit('/login');
+
+    expect(await screen.findByText('Pantalla de inicio de sesión')).toBeInTheDocument();
+    expect(mockGetOrganizations).not.toHaveBeenCalled();
+  });
+});
+
+describe('invitations inbox provider mounting', () => {
+  beforeEach(() => {
+    localStorage.clear();
+    mockGetOrganizations.mockReset();
+    mockGetOrganizations.mockResolvedValue({ data: [] });
+    mockGetMyInvitations.mockReset();
+    mockGetMyInvitations.mockResolvedValue({ data: { data: [], pending_count: 0 } });
+  });
+
+  afterEach(() => {
+    window.history.pushState({}, '', '/');
+  });
+
+  it('WS116: requests the invitee inbox once when the tenant shell mounts', async () => {
+    localStorage.setItem('auth_token', 'test-token');
+    localStorage.setItem('auth_user', JSON.stringify({ id: 1, role: 'tenant' }));
+
+    visit('/arrendatario/dashboard');
+
+    await waitFor(() => expect(mockGetMyInvitations).toHaveBeenCalledTimes(1));
+  });
+
+  it.each(['landlord', 'admin'])('WS120: a %s session never requests the invitee inbox', async (role) => {
+    localStorage.setItem('auth_token', 'test-token');
+    localStorage.setItem('auth_user', JSON.stringify({ id: 1, role }));
+
+    visit('/arrendador/mensajes');
+
+    await waitFor(() => expect(mockGetOrganizations).not.toHaveBeenCalled());
+    expect(mockGetMyInvitations).not.toHaveBeenCalled();
+  });
+
+  it('does not request the inbox for an anonymous visitor on a public page', async () => {
+    visit('/login');
+
+    expect(await screen.findByText('Pantalla de inicio de sesión')).toBeInTheDocument();
+    expect(mockGetMyInvitations).not.toHaveBeenCalled();
   });
 });
