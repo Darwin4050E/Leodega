@@ -30,12 +30,15 @@ return Application::configure(basePath: dirname(__DIR__))
             'org.context' => ResolveActiveOrganization::class,
         ]);
         $middleware->append(\Illuminate\Http\Middleware\HandleCors::class);
-        $middleware->trustHosts([ // se cambia a hosting cuando haya dominio real
+        $middleware->trustHosts(array_merge([
             '127\.0\.0\.1',
             'localhost',
             'leodegafront\.vercel\.app',
-            'leodega-soft-ll-production-a8de\.up\.railway\.app',
-        ]);
+            'healthcheck\.railway\.app',
+        ], array_map(
+            fn (string $host) => '^'.preg_quote($host).'$',
+            array_filter(array_map('trim', explode(',', (string) env('TRUSTED_HOSTS', ''))))
+        )));
     })
     ->withExceptions(function (Exceptions $exceptions): void {
         $exceptions->dontReport([
