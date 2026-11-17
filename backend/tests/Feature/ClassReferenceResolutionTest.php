@@ -57,7 +57,7 @@ class ClassReferenceResolutionTest extends TestCase
         }
 
         $this->assertSame([], $unresolved, sprintf(
-            "Class references that do not resolve (a missing `use`, or a name whose ".
+            'Class references that do not resolve (a missing `use`, or a name whose '.
             "case does not match the file):\n\n%s\n",
             implode("\n", $unresolved)
         ));

@@ -40,8 +40,9 @@ class PaymentService
      *                    row.
      *
      * @return array{payment: ?Payments, status: int} 201 for the created
-     *                                                 path, 200 for the
-     *                                                 idempotent no-op.
+     *                                                path, 200 for the
+     *                                                idempotent no-op.
+     *
      * @throws ReservationConflictException si la reserva bloqueada ya está
      *                                      cancelada, o si no puede
      *                                      confirmarse (propagada desde

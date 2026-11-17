@@ -18,7 +18,7 @@ class StoreRoomDeletionService
      * predicate, also used by the listing withCount() calls.
      *
      * @throws ReservationConflictException when at least one active/future
-     *                                       confirmed reservation exists.
+     *                                      confirmed reservation exists.
      */
     public function delete(StoreRooms $room): void
     {

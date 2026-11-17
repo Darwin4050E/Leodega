@@ -84,7 +84,7 @@ class StoreRoomService
      * survive untouched.
      *
      * @throws StoreRoomResubmissionException 409 when the room is not
-     *                                         currently `rejected`
+     *                                        currently `rejected`
      */
     public function resubmit(StoreRooms $room, int $actingUserId): StoreRooms
     {

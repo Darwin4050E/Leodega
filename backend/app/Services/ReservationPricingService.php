@@ -53,7 +53,7 @@ class ReservationPricingService
      * @return array{rent_subtotal: string, service_fee: string, deposit: string, total_mount: string}
      *
      * @throws ReservationPricingException when no eligible (mode='month',
-     *                                      disponibility=true) store_prices row exists for the room
+     *                                     disponibility=true) store_prices row exists for the room
      */
     public function quote(StoreRooms $room, string $startDate, string $endDate): array
     {
