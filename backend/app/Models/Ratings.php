@@ -4,6 +4,7 @@ namespace App\Models;
 
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Database\Eloquent\Relations\BelongsTo;
 
 class Ratings extends Model
 {
@@ -18,12 +19,18 @@ class Ratings extends Model
         'comment',
     ];
 
-    public function storeRooms()
+    /**
+     * @return BelongsTo<StoreRooms, $this>
+     */
+    public function storeRooms(): BelongsTo
     {
         return $this->belongsTo(StoreRooms::class, 'store_id');
     }
 
-    public function user()
+    /**
+     * @return BelongsTo<User, $this>
+     */
+    public function user(): BelongsTo
     {
         return $this->belongsTo(User::class, 'user_id');
     }

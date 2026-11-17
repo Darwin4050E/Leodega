@@ -4,6 +4,7 @@ namespace App\Models;
 
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Database\Eloquent\Relations\BelongsTo;
 
 class Notifications extends Model
 {
@@ -26,12 +27,18 @@ class Notifications extends Model
         'is_read' => 'boolean',
     ];
 
-    public function sender()
+    /**
+     * @return BelongsTo<User, $this>
+     */
+    public function sender(): BelongsTo
     {
         return $this->belongsTo(User::class, 'sender_id');
     }
 
-    public function receiver()
+    /**
+     * @return BelongsTo<User, $this>
+     */
+    public function receiver(): BelongsTo
     {
         return $this->belongsTo(User::class, 'receiver_id');
     }
