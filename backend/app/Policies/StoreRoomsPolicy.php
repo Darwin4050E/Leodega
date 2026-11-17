@@ -20,7 +20,7 @@ class StoreRoomsPolicy
      * Policy method to resolve it, even though this rule does not need it
      * (identity is already resolved in $landlord).
      *
-     * @SuppressWarnings(PHPMD.UnusedFormalParameter)
+     * @SuppressWarnings("PHPMD.UnusedFormalParameter")
      */
     public function delete(User $user, StoreRooms $room, Landlords $landlord): bool
     {
@@ -33,7 +33,7 @@ class StoreRoomsPolicy
      * resolved so the controller can tell "no landlord profile" (404)
      * apart from "not the owner" (403).
      *
-     * @SuppressWarnings(PHPMD.UnusedFormalParameter)
+     * @SuppressWarnings("PHPMD.UnusedFormalParameter")
      */
     public function update(User $user, StoreRooms $room, Landlords $landlord): bool
     {
@@ -48,7 +48,7 @@ class StoreRoomsPolicy
      * NEVER be folded into this policy, so SDD 3's UI can distinguish "you
      * cannot touch this listing" (403) from "nothing to resubmit" (409).
      *
-     * @SuppressWarnings(PHPMD.UnusedFormalParameter)
+     * @SuppressWarnings("PHPMD.UnusedFormalParameter")
      */
     public function resubmit(User $user, StoreRooms $room, Landlords $landlord): bool
     {

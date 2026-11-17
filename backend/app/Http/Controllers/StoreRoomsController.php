@@ -478,10 +478,10 @@ class StoreRoomsController extends ApiController
             'end_date' => 'sometimes|required_with:start_date|date|after_or_equal:start_date',
         ]);
 
-        if (! isset($dates['start_date'], $dates['end_date'])) {
-            $start = Carbon::now();
-            $end = $start->copy()->addMonths(3);
-        } else {
+        $start = Carbon::now();
+        $end = $start->copy()->addMonths(3);
+
+        if (isset($dates['start_date'], $dates['end_date'])) {
             $start = Carbon::parse($dates['start_date']);
             $end = Carbon::parse($dates['end_date']);
         }

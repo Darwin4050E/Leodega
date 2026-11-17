@@ -23,7 +23,7 @@ class ReservationsPolicy
      * método de Policy para poder resolverlo, aunque esta regla en particular
      * no lo necesite (la identidad ya quedó resuelta en $landlord).
      *
-     * @SuppressWarnings(PHPMD.UnusedFormalParameter)
+     * @SuppressWarnings("PHPMD.UnusedFormalParameter")
      */
     public function cancel(User $user, Reservations $reservation, Landlords $landlord): bool
     {

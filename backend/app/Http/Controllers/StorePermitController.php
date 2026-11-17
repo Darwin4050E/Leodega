@@ -24,7 +24,7 @@ class StorePermitController extends ApiController
      * StoreModerationController routes). A landlord MUST NOT be able to
      * download another room's permit.
      */
-    public function download(Request $request, $storeRoomId)
+    public function download($storeRoomId)
     {
         $storeRoom = StoreRooms::findOrFail($storeRoomId);
 
