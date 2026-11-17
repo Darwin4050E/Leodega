@@ -18,7 +18,7 @@ if (typeof localStorage === 'undefined') {
   });
 }
 import PreguntaInicio7 from './PreguntaInicio7';
-import { WizardProvider, WizardContext } from '../../context/WizardContext';
+import { WizardContext } from '../../context/WizardContext';
 import type { WizardContextValue } from '../../context/WizardContext';
 
 // Mocks -----------------------------------------------------------------
